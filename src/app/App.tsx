@@ -43,7 +43,11 @@ const CHAT_PROVIDER_OPTIONS: Array<{ id: ChatProvider; label: string }> = [
   { id: 'claude', label: 'Claude' },
 ];
 
-const CHAT_PROVIDER_LABEL = 'OpenAI GPT-4o';
+const CHAT_PROVIDER_LABELS: Record<ChatProvider, string> = {
+  openai: 'OpenAI GPT-4o',
+  google: 'Google Gemini',
+  claude: 'Anthropic Claude',
+};
 const IMAGE_PROVIDER_LABEL = 'OpenAI DALL-E 3';
 
 const formatTimestamp = (timestamp: Date) =>
@@ -547,7 +551,7 @@ export default function App() {
       role: 'user',
       content: messageContent,
       timestamp: new Date(),
-      aiProvider: CHAT_PROVIDER_LABEL,
+      aiProvider: CHAT_PROVIDER_LABELS[selectedProvider],
       attachments: uploadedFiles.length > 0 ? uploadedFiles : undefined
     };
 
@@ -582,12 +586,15 @@ export default function App() {
       const data = await response.json();
       console.log('🔍 Received from API:', { hasIsIncorrect: 'isIncorrect' in data, isIncorrect: data.isIncorrect });
       console.log('📊 SERVER RESPONSE - isIncorrect flag:', data.isIncorrect);
+      const providerUsed = data.providerUsed && data.providerUsed in CHAT_PROVIDER_LABELS
+        ? CHAT_PROVIDER_LABELS[data.providerUsed as ChatProvider]
+        : CHAT_PROVIDER_LABELS[selectedProvider];
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: data.response,
         timestamp: new Date(),
-        aiProvider: CHAT_PROVIDER_LABEL
+        aiProvider: providerUsed
       };
       
       setMessages(prev => [...prev, assistantMessage]);
@@ -601,7 +608,7 @@ export default function App() {
         role: 'assistant',
         content: `❌ **Error**: Sorry, there was an error processing your request.\n\n**Details**: ${errorMessage}`,
         timestamp: new Date(),
-        aiProvider: CHAT_PROVIDER_LABEL
+        aiProvider: CHAT_PROVIDER_LABELS[selectedProvider]
       };
       setMessages(prev => [...prev, assistantMessage]);
       saveMessage(assistantMessage);

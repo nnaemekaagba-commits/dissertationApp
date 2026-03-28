@@ -176,13 +176,178 @@ app.put("/make-server-09672449/messages/:userId/:messageId/feedback", async (c) 
   }
 });
 
+const SYSTEM_PROMPT = `You are a helpful AI assistant for problem-solving support. Provide clear, structured responses using markdown formatting with professional mathematical equation rendering.
+
+IMPORTANT: You have access to DALL-E 3 for image generation. When a student asks you to generate, create, or draw an image, diagram, or illustration, tell them to use the Generate Image button next to Attach Files instead of asking in chat.
+
+When you detect image-generation requests, respond with:
+"I can help you generate images using DALL-E 3. Please click the Generate Image button next to Attach Files below, describe what you want to see, and I will create it for you."
+
+CRITICAL RULE: parentheses, brackets, braces, equals signs, and punctuation that are part of a mathematical expression must stay inside the LaTeX delimiters.
+
+Use these formatting rules:
+1. Use LaTeX for all mathematical expressions.
+2. Use headings, bullet points, numbered lists, and code blocks when helpful.
+3. Keep mathematical notation clear and publication-quality.
+4. For inline math use $...$ and for display equations use $$...$$.`;
+
+const parseDataUrl = (value: string) => {
+  const match = value.match(/^data:(.+?);base64,(.+)$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    mediaType: match[1],
+    data: match[2],
+  };
+};
+
+const buildGeminiUserParts = (message: string, files: any[]) => {
+  const parts: any[] = [{ text: message }];
+
+  for (const file of files) {
+    if (file.type?.startsWith("image/")) {
+      const parsed = parseDataUrl(file.content);
+      if (parsed) {
+        parts.push({
+          inline_data: {
+            mime_type: parsed.mediaType,
+            data: parsed.data,
+          },
+        });
+      }
+    } else if (file.name) {
+      parts[0].text += `\n\n[File attached: ${file.name}]`;
+    }
+  }
+
+  return parts;
+};
+
+const buildAnthropicUserContent = (message: string, files: any[]) => {
+  const contentParts: any[] = [{ type: "text", text: message }];
+
+  for (const file of files) {
+    if (file.type?.startsWith("image/")) {
+      const parsed = parseDataUrl(file.content);
+      if (parsed) {
+        contentParts.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: parsed.mediaType,
+            data: parsed.data,
+          },
+        });
+      }
+    } else if (file.name) {
+      contentParts[0].text += `\n\n[File attached: ${file.name}]`;
+    }
+  }
+
+  return contentParts;
+};
+
 // Chat endpoint
 app.post("/make-server-09672449/chat", async (c) => {
   try {
-    const { message, conversationHistory = [], files = [] } = await c.req.json();
+    const { message, conversationHistory = [], files = [], provider = "openai" } = await c.req.json();
 
     if (!message) {
       return c.json({ error: "Message is required" }, 400);
+    }
+
+    if (provider === "google") {
+      const googleApiKey = Deno.env.get("GOOGLE_API_KEY");
+      if (!googleApiKey) {
+        return c.json({ error: "Google API key not configured" }, 500);
+      }
+
+      const contents = conversationHistory.map((msg: any) => ({
+        role: msg.role === "assistant" ? "model" : "user",
+        parts: [{ text: msg.content }],
+      }));
+
+      contents.push({
+        role: "user",
+        parts: buildGeminiUserParts(message, files),
+      });
+
+      const googleResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${googleApiKey}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: SYSTEM_PROMPT }],
+          },
+          contents,
+          generationConfig: {
+            temperature: 0.7,
+          },
+        }),
+      });
+
+      if (!googleResponse.ok) {
+        const errorData = await googleResponse.json();
+        console.error("Google API error:", errorData);
+        return c.json({ error: `Google API error: ${errorData.error?.message || "Unknown error"}` }, googleResponse.status);
+      }
+
+      const googleData = await googleResponse.json();
+      const assistantMessage =
+        googleData.candidates?.[0]?.content?.parts?.map((part: any) => part.text || "").join("").trim() ||
+        "No response generated.";
+
+      return c.json({ response: assistantMessage, providerUsed: "google" });
+    }
+
+    if (provider === "claude") {
+      const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
+      if (!anthropicApiKey) {
+        return c.json({ error: "Anthropic API key not configured" }, 500);
+      }
+
+      const anthropicMessages = conversationHistory.map((msg: any) => ({
+        role: msg.role === "assistant" ? "assistant" : "user",
+        content: msg.content,
+      }));
+
+      anthropicMessages.push({
+        role: "user",
+        content: buildAnthropicUserContent(message, files),
+      });
+
+      const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": anthropicApiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-3-5-sonnet-latest",
+          max_tokens: 2048,
+          temperature: 0.7,
+          system: SYSTEM_PROMPT,
+          messages: anthropicMessages,
+        }),
+      });
+
+      if (!anthropicResponse.ok) {
+        const errorData = await anthropicResponse.json();
+        console.error("Anthropic API error:", errorData);
+        return c.json({ error: `Anthropic API error: ${errorData.error?.message || "Unknown error"}` }, anthropicResponse.status);
+      }
+
+      const anthropicData = await anthropicResponse.json();
+      const assistantMessage =
+        anthropicData.content?.map((item: any) => item.text || "").join("").trim() ||
+        "No response generated.";
+
+      return c.json({ response: assistantMessage, providerUsed: "claude" });
     }
 
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
@@ -353,7 +518,7 @@ Remember: This is a professional educational environment. Mathematical notation 
     const data = await response.json();
     const assistantMessage = data.choices[0]?.message?.content || "No response generated.";
 
-    return c.json({ response: assistantMessage });
+    return c.json({ response: assistantMessage, providerUsed: "openai" });
   } catch (error) {
     console.error("Error in chat endpoint:", error);
     return c.json({ error: `Failed to process chat request: ${error instanceof Error ? error.message : String(error)}` }, 500);
