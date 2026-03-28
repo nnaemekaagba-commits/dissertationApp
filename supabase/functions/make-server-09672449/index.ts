@@ -283,7 +283,7 @@ app.get("/make-server-09672449/debug/test-supabase", async (c) => {
 app.post("/make-server-09672449/messages/:userId", async (c) => {
   try {
     const userId = c.req.param("userId");
-    const { id, role, content, timestamp, feedback, attachments, isIncorrect } = await c.req.json();
+    const { id, role, content, timestamp, aiProvider, feedback, attachments, isIncorrect } = await c.req.json();
     
     if (!userId || !id || !role || !content || !timestamp) {
       return c.json({ error: "Missing required fields: userId, id, role, content, timestamp" }, 400);
@@ -294,6 +294,7 @@ app.post("/make-server-09672449/messages/:userId", async (c) => {
       role, 
       content, 
       timestamp, 
+      aiProvider: aiProvider || undefined,
       feedback: feedback || undefined, 
       attachments: attachments || undefined,
       isIncorrect: isIncorrect ?? false  // Use ?? instead of || to preserve false values
@@ -408,7 +409,7 @@ app.post("/make-server-09672449/chat", async (c) => {
       assistantMessage = await runOpenAIChat(message, conversationHistory, files);
     }
 
-    return c.json({ response: assistantMessage, provider: selectedProvider });
+    return c.json({ response: assistantMessage, provider: selectedProvider, providerUsed: selectedProvider });
     /*
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiApiKey) {
