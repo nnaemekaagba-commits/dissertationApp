@@ -5,6 +5,8 @@ import { createClient } from "npm:@supabase/supabase-js";
 import * as kv from "./kv_store.ts";
 const app = new Hono();
 
+type ChatProvider = "openai" | "google" | "claude";
+
 // Enable logger
 app.use('*', logger(console.log));
 
@@ -19,6 +21,217 @@ app.use(
     maxAge: 600,
   }),
 );
+
+const SYSTEM_PROMPT = `You are a helpful AI assistant for problem-solving support. Provide clear, structured responses using markdown formatting with professional mathematical equation rendering.
+
+IMPORTANT: You have access to DALL-E 3 for image generation. When a student asks you to generate, create, or draw an image, diagram, or illustration, tell them to use the "Generate Image" button located next to the "Attach Files" button.
+
+Formatting requirements:
+- Use headings, bullets, and numbered lists when they improve clarity.
+- Use inline LaTeX with $...$ and display equations with $$...$$.
+- Keep mathematical delimiters correct. If punctuation or brackets are part of the math, keep them inside the delimiters.
+- This is a professional educational environment, so mathematical notation should be clear and publication-quality.`;
+
+function normalizeProvider(value: unknown): ChatProvider {
+  const normalized = String(value || "openai").toLowerCase();
+  if (normalized === "google" || normalized === "gemini") return "google";
+  if (normalized === "claude" || normalized === "anthropic") return "claude";
+  return "openai";
+}
+
+function flattenMessageContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part: any) => {
+        if (typeof part === "string") return part;
+        if (part?.type === "text") return part.text || "";
+        if (part?.type === "image_url") return "[Image attached]";
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
+function buildConversationText(
+  message: string,
+  conversationHistory: any[] = [],
+  files: any[] = [],
+): string {
+  const historyText = conversationHistory
+    .map((msg: any) => `${msg.role === "assistant" ? "Assistant" : "User"}: ${flattenMessageContent(msg.content)}`)
+    .filter((line) => line.trim())
+    .join("\n\n");
+
+  const fileText = files.length > 0
+    ? `\n\nAttached files:\n${files.map((file: any, index: number) => {
+        if (file.type?.startsWith("image/")) return `${index + 1}. Image: ${file.name}`;
+        if (file.type === "application/pdf") return `${index + 1}. PDF: ${file.name}`;
+        if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") return `${index + 1}. Word document: ${file.name}`;
+        return `${index + 1}. ${file.name}\n${file.content || ""}`;
+      }).join("\n")}`
+    : "";
+
+  return [historyText, `User: ${message}${fileText}`].filter(Boolean).join("\n\n");
+}
+
+function buildOpenAIMessages(message: string, conversationHistory: any[] = [], files: any[] = []) {
+  const messages: any[] = [
+    {
+      role: "system",
+      content: SYSTEM_PROMPT,
+    },
+  ];
+
+  conversationHistory.forEach((msg: any) => {
+    messages.push({
+      role: msg.role,
+      content: msg.content,
+    });
+  });
+
+  if (files.length > 0) {
+    const contentParts: any[] = [{ type: "text", text: message }];
+
+    for (const file of files) {
+      if (file.type?.startsWith("image/")) {
+        contentParts.push({
+          type: "image_url",
+          image_url: {
+            url: file.content,
+          },
+        });
+      } else if (
+        file.type === "application/pdf" ||
+        file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      ) {
+        contentParts[0].text += `\n\n[File attached: ${file.name}]`;
+      } else {
+        contentParts[0].text += `\n\n[Attached text file: ${file.name}]\n${file.content || ""}`;
+      }
+    }
+
+    messages.push({
+      role: "user",
+      content: contentParts,
+    });
+  } else {
+    messages.push({
+      role: "user",
+      content: message,
+    });
+  }
+
+  return messages;
+}
+
+async function runOpenAIChat(message: string, conversationHistory: any[] = [], files: any[] = []) {
+  const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!openaiApiKey) {
+    throw new Error("OpenAI API key not configured");
+  }
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${openaiApiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: buildOpenAIMessages(message, conversationHistory, files),
+      temperature: 0.7,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(`OpenAI API error: ${errorData.error?.message || "Unknown error"}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || "No response generated.";
+}
+
+async function runGoogleChat(message: string, conversationHistory: any[] = [], files: any[] = []) {
+  const googleApiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_API_KEY");
+  if (!googleApiKey) {
+    throw new Error("Google AI API key not configured");
+  }
+
+  const promptText = `${SYSTEM_PROMPT}\n\n${buildConversationText(message, conversationHistory, files)}`;
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${googleApiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: promptText }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.7,
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(`Google AI API error: ${errorData.error?.message || "Unknown error"}`);
+  }
+
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || "").join("\n") || "No response generated.";
+}
+
+async function runClaudeChat(message: string, conversationHistory: any[] = [], files: any[] = []) {
+  const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CLAUDE_API_KEY");
+  if (!anthropicApiKey) {
+    throw new Error("Claude API key not configured");
+  }
+
+  const messages = [
+    ...conversationHistory.map((msg: any) => ({
+      role: msg.role === "assistant" ? "assistant" : "user",
+      content: flattenMessageContent(msg.content),
+    })),
+    {
+      role: "user",
+      content: `${message}${files.length ? `\n\nAttached files:\n${files.map((file: any) => file.name).join("\n")}` : ""}`,
+    },
+  ];
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": anthropicApiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1024,
+      system: SYSTEM_PROMPT,
+      messages,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(`Claude API error: ${errorData.error?.message || errorData.error?.type || "Unknown error"}`);
+  }
+
+  const data = await response.json();
+  return data.content?.map((part: any) => part.text || "").join("\n") || "No response generated.";
+}
 
 // Health check endpoint
 app.get("/make-server-09672449/health", (c) => {
@@ -178,12 +391,25 @@ app.put("/make-server-09672449/messages/:userId/:messageId/feedback", async (c) 
 // Chat endpoint
 app.post("/make-server-09672449/chat", async (c) => {
   try {
-    const { message, conversationHistory = [], files = [] } = await c.req.json();
+    const { message, conversationHistory = [], files = [], provider = "openai" } = await c.req.json();
 
     if (!message) {
       return c.json({ error: "Message is required" }, 400);
     }
 
+    const selectedProvider = normalizeProvider(provider);
+    let assistantMessage = "";
+
+    if (selectedProvider === "google") {
+      assistantMessage = await runGoogleChat(message, conversationHistory, files);
+    } else if (selectedProvider === "claude") {
+      assistantMessage = await runClaudeChat(message, conversationHistory, files);
+    } else {
+      assistantMessage = await runOpenAIChat(message, conversationHistory, files);
+    }
+
+    return c.json({ response: assistantMessage, provider: selectedProvider });
+    /*
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiApiKey) {
       return c.json({ error: "OpenAI API key not configured" }, 500);
@@ -353,6 +579,7 @@ Remember: This is a professional educational environment. Mathematical notation 
     const assistantMessage = data.choices[0]?.message?.content || "No response generated.";
 
     return c.json({ response: assistantMessage });
+    */
   } catch (error) {
     console.error("Error in chat endpoint:", error);
     return c.json({ error: `Failed to process chat request: ${error instanceof Error ? error.message : String(error)}` }, 500);

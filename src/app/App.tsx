@@ -25,6 +25,14 @@ interface Message {
   }>;
 }
 
+type ChatProvider = 'openai' | 'google' | 'claude';
+
+const CHAT_PROVIDER_OPTIONS: Array<{ id: ChatProvider; label: string }> = [
+  { id: 'openai', label: 'OpenAI' },
+  { id: 'google', label: 'Google AI' },
+  { id: 'claude', label: 'Claude' },
+];
+
 // Memoized message component to prevent re-renders when input changes
 const MessageItem = memo(({ 
   message, 
@@ -91,6 +99,7 @@ export default function App() {
   const [showImageDialog, setShowImageDialog] = useState(false);
   const [imagePrompt, setImagePrompt] = useState('');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<ChatProvider>('openai');
   const [showClearLogDialog, setShowClearLogDialog] = useState(false);
   const [showClearWorkspaceDialog, setShowClearWorkspaceDialog] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -393,7 +402,8 @@ export default function App() {
         body: JSON.stringify({ 
           message: currentInput, 
           conversationHistory: messages,
-          files: currentFiles
+          files: currentFiles,
+          provider: selectedProvider,
         }),
       });
 
@@ -749,6 +759,27 @@ export default function App() {
                   ))}
                 </div>
               )}
+
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                  AI Provider
+                </span>
+                {CHAT_PROVIDER_OPTIONS.map((providerOption) => (
+                  <button
+                    key={providerOption.id}
+                    type="button"
+                    onClick={() => setSelectedProvider(providerOption.id)}
+                    disabled={isTyping}
+                    className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                      selectedProvider === providerOption.id
+                        ? 'border-purple-600 bg-purple-600 text-white shadow-sm'
+                        : 'border-gray-300 bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700'
+                    } ${isTyping ? 'cursor-not-allowed opacity-70' : ''}`}
+                  >
+                    {providerOption.label}
+                  </button>
+                ))}
+              </div>
               
               <div className="flex gap-2">
                 <div className="flex-1 flex flex-col gap-2">
