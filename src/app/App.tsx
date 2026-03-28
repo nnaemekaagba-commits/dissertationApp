@@ -144,6 +144,29 @@ const applyFeedbackToMessages = (messages: Message[], messageId: string, feedbac
     message.id === messageId ? { ...message, feedback } : message
   );
 
+const mergeArchiveMessages = (primaryMessages: Message[], fallbackMessages: Message[]) => {
+  const mergedMessages = new Map<string, Message>();
+
+  [...fallbackMessages, ...primaryMessages].forEach((message) => {
+    const existing = mergedMessages.get(message.id);
+    if (!existing) {
+      mergedMessages.set(message.id, message);
+      return;
+    }
+
+    mergedMessages.set(message.id, {
+      ...existing,
+      ...message,
+      aiProvider: message.aiProvider || existing.aiProvider,
+      feedback: message.feedback ?? existing.feedback,
+      attachments: message.attachments || existing.attachments,
+      timestamp: message.timestamp || existing.timestamp,
+    });
+  });
+
+  return sortMessagesByTime(Array.from(mergedMessages.values()));
+};
+
 // Memoized message component to prevent re-renders when input changes
 const MessageItem = memo(({ 
   message, 
@@ -277,7 +300,7 @@ export default function App() {
             const data = await response.json();
             if (data.messages && Array.isArray(data.messages)) {
               const loadedMessages = normalizeMessages(data.messages);
-              const nextMessages = loadedMessages.length > 0 ? loadedMessages : localArchive;
+              const nextMessages = mergeArchiveMessages(loadedMessages, localArchive);
               setMessages(nextMessages);
               replaceArchiveMessages(currentUserId, nextMessages);
               console.log(`✅ Loaded ${loadedMessages.length} messages on session restore`);
@@ -320,7 +343,7 @@ export default function App() {
             const data = await response.json();
             if (data.messages && Array.isArray(data.messages)) {
               const loadedMessages = normalizeMessages(data.messages);
-              replaceArchiveMessages(userId, loadedMessages.length > 0 ? loadedMessages : localArchive);
+              replaceArchiveMessages(userId, mergeArchiveMessages(loadedMessages, localArchive));
               console.log(`✅ Loaded ${loadedMessages.length} archive messages`);
             }
           }
@@ -419,7 +442,7 @@ export default function App() {
         const data = await response.json();
         if (data.messages && Array.isArray(data.messages)) {
           const loadedMessages = normalizeMessages(data.messages);
-          const nextMessages = loadedMessages.length > 0 ? loadedMessages : localArchive;
+          const nextMessages = mergeArchiveMessages(loadedMessages, localArchive);
           setMessages(nextMessages);
           replaceArchiveMessages(newUserId, nextMessages);
           console.log(`✅ Loaded ${loadedMessages.length} messages for user ${newUserId}`);
