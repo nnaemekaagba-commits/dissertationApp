@@ -16,6 +16,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  aiProvider?: string;
   feedback?: string;
   attachments?: Array<{
     name: string;
@@ -32,6 +33,18 @@ const CHAT_PROVIDER_OPTIONS: Array<{ id: ChatProvider; label: string }> = [
   { id: 'google', label: 'Google AI' },
   { id: 'claude', label: 'Claude' },
 ];
+
+const CHAT_PROVIDER_LABEL = 'OpenAI GPT-4o';
+const IMAGE_PROVIDER_LABEL = 'OpenAI DALL-E 3';
+
+const formatTimestamp = (timestamp: Date) =>
+  timestamp.toLocaleString([], {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 
 // Memoized message component to prevent re-renders when input changes
 const MessageItem = memo(({ 
@@ -54,7 +67,8 @@ const MessageItem = memo(({
           <MarkdownRenderer content={message.content} />
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          {message.timestamp.toLocaleTimeString()}
+          {message.aiProvider ? `${message.aiProvider} · ` : ''}
+          {formatTimestamp(message.timestamp)}
         </div>
         
         {message.role === 'assistant' && (
@@ -381,6 +395,7 @@ export default function App() {
       role: 'user',
       content: messageContent,
       timestamp: new Date(),
+      aiProvider: CHAT_PROVIDER_LABEL,
       attachments: uploadedFiles.length > 0 ? uploadedFiles : undefined
     };
 
@@ -419,7 +434,8 @@ export default function App() {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: data.response,
-        timestamp: new Date()
+        timestamp: new Date(),
+        aiProvider: CHAT_PROVIDER_LABEL
       };
       
       setMessages(prev => [...prev, assistantMessage]);
@@ -432,9 +448,11 @@ export default function App() {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: `❌ **Error**: Sorry, there was an error processing your request.\n\n**Details**: ${errorMessage}`,
-        timestamp: new Date()
+        timestamp: new Date(),
+        aiProvider: CHAT_PROVIDER_LABEL
       };
       setMessages(prev => [...prev, assistantMessage]);
+      saveMessage(assistantMessage);
     } finally {
       setIsTyping(false);
     }
@@ -454,14 +472,15 @@ export default function App() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Timestamp', 'Date', 'Time', 'Role', 'Content', 'Reflection'];
+    const headers = ['Timestamp', 'Date', 'Time', 'Role', 'AI Provider', 'Content', 'Reflection'];
     const rows = archiveMessages.map(msg => {
       const date = msg.timestamp.toLocaleDateString();
       const time = msg.timestamp.toLocaleTimeString();
       const role = msg.role === 'user' ? 'You' : 'GenAI Support';
+      const aiProvider = `"${(msg.aiProvider || '').replace(/"/g, '""')}"`;
       const content = `"${msg.content.replace(/"/g, '""')}"`;
       const reflection = msg.feedback ? `"${msg.feedback.replace(/"/g, '""')}"` : '""';
-      return [msg.timestamp.toISOString(), date, time, role, content, reflection].join(',');
+      return [msg.timestamp.toISOString(), date, time, role, aiProvider, content, reflection].join(',');
     });
 
     const csvContent = [headers.join(','), ...rows].join('\n');
@@ -493,12 +512,13 @@ export default function App() {
               const date = msg.timestamp.toLocaleDateString();
               const time = msg.timestamp.toLocaleTimeString();
               const role = msg.role === 'user' ? 'You' : 'GenAI Support';
+              const aiProvider = msg.aiProvider || 'Not recorded';
               const content = msg.content;
               const reflection = msg.feedback || 'No reflection provided';
               return new Paragraph({
                 children: [
                   new TextRun({
-                    text: `${date} ${time} - ${role}: `,
+                    text: `${date} ${time} - ${role} (${aiProvider}): `,
                     bold: true,
                   }),
                   new TextRun(content),
@@ -571,7 +591,8 @@ export default function App() {
       id: Date.now().toString(),
       role: 'user',
       content: `**Generate Image**: ${imagePrompt}`,
-      timestamp: new Date()
+      timestamp: new Date(),
+      aiProvider: IMAGE_PROVIDER_LABEL
     };
     
     setMessages(prev => [...prev, userMessage]);
@@ -607,7 +628,8 @@ export default function App() {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: `🎨 **Generated Image**\n\n![Generated Image](${data.imageUrl})\n\n**Prompt**: ${data.revisedPrompt}`,
-        timestamp: new Date()
+        timestamp: new Date(),
+        aiProvider: IMAGE_PROVIDER_LABEL
       };
       
       setMessages(prev => [...prev, assistantMessage]);
@@ -620,7 +642,8 @@ export default function App() {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: `❌ **Image Generation Error**: Sorry, there was an error generating the image.\n\n**Details**: ${errorMessage}`,
-        timestamp: new Date()
+        timestamp: new Date(),
+        aiProvider: IMAGE_PROVIDER_LABEL
       };
       setMessages(prev => [...prev, assistantMessage]);
       saveMessage(assistantMessage);
@@ -867,7 +890,10 @@ export default function App() {
                       <div className="font-semibold text-sm">
                         {msg.role === 'user' ? 'You' : 'GenAI Support'}
                       </div>
-                      <div className="text-xs text-gray-500">{msg.timestamp.toLocaleTimeString()}</div>
+                      <div className="text-xs text-gray-500">{formatTimestamp(msg.timestamp)}</div>
+                    </div>
+                    <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-purple-700">
+                      {msg.aiProvider || 'Provider not recorded'}
                     </div>
                     <div className="text-sm mb-2">
                       <MarkdownRenderer content={msg.content} />
