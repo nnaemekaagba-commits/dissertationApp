@@ -17,6 +17,7 @@ interface Message {
   content: string;
   timestamp: Date;
   activityType?: 'user-activity' | 'ai-response' | 'image-request' | 'image-response' | 'system-error';
+  aiProvider?: string;
   feedback?: string;
   attachments?: Array<{
     name: string;
@@ -120,6 +121,17 @@ function mergeMessages(primary: Message[], secondary: Message[]): Message[] {
   });
 
   return Array.from(merged.values()).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+}
+
+function formatArchiveTimestamp(timestamp: Date): string {
+  return timestamp.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 }
 
 export default function App() {
@@ -462,6 +474,7 @@ export default function App() {
       content: messageContent,
       timestamp: new Date(),
       activityType: 'user-activity',
+      aiProvider: 'User',
       attachments: uploadedFiles.length > 0 ? uploadedFiles : undefined
     };
 
@@ -500,7 +513,8 @@ export default function App() {
         role: 'assistant',
         content: data.response,
         timestamp: new Date(),
-        activityType: 'ai-response'
+        activityType: 'ai-response',
+        aiProvider: 'OpenAI GPT-4o'
       };
       
       setMessages(prev => [...prev, assistantMessage]);
@@ -514,7 +528,8 @@ export default function App() {
         role: 'assistant',
         content: `❌ **Error**: Sorry, there was an error processing your request.\n\n**Details**: ${errorMessage}`,
         timestamp: new Date(),
-        activityType: 'system-error'
+        activityType: 'system-error',
+        aiProvider: 'OpenAI GPT-4o'
       };
       setMessages(prev => [...prev, assistantMessage]);
       saveMessage(assistantMessage);
@@ -537,14 +552,15 @@ export default function App() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Timestamp', 'Date', 'Time', 'Role', 'Content', 'Reflection'];
+    const headers = ['Timestamp', 'Date', 'Time', 'Role', 'AI Provider', 'Content', 'Reflection'];
     const rows = archiveMessages.map(msg => {
       const date = msg.timestamp.toLocaleDateString();
       const time = msg.timestamp.toLocaleTimeString();
       const role = msg.role === 'user' ? 'You' : 'GenAI Support';
+      const aiProvider = `"${(msg.aiProvider || (msg.role === 'user' ? 'User' : 'Unknown')).replace(/"/g, '""')}"`;
       const content = `"${msg.content.replace(/"/g, '""')}"`;
       const reflection = msg.feedback ? `"${msg.feedback.replace(/"/g, '""')}"` : '""';
-      return [msg.timestamp.toISOString(), date, time, role, content, reflection].join(',');
+      return [msg.timestamp.toISOString(), date, time, role, aiProvider, content, reflection].join(',');
     });
 
     const csvContent = [headers.join(','), ...rows].join('\n');
@@ -576,12 +592,13 @@ export default function App() {
               const date = msg.timestamp.toLocaleDateString();
               const time = msg.timestamp.toLocaleTimeString();
               const role = msg.role === 'user' ? 'You' : 'GenAI Support';
+              const provider = msg.aiProvider || (msg.role === 'user' ? 'User' : 'Unknown');
               const content = msg.content;
               const reflection = msg.feedback || 'No reflection provided';
               return new Paragraph({
                 children: [
                   new TextRun({
-                    text: `${date} ${time} - ${role}: `,
+                    text: `${date} ${time} - ${role} (${provider}): `,
                     bold: true,
                   }),
                   new TextRun(content),
@@ -656,7 +673,8 @@ export default function App() {
       role: 'user',
       content: `**Generate Image**: ${imagePrompt}`,
       timestamp: new Date(),
-      activityType: 'image-request'
+      activityType: 'image-request',
+      aiProvider: 'OpenAI DALL-E 3'
     };
     
     setMessages(prev => [...prev, userMessage]);
@@ -693,7 +711,8 @@ export default function App() {
         role: 'assistant',
         content: `🎨 **Generated Image**\n\n![Generated Image](${data.imageUrl})\n\n**Prompt**: ${data.revisedPrompt}`,
         timestamp: new Date(),
-        activityType: 'image-response'
+        activityType: 'image-response',
+        aiProvider: 'OpenAI DALL-E 3'
       };
       
       setMessages(prev => [...prev, assistantMessage]);
@@ -707,7 +726,8 @@ export default function App() {
         role: 'assistant',
         content: `❌ **Image Generation Error**: Sorry, there was an error generating the image.\n\n**Details**: ${errorMessage}`,
         timestamp: new Date(),
-        activityType: 'system-error'
+        activityType: 'system-error',
+        aiProvider: 'OpenAI DALL-E 3'
       };
       setMessages(prev => [...prev, assistantMessage]);
       saveMessage(assistantMessage);
@@ -935,22 +955,27 @@ export default function App() {
                       <div className="font-semibold text-sm">
                         {msg.role === 'user' ? 'You' : 'GenAI Support'}
                       </div>
-                      <div className="text-xs text-gray-500">{msg.timestamp.toLocaleTimeString()}</div>
+                      <div className="text-xs text-gray-500">{formatArchiveTimestamp(msg.timestamp)}</div>
                     </div>
                     <div className="mb-2">
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                         msg.role === 'user'
                           ? 'bg-blue-100 text-blue-700'
                           : msg.activityType === 'system-error'
                             ? 'bg-red-100 text-red-700'
                             : 'bg-purple-100 text-purple-700'
-                      }`}>
-                        {msg.activityType === 'image-request' ? 'User Activity: Image Request'
-                          : msg.activityType === 'image-response' ? 'AI Response: Generated Image'
-                          : msg.activityType === 'system-error' ? 'AI Response: Error'
-                          : msg.role === 'user' ? 'User Activity'
-                          : 'AI Response'}
-                      </span>
+                        }`}>
+                          {msg.activityType === 'image-request' ? 'User Activity: Image Request'
+                            : msg.activityType === 'image-response' ? 'AI Response: Generated Image'
+                            : msg.activityType === 'system-error' ? 'AI Response: Error'
+                            : msg.role === 'user' ? 'User Activity'
+                            : 'AI Response'}
+                        </span>
+                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
+                          Provider: {msg.aiProvider || (msg.role === 'user' ? 'User' : 'Unknown')}
+                        </span>
+                      </div>
                     </div>
                     <div className="text-sm mb-2">
                       <MarkdownRenderer content={msg.content} />
