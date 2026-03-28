@@ -76,6 +76,51 @@ const MessageItem = memo(({
 MessageItem.displayName = 'MessageItem';
 
 const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-09672449`;
+const getArchiveStorageKey = (userId: string) => `mydis_archive_${userId || 'guest'}`;
+
+function normalizeMessage(raw: any): Message {
+  return {
+    ...raw,
+    timestamp: new Date(raw.timestamp),
+  };
+}
+
+function loadLocalArchive(userId: string): Message[] {
+  if (!userId) return [];
+
+  try {
+    const stored = localStorage.getItem(getArchiveStorageKey(userId));
+    if (!stored) return [];
+
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.map(normalizeMessage).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  } catch (error) {
+    console.error('Failed to load local archive:', error);
+    return [];
+  }
+}
+
+function persistLocalArchive(userId: string, messageList: Message[]) {
+  if (!userId) return;
+
+  try {
+    localStorage.setItem(getArchiveStorageKey(userId), JSON.stringify(messageList));
+  } catch (error) {
+    console.error('Failed to persist local archive:', error);
+  }
+}
+
+function mergeMessages(primary: Message[], secondary: Message[]): Message[] {
+  const merged = new Map<string, Message>();
+
+  [...primary, ...secondary].forEach((message) => {
+    merged.set(message.id, message);
+  });
+
+  return Array.from(merged.values()).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+}
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -107,6 +152,11 @@ export default function App() {
         setAccessToken(session.access_token);
         setUserName(session.user?.user_metadata?.name || session.user?.email?.split('@')[0] || 'User');
         setUserId(currentUserId);
+        const localMessages = loadLocalArchive(currentUserId);
+        if (localMessages.length > 0) {
+          setMessages(localMessages);
+          setArchiveMessages(localMessages);
+        }
         
         // Load messages for this user
         try {
@@ -117,11 +167,11 @@ export default function App() {
           if (response.ok) {
             const data = await response.json();
             if (data.messages && Array.isArray(data.messages)) {
-              const loadedMessages = data.messages.map((msg: any) => ({
-                ...msg,
-                timestamp: new Date(msg.timestamp)
-              }));
-              setMessages(loadedMessages);
+              const loadedMessages = data.messages.map(normalizeMessage);
+              const mergedMessages = mergeMessages(loadedMessages, localMessages);
+              setMessages(mergedMessages);
+              setArchiveMessages(mergedMessages);
+              persistLocalArchive(currentUserId, mergedMessages);
               console.log(`✅ Loaded ${loadedMessages.length} messages on session restore`);
             }
           }
@@ -147,6 +197,10 @@ export default function App() {
   useEffect(() => {
     const loadArchiveMessages = async () => {
       if (showArchive && userId) {
+        const localMessages = loadLocalArchive(userId);
+        if (localMessages.length > 0) {
+          setArchiveMessages(localMessages);
+        }
         try {
           const response = await fetch(`${API_BASE_URL}/messages/${userId}`, {
             headers: { 'Authorization': `Bearer ${publicAnonKey}` }
@@ -155,11 +209,10 @@ export default function App() {
           if (response.ok) {
             const data = await response.json();
             if (data.messages && Array.isArray(data.messages)) {
-              const loadedMessages = data.messages.map((msg: any) => ({
-                ...msg,
-                timestamp: new Date(msg.timestamp)
-              }));
-              setArchiveMessages(loadedMessages);
+              const loadedMessages = data.messages.map(normalizeMessage);
+              const mergedMessages = mergeMessages(loadedMessages, localMessages);
+              setArchiveMessages(mergedMessages);
+              persistLocalArchive(userId, mergedMessages);
               console.log(`✅ Loaded ${loadedMessages.length} archive messages`);
             }
           }
@@ -178,8 +231,16 @@ export default function App() {
       msg.id === messageId ? { ...msg, feedback } : msg
     );
 
-    setMessages(prev => applyFeedback(prev));
-    setArchiveMessages(prev => applyFeedback(prev));
+    setMessages(prev => {
+      const next = applyFeedback(prev);
+      persistLocalArchive(userId, next);
+      return next;
+    });
+    setArchiveMessages(prev => {
+      const next = applyFeedback(prev);
+      persistLocalArchive(userId, next);
+      return next;
+    });
     
     // Save feedback to database
     try {
@@ -198,12 +259,23 @@ export default function App() {
 
   // Save a message to the database
   const saveMessage = useCallback(async (message: Message) => {
+    const upsertMessage = (list: Message[]) => {
+      const exists = list.some(existing => existing.id === message.id);
+      const next = exists
+        ? list.map(existing => existing.id === message.id ? message : existing)
+        : [...list, message];
+      return next.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    };
+
+    setMessages(prev => {
+      const next = upsertMessage(prev);
+      persistLocalArchive(userId, next);
+      return next;
+    });
     setArchiveMessages(prev => {
-      const exists = prev.some(existing => existing.id === message.id);
-      if (exists) {
-        return prev.map(existing => existing.id === message.id ? message : existing);
-      }
-      return [...prev, message].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+      const next = upsertMessage(prev);
+      persistLocalArchive(userId, next);
+      return next;
     });
 
     try {
@@ -236,6 +308,11 @@ export default function App() {
     }
     
     setUserId(newUserId);
+    const localMessages = loadLocalArchive(newUserId);
+    if (localMessages.length > 0) {
+      setMessages(localMessages);
+      setArchiveMessages(localMessages);
+    }
     
     // Load messages for this user
     try {
@@ -246,11 +323,11 @@ export default function App() {
       if (response.ok) {
         const data = await response.json();
         if (data.messages && Array.isArray(data.messages)) {
-          const loadedMessages = data.messages.map((msg: any) => ({
-            ...msg,
-            timestamp: new Date(msg.timestamp)
-          }));
-          setMessages(loadedMessages);
+          const loadedMessages = data.messages.map(normalizeMessage);
+          const mergedMessages = mergeMessages(loadedMessages, localMessages);
+          setMessages(mergedMessages);
+          setArchiveMessages(mergedMessages);
+          persistLocalArchive(newUserId, mergedMessages);
           console.log(`✅ Loaded ${loadedMessages.length} messages for user ${newUserId}`);
         }
       }
@@ -544,6 +621,7 @@ export default function App() {
       if (response.ok) {
         setMessages([]);
         setArchiveMessages([]);
+        localStorage.removeItem(getArchiveStorageKey(userId));
         console.log('✅ All messages cleared successfully');
       } else {
         const errorData = await response.json();
