@@ -26,6 +26,15 @@ interface Message {
   }>;
 }
 
+interface ArchiveEntry {
+  id: string;
+  timestamp: Date;
+  userQuery: string;
+  aiProvider: string;
+  aiResponse: string;
+  reflection: string;
+}
+
 type ChatProvider = 'openai' | 'google' | 'claude';
 
 const CHAT_PROVIDER_OPTIONS: Array<{ id: ChatProvider; label: string }> = [
@@ -61,6 +70,70 @@ const normalizeMessages = (rawMessages: any[] | undefined): Message[] => {
 
 const sortMessagesByTime = (items: Message[]) =>
   [...items].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+const stripMarkdown = (content: string) =>
+  content
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '$1: $2')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')
+    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```/g, '').trim())
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/[*_#>-]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
+  const entries: ArchiveEntry[] = [];
+  let pendingEntry: ArchiveEntry | null = null;
+
+  sortMessagesByTime(messages).forEach((message) => {
+    if (message.role === 'user') {
+      if (pendingEntry) {
+        entries.push(pendingEntry);
+      }
+
+      pendingEntry = {
+        id: message.id,
+        timestamp: message.timestamp,
+        userQuery: message.content,
+        aiProvider: message.aiProvider || 'Provider not recorded',
+        aiResponse: '',
+        reflection: '',
+      };
+      return;
+    }
+
+    if (!pendingEntry) {
+      pendingEntry = {
+        id: message.id,
+        timestamp: message.timestamp,
+        userQuery: '',
+        aiProvider: message.aiProvider || 'Provider not recorded',
+        aiResponse: message.content,
+        reflection: message.feedback || '',
+      };
+      entries.push(pendingEntry);
+      pendingEntry = null;
+      return;
+    }
+
+    pendingEntry = {
+      ...pendingEntry,
+      aiProvider: message.aiProvider || pendingEntry.aiProvider,
+      aiResponse: pendingEntry.aiResponse
+        ? `${pendingEntry.aiResponse}\n\n${message.content}`
+        : message.content,
+      reflection: message.feedback || pendingEntry.reflection,
+    };
+    entries.push(pendingEntry);
+    pendingEntry = null;
+  });
+
+  if (pendingEntry) {
+    entries.push(pendingEntry);
+  }
+
+  return entries;
+};
 
 // Memoized message component to prevent re-renders when input changes
 const MessageItem = memo(({ 
@@ -551,15 +624,15 @@ export default function App() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Timestamp', 'Date', 'Time', 'Role', 'AI Provider', 'Content', 'Reflection'];
-    const rows = archiveMessages.map(msg => {
-      const date = msg.timestamp.toLocaleDateString();
-      const time = msg.timestamp.toLocaleTimeString();
-      const role = msg.role === 'user' ? 'You' : 'GenAI Support';
-      const aiProvider = `"${(msg.aiProvider || '').replace(/"/g, '""')}"`;
-      const content = `"${msg.content.replace(/"/g, '""')}"`;
-      const reflection = msg.feedback ? `"${msg.feedback.replace(/"/g, '""')}"` : '""';
-      return [msg.timestamp.toISOString(), date, time, role, aiProvider, content, reflection].join(',');
+    const headers = ['Timestamp', 'Date', 'Time', 'AI Provider', 'User Query', 'AI Response', 'Reflection'];
+    const rows = archiveEntries.map((entry) => {
+      const date = entry.timestamp.toLocaleDateString();
+      const time = entry.timestamp.toLocaleTimeString();
+      const aiProvider = `"${entry.aiProvider.replace(/"/g, '""')}"`;
+      const userQuery = `"${stripMarkdown(entry.userQuery).replace(/"/g, '""')}"`;
+      const aiResponse = `"${stripMarkdown(entry.aiResponse).replace(/"/g, '""')}"`;
+      const reflection = `"${entry.reflection.replace(/"/g, '""')}"`;
+      return [entry.timestamp.toISOString(), date, time, aiProvider, userQuery, aiResponse, reflection].join(',');
     });
 
     const csvContent = [headers.join(','), ...rows].join('\n');
@@ -587,26 +660,58 @@ export default function App() {
               heading: HeadingLevel.HEADING_1,
               alignment: AlignmentType.CENTER,
             }),
-            ...archiveMessages.map(msg => {
-              const date = msg.timestamp.toLocaleDateString();
-              const time = msg.timestamp.toLocaleTimeString();
-              const role = msg.role === 'user' ? 'You' : 'GenAI Support';
-              const aiProvider = msg.aiProvider || 'Not recorded';
-              const content = msg.content;
-              const reflection = msg.feedback || 'No reflection provided';
-              return new Paragraph({
-                children: [
-                  new TextRun({
-                    text: `${date} ${time} - ${role} (${aiProvider}): `,
-                    bold: true,
-                  }),
-                  new TextRun(content),
-                  new TextRun({
-                    text: `\nReflection: ${reflection}\n`,
-                    color: "7C3AED",
-                  }),
-                ],
-              });
+            ...archiveEntries.flatMap((entry, index) => {
+              const timestamp = formatTimestamp(entry.timestamp);
+              const queryText = stripMarkdown(entry.userQuery) || 'No user query recorded';
+              const responseText = stripMarkdown(entry.aiResponse) || 'No AI response recorded';
+              const reflectionText = entry.reflection || 'No reflection provided';
+
+              return [
+                new Paragraph({
+                  text: `Activity ${index + 1}`,
+                  heading: HeadingLevel.HEADING_2,
+                  spacing: { before: 240, after: 120 },
+                }),
+                new Paragraph({
+                  children: [
+                    new TextRun({ text: 'Timestamp: ', bold: true }),
+                    new TextRun(timestamp),
+                  ],
+                }),
+                new Paragraph({
+                  children: [
+                    new TextRun({ text: 'AI Provider: ', bold: true }),
+                    new TextRun(entry.aiProvider),
+                  ],
+                }),
+                new Paragraph({
+                  children: [
+                    new TextRun({ text: 'User Query', bold: true }),
+                  ],
+                  spacing: { before: 160, after: 80 },
+                }),
+                new Paragraph({
+                  text: queryText,
+                }),
+                new Paragraph({
+                  children: [
+                    new TextRun({ text: 'AI Response', bold: true }),
+                  ],
+                  spacing: { before: 160, after: 80 },
+                }),
+                new Paragraph({
+                  text: responseText,
+                }),
+                new Paragraph({
+                  children: [
+                    new TextRun({ text: 'Reflection', bold: true, color: '7C3AED' }),
+                  ],
+                  spacing: { before: 160, after: 80 },
+                }),
+                new Paragraph({
+                  text: reflectionText,
+                }),
+              ];
             }),
           ],
         },
@@ -736,8 +841,8 @@ export default function App() {
   const lastAssistantMessage = [...messages].reverse().find(msg => msg.role === 'assistant');
   const needsReflection = lastAssistantMessage && !lastAssistantMessage.feedback?.trim();
   const canSendMessage = !needsReflection && (input.trim() || uploadedFiles.length > 0);
-
-  const archiveQueryCount = archiveMessages.filter(msg => msg.role === 'user').length;
+  const archiveEntries = buildArchiveEntries(archiveMessages);
+  const archiveQueryCount = archiveEntries.length;
 
   return (
     <div className="h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
@@ -964,28 +1069,35 @@ export default function App() {
               </div>
               
               <div className="flex-1 overflow-y-auto p-3">
-                {archiveMessages.map((msg) => (
-                  <div key={msg.id} className="p-3 mb-3 rounded-lg border bg-gray-50 border-gray-200">
+                {archiveEntries.map((entry, index) => (
+                  <div key={entry.id} className="p-3 mb-3 rounded-lg border bg-gray-50 border-gray-200">
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-semibold text-sm">
-                        {msg.role === 'user' ? 'You' : 'GenAI Support'}
+                        Activity {index + 1}
                       </div>
-                      <div className="text-xs text-gray-500">{formatTimestamp(msg.timestamp)}</div>
+                      <div className="text-xs text-gray-500">{formatTimestamp(entry.timestamp)}</div>
                     </div>
-                    <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-purple-700">
-                      {msg.aiProvider || 'Provider not recorded'}
+                    <div className="mb-3 text-[11px] font-medium uppercase tracking-wide text-purple-700">
+                      {entry.aiProvider || 'Provider not recorded'}
                     </div>
-                    <div className="text-sm mb-2">
-                      <MarkdownRenderer content={msg.content} />
-                    </div>
-                    {msg.feedback && (
-                      <div className="mt-2 pt-2 border-t border-purple-200">
-                        <div className="text-xs font-semibold text-purple-900 mb-1">💭 Reflection:</div>
-                        <div className="text-xs text-purple-700 whitespace-pre-wrap break-words bg-purple-50 p-2 rounded">
-                          {msg.feedback}
-                        </div>
+                    <div className="mb-3">
+                      <div className="mb-1 text-xs font-semibold text-gray-700">User Query</div>
+                      <div className="text-sm rounded-md bg-blue-50 border border-blue-100 p-2">
+                        {entry.userQuery ? <MarkdownRenderer content={entry.userQuery} /> : <span className="text-gray-500">No user query recorded</span>}
                       </div>
-                    )}
+                    </div>
+                    <div className="mb-3">
+                      <div className="mb-1 text-xs font-semibold text-gray-700">AI Response</div>
+                      <div className="text-sm rounded-md bg-white border border-gray-200 p-2">
+                        {entry.aiResponse ? <MarkdownRenderer content={entry.aiResponse} /> : <span className="text-gray-500">No AI response recorded</span>}
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-purple-200">
+                      <div className="text-xs font-semibold text-purple-900 mb-1">Reflection</div>
+                      <div className="text-xs text-purple-700 whitespace-pre-wrap break-words bg-purple-50 p-2 rounded">
+                        {entry.reflection || 'No reflection provided'}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
