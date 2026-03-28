@@ -139,6 +139,11 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
   return entries;
 };
 
+const applyFeedbackToMessages = (messages: Message[], messageId: string, feedback: string) =>
+  messages.map((message) =>
+    message.id === messageId ? { ...message, feedback } : message
+  );
+
 // Memoized message component to prevent re-renders when input changes
 const MessageItem = memo(({ 
   message, 
@@ -330,22 +335,19 @@ export default function App() {
 
   // Callback for updating feedback
   const updateFeedback = useCallback(async (messageId: string, feedback: string) => {
-    let updatedMessage: Message | null = null;
-    setMessages(prev => prev.map(msg => {
-      if (msg.id === messageId) {
-        updatedMessage = { ...msg, feedback };
-        return updatedMessage;
-      }
-      return msg;
-    }));
+    setMessages((prev) => applyFeedbackToMessages(prev, messageId, feedback));
 
-    if (updatedMessage && userId) {
-      upsertArchiveMessage(userId, updatedMessage);
+    if (userId) {
+      setArchiveMessages((prev) => {
+        const nextMessages = applyFeedbackToMessages(prev, messageId, feedback);
+        persistArchive(userId, nextMessages);
+        return nextMessages;
+      });
     }
     
     // Save feedback to database
     try {
-      await fetch(`${API_BASE_URL}/messages/${userId}/${messageId}/feedback`, {
+      const response = await fetch(`${API_BASE_URL}/messages/${userId}/${messageId}/feedback`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -353,10 +355,15 @@ export default function App() {
         },
         body: JSON.stringify({ feedback })
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        console.error('Failed to save feedback remotely:', errorData?.error || response.statusText);
+      }
     } catch (error) {
       console.error('Failed to save feedback:', error);
     }
-  }, [userId, upsertArchiveMessage]);
+  }, [userId, persistArchive]);
 
   // Save a message to the database
   const saveMessage = useCallback(async (message: Message) => {
