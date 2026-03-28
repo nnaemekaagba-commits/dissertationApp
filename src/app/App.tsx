@@ -46,6 +46,22 @@ const formatTimestamp = (timestamp: Date) =>
     minute: '2-digit',
   });
 
+const getArchiveStorageKey = (currentUserId: string) => `mydis-archive:${currentUserId}`;
+
+const normalizeMessages = (rawMessages: any[] | undefined): Message[] => {
+  if (!Array.isArray(rawMessages)) {
+    return [];
+  }
+
+  return rawMessages.map((msg) => ({
+    ...msg,
+    timestamp: new Date(msg.timestamp),
+  }));
+};
+
+const sortMessagesByTime = (items: Message[]) =>
+  [...items].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
 // Memoized message component to prevent re-renders when input changes
 const MessageItem = memo(({ 
   message, 
@@ -119,6 +135,43 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const loadLocalArchive = useCallback((currentUserId: string) => {
+    try {
+      const stored = localStorage.getItem(getArchiveStorageKey(currentUserId));
+      if (!stored) {
+        return [];
+      }
+
+      return normalizeMessages(JSON.parse(stored));
+    } catch (error) {
+      console.error('Failed to load local archive:', error);
+      return [];
+    }
+  }, []);
+
+  const persistArchive = useCallback((currentUserId: string, nextMessages: Message[]) => {
+    try {
+      localStorage.setItem(getArchiveStorageKey(currentUserId), JSON.stringify(nextMessages));
+    } catch (error) {
+      console.error('Failed to persist archive locally:', error);
+    }
+  }, []);
+
+  const upsertArchiveMessage = useCallback((currentUserId: string, message: Message) => {
+    setArchiveMessages((prev) => {
+      const existing = prev.filter((item) => item.id !== message.id);
+      const nextMessages = sortMessagesByTime([...existing, message]);
+      persistArchive(currentUserId, nextMessages);
+      return nextMessages;
+    });
+  }, [persistArchive]);
+
+  const replaceArchiveMessages = useCallback((currentUserId: string, nextMessages: Message[]) => {
+    const sortedMessages = sortMessagesByTime(nextMessages);
+    setArchiveMessages(sortedMessages);
+    persistArchive(currentUserId, sortedMessages);
+  }, [persistArchive]);
+
   // Check for existing session on load
   useEffect(() => {
     const checkSession = async () => {
@@ -126,9 +179,11 @@ export default function App() {
       
       if (session?.access_token) {
         const currentUserId = session.user?.id || 'guest';
+        const localArchive = loadLocalArchive(currentUserId);
         setAccessToken(session.access_token);
         setUserName(session.user?.user_metadata?.name || session.user?.email?.split('@')[0] || 'User');
         setUserId(currentUserId);
+        setArchiveMessages(localArchive);
         
         // Load messages for this user
         try {
@@ -139,16 +194,16 @@ export default function App() {
           if (response.ok) {
             const data = await response.json();
             if (data.messages && Array.isArray(data.messages)) {
-              const loadedMessages = data.messages.map((msg: any) => ({
-                ...msg,
-                timestamp: new Date(msg.timestamp)
-              }));
-              setMessages(loadedMessages);
+              const loadedMessages = normalizeMessages(data.messages);
+              const nextMessages = loadedMessages.length > 0 ? loadedMessages : localArchive;
+              setMessages(nextMessages);
+              replaceArchiveMessages(currentUserId, nextMessages);
               console.log(`✅ Loaded ${loadedMessages.length} messages on session restore`);
             }
           }
         } catch (error) {
           console.log('Failed to load messages:', error);
+          setMessages(localArchive);
         }
         
         setIsAuthenticated(true);
@@ -156,7 +211,7 @@ export default function App() {
     };
     
     checkSession();
-  }, []);
+  }, [loadLocalArchive, replaceArchiveMessages]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -169,6 +224,11 @@ export default function App() {
   useEffect(() => {
     const loadArchiveMessages = async () => {
       if (showArchive && userId) {
+        const localArchive = loadLocalArchive(userId);
+        if (localArchive.length > 0) {
+          setArchiveMessages(localArchive);
+        }
+
         try {
           const response = await fetch(`${API_BASE_URL}/messages/${userId}`, {
             headers: { 'Authorization': `Bearer ${publicAnonKey}` }
@@ -177,11 +237,8 @@ export default function App() {
           if (response.ok) {
             const data = await response.json();
             if (data.messages && Array.isArray(data.messages)) {
-              const loadedMessages = data.messages.map((msg: any) => ({
-                ...msg,
-                timestamp: new Date(msg.timestamp)
-              }));
-              setArchiveMessages(loadedMessages);
+              const loadedMessages = normalizeMessages(data.messages);
+              replaceArchiveMessages(userId, loadedMessages.length > 0 ? loadedMessages : localArchive);
               console.log(`✅ Loaded ${loadedMessages.length} archive messages`);
             }
           }
@@ -192,13 +249,22 @@ export default function App() {
     };
     
     loadArchiveMessages();
-  }, [showArchive, userId]);
+  }, [showArchive, userId, loadLocalArchive, replaceArchiveMessages]);
 
   // Callback for updating feedback
   const updateFeedback = useCallback(async (messageId: string, feedback: string) => {
-    setMessages(prev => prev.map(msg => 
-      msg.id === messageId ? { ...msg, feedback } : msg
-    ));
+    let updatedMessage: Message | null = null;
+    setMessages(prev => prev.map(msg => {
+      if (msg.id === messageId) {
+        updatedMessage = { ...msg, feedback };
+        return updatedMessage;
+      }
+      return msg;
+    }));
+
+    if (updatedMessage && userId) {
+      upsertArchiveMessage(userId, updatedMessage);
+    }
     
     // Save feedback to database
     try {
@@ -213,12 +279,16 @@ export default function App() {
     } catch (error) {
       console.error('Failed to save feedback:', error);
     }
-  }, [userId]);
+  }, [userId, upsertArchiveMessage]);
 
   // Save a message to the database
   const saveMessage = useCallback(async (message: Message) => {
+    if (userId) {
+      upsertArchiveMessage(userId, message);
+    }
+
     try {
-      await fetch(`${API_BASE_URL}/messages/${userId}`, {
+      const response = await fetch(`${API_BASE_URL}/messages/${userId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -226,10 +296,15 @@ export default function App() {
         },
         body: JSON.stringify(message)
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        console.error('Failed to save message remotely:', errorData?.error || response.statusText);
+      }
     } catch (error) {
       console.error('Failed to save message:', error);
     }
-  }, [userId]);
+  }, [userId, upsertArchiveMessage]);
 
   const handleAuthSuccess = async (token: string, name: string) => {
     setAccessToken(token);
@@ -247,6 +322,8 @@ export default function App() {
     }
     
     setUserId(newUserId);
+    const localArchive = loadLocalArchive(newUserId);
+    setArchiveMessages(localArchive);
     
     // Load messages for this user
     try {
@@ -257,16 +334,16 @@ export default function App() {
       if (response.ok) {
         const data = await response.json();
         if (data.messages && Array.isArray(data.messages)) {
-          const loadedMessages = data.messages.map((msg: any) => ({
-            ...msg,
-            timestamp: new Date(msg.timestamp)
-          }));
-          setMessages(loadedMessages);
+          const loadedMessages = normalizeMessages(data.messages);
+          const nextMessages = loadedMessages.length > 0 ? loadedMessages : localArchive;
+          setMessages(nextMessages);
+          replaceArchiveMessages(newUserId, nextMessages);
           console.log(`✅ Loaded ${loadedMessages.length} messages for user ${newUserId}`);
         }
       }
     } catch (error) {
       console.log('Failed to load messages:', error);
+      setMessages(localArchive);
     }
     
     // Set authenticated AFTER everything is loaded
@@ -282,7 +359,9 @@ export default function App() {
     setIsAuthenticated(false);
     setAccessToken(null);
     setUserName('');
+    setUserId('');
     setMessages([]);
+    setArchiveMessages([]);
   };
 
   // Show auth page if not authenticated
@@ -558,6 +637,7 @@ export default function App() {
       if (response.ok) {
         setMessages([]);
         setArchiveMessages([]);
+        localStorage.removeItem(getArchiveStorageKey(userId));
         console.log('✅ All messages cleared successfully');
       } else {
         const errorData = await response.json();
