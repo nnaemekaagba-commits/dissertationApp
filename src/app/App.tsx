@@ -249,6 +249,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
+  const [userEmail, setUserEmail] = useState<string>('');
   const [userId, setUserId] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [archiveMessages, setArchiveMessages] = useState<Message[]>([]);
@@ -313,6 +314,7 @@ export default function App() {
         const localArchive = loadLocalArchive(currentUserId);
         setAccessToken(session.access_token);
         setUserName(session.user?.user_metadata?.name || session.user?.email?.split('@')[0] || 'User');
+        setUserEmail(session.user?.email || '');
         setUserId(currentUserId);
         setArchiveMessages(localArchive);
         
@@ -442,6 +444,7 @@ export default function App() {
   const handleAuthSuccess = async (token: string, name: string) => {
     setAccessToken(token);
     setUserName(name);
+    setUserEmail('');
     
     // Get userId FIRST before setting isAuthenticated
     let newUserId = '';
@@ -449,6 +452,7 @@ export default function App() {
       // Authenticated user - get user ID from session
       const { data: { session } } = await supabaseClient.auth.getSession();
       newUserId = session?.user?.id || 'guest';
+      setUserEmail(session?.user?.email || '');
     } else {
       // Guest mode
       newUserId = 'guest';
@@ -492,6 +496,7 @@ export default function App() {
     setIsAuthenticated(false);
     setAccessToken(null);
     setUserName('');
+    setUserEmail('');
     setUserId('');
     setMessages([]);
     setArchiveMessages([]);
@@ -791,6 +796,8 @@ export default function App() {
   };
 
   const exportToPDF = () => {
+    const printableUserName = userName || 'Guest User';
+    const printableUserEmail = userEmail || 'Guest session';
     const archiveMarkup = archiveEntries.map((entry, index) => {
       const timestamp = escapeHtml(formatTimestamp(entry.timestamp));
       const queryText = escapeHtml(normalizePrintableText(entry.userQuery) || 'No user query recorded').replace(/\n/g, '<br />');
@@ -844,10 +851,21 @@ export default function App() {
             .page-subtitle {
               text-align: center;
               color: #6b7280;
-              margin-bottom: 30px;
+              margin-bottom: 10px;
               font-size: 12px;
               text-transform: uppercase;
               letter-spacing: 0.08em;
+            }
+            .page-user {
+              text-align: center;
+              margin-bottom: 28px;
+              color: #1f2937;
+              font-family: Arial, sans-serif;
+              font-size: 14px;
+              line-height: 1.6;
+            }
+            .page-user strong {
+              color: #111827;
             }
             .entry {
               background: #ffffff;
@@ -931,6 +949,10 @@ export default function App() {
         <body>
           <h1 class="page-title">Activity Log</h1>
           <div class="page-subtitle">Exported ${escapeHtml(new Date().toLocaleString())}</div>
+          <div class="page-user">
+            <div><strong>User:</strong> ${escapeHtml(printableUserName)}</div>
+            <div><strong>Email:</strong> ${escapeHtml(printableUserEmail)}</div>
+          </div>
           ${archiveMarkup || '<p>No archive entries available.</p>'}
         </body>
       </html>
