@@ -104,6 +104,58 @@ const normalizePrintableText = (content: string) =>
     .replace(/�/g, '')
     .trim();
 
+const removeAttachmentMetadataFromQuery = (content: string) => {
+  const marker = '\n\n**Attached Files:**';
+  const markerIndex = content.indexOf(marker);
+  return markerIndex >= 0 ? content.slice(0, markerIndex).trim() : content.trim();
+};
+
+const getReadableAttachmentText = (attachment: NonNullable<Message['attachments']>[number]) => {
+  const header = `${attachment.name} (${attachment.type || 'Unknown file type'})`;
+  const isTextLike =
+    attachment.type.startsWith('text/') ||
+    attachment.type === 'application/json' ||
+    attachment.type === 'application/javascript' ||
+    attachment.type === 'application/x-python' ||
+    attachment.name.endsWith('.md') ||
+    attachment.name.endsWith('.csv') ||
+    attachment.name.endsWith('.py') ||
+    attachment.name.endsWith('.js') ||
+    attachment.name.endsWith('.java') ||
+    attachment.name.endsWith('.cpp') ||
+    attachment.name.endsWith('.c') ||
+    attachment.name.endsWith('.html') ||
+    attachment.name.endsWith('.css');
+
+  if (attachment.type.startsWith('image/')) {
+    return `${header}\nImage uploaded. Viewable in the archive interface.`;
+  }
+
+  if (attachment.type === 'application/pdf') {
+    return `${header}\nPDF uploaded. Openable from the archive interface.`;
+  }
+
+  if (attachment.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    return `${header}\nWord document uploaded. Openable from the archive interface.`;
+  }
+
+  if (isTextLike) {
+    return `${header}\n${normalizePrintableText(attachment.content)}`;
+  }
+
+  return `${header}\nDocument uploaded. Open from the archive interface for the original file.`;
+};
+
+const getAttachmentExportBlock = (attachments?: Message['attachments']) => {
+  if (!attachments || attachments.length === 0) {
+    return '';
+  }
+
+  return attachments
+    .map((attachment, index) => `${index + 1}. ${getReadableAttachmentText(attachment)}`)
+    .join('\n\n');
+};
+
 const escapeHtml = (content: string) =>
   content
     .replace(/&/g, '&amp;')
@@ -781,15 +833,16 @@ export default function App() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Timestamp', 'Date', 'Time', 'AI Provider', 'User Query', 'AI Response', 'Reflection'];
+    const headers = ['Timestamp', 'Date', 'Time', 'AI Provider', 'User Query', 'Uploaded Documents', 'AI Response', 'Reflection'];
     const rows = archiveEntries.map((entry) => {
       const date = entry.timestamp.toLocaleDateString();
       const time = entry.timestamp.toLocaleTimeString();
       const aiProvider = `"${entry.aiProvider.replace(/"/g, '""')}"`;
-      const userQuery = `"${stripMarkdown(entry.userQuery).replace(/"/g, '""')}"`;
-      const aiResponse = `"${stripMarkdown(entry.aiResponse).replace(/"/g, '""')}"`;
-      const reflection = `"${entry.reflection.replace(/"/g, '""')}"`;
-      return [entry.timestamp.toISOString(), date, time, aiProvider, userQuery, aiResponse, reflection].join(',');
+      const userQuery = `"${normalizePrintableText(removeAttachmentMetadataFromQuery(entry.userQuery)).replace(/"/g, '""')}"`;
+      const attachments = `"${getAttachmentExportBlock(entry.attachments).replace(/"/g, '""')}"`;
+      const aiResponse = `"${normalizePrintableText(entry.aiResponse).replace(/"/g, '""')}"`;
+      const reflection = `"${normalizePrintableText(entry.reflection).replace(/"/g, '""')}"`;
+      return [entry.timestamp.toISOString(), date, time, aiProvider, userQuery, attachments, aiResponse, reflection].join(',');
     });
 
     const csvContent = [headers.join(','), ...rows].join('\n');
@@ -819,9 +872,10 @@ export default function App() {
             }),
             ...archiveEntries.flatMap((entry, index) => {
               const timestamp = formatTimestamp(entry.timestamp);
-              const queryText = stripMarkdown(entry.userQuery) || 'No user query recorded';
-              const responseText = stripMarkdown(entry.aiResponse) || 'No AI response recorded';
-              const reflectionText = entry.reflection || 'No reflection provided';
+              const queryText = normalizePrintableText(removeAttachmentMetadataFromQuery(entry.userQuery)) || 'No user query recorded';
+              const attachmentText = getAttachmentExportBlock(entry.attachments);
+              const responseText = normalizePrintableText(entry.aiResponse) || 'No AI response recorded';
+              const reflectionText = normalizePrintableText(entry.reflection) || 'No reflection provided';
 
               return [
                 new Paragraph({
@@ -850,6 +904,19 @@ export default function App() {
                 new Paragraph({
                   text: queryText,
                 }),
+                ...(attachmentText
+                  ? [
+                      new Paragraph({
+                        children: [
+                          new TextRun({ text: 'Uploaded Documents', bold: true }),
+                        ],
+                        spacing: { before: 160, after: 80 },
+                      }),
+                      new Paragraph({
+                        text: attachmentText,
+                      }),
+                    ]
+                  : []),
                 new Paragraph({
                   children: [
                     new TextRun({ text: 'AI Response', bold: true }),
@@ -889,7 +956,8 @@ export default function App() {
     const printableUserEmail = userEmail || 'Guest session';
     const archiveMarkup = archiveEntries.map((entry, index) => {
       const timestamp = escapeHtml(formatTimestamp(entry.timestamp));
-      const queryText = escapeHtml(normalizePrintableText(entry.userQuery) || 'No user query recorded').replace(/\n/g, '<br />');
+      const queryText = escapeHtml(normalizePrintableText(removeAttachmentMetadataFromQuery(entry.userQuery)) || 'No user query recorded').replace(/\n/g, '<br />');
+      const attachmentText = escapeHtml(getAttachmentExportBlock(entry.attachments) || 'No uploaded documents').replace(/\n/g, '<br />');
       const responseText = escapeHtml(normalizePrintableText(entry.aiResponse) || 'No AI response recorded').replace(/\n/g, '<br />');
       const reflectionText = escapeHtml(normalizePrintableText(entry.reflection) || 'No reflection provided').replace(/\n/g, '<br />');
       const provider = escapeHtml(entry.aiProvider || 'Provider not recorded');
@@ -904,6 +972,10 @@ export default function App() {
           <div class="field">
             <div class="label">User Query</div>
             <div class="value query">${queryText}</div>
+          </div>
+          <div class="field">
+            <div class="label">Uploaded Documents</div>
+            <div class="value attachments">${attachmentText}</div>
           </div>
           <div class="field">
             <div class="label">AI Response</div>
@@ -1018,6 +1090,10 @@ export default function App() {
             }
             .response {
               background: #ffffff;
+            }
+            .attachments {
+              background: #f8fafc;
+              border-color: #d7e1ee;
             }
             .reflection {
               background: #faf5ff;
