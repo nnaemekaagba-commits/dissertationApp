@@ -85,6 +85,24 @@ const stripMarkdown = (content: string) =>
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
+const normalizePrintableText = (content: string) =>
+  stripMarkdown(content)
+    .replace(/\r/g, '')
+    .replace(/[•◦▪]/g, '•')
+    .replace(/\t/g, ' ')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, ' ')
+    .replace(/\\r/g, '')
+    .replace(/\\\((.*?)\\\)/g, '$1')
+    .replace(/\\\[(.*?)\\\]/g, '$1')
+    .replace(/\\([()[\]{}])/g, '$1')
+    .replace(/\s*\n\s*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \u00A0]{2,}/g, ' ')
+    .replace(/[^\S\n]+([,.;:!?])/g, '$1')
+    .replace(/�/g, '')
+    .trim();
+
 const escapeHtml = (content: string) =>
   content
     .replace(/&/g, '&amp;')
@@ -775,9 +793,9 @@ export default function App() {
   const exportToPDF = () => {
     const archiveMarkup = archiveEntries.map((entry, index) => {
       const timestamp = escapeHtml(formatTimestamp(entry.timestamp));
-      const queryText = escapeHtml(stripMarkdown(entry.userQuery) || 'No user query recorded').replace(/\n/g, '<br />');
-      const responseText = escapeHtml(stripMarkdown(entry.aiResponse) || 'No AI response recorded').replace(/\n/g, '<br />');
-      const reflectionText = escapeHtml(entry.reflection || 'No reflection provided').replace(/\n/g, '<br />');
+      const queryText = escapeHtml(normalizePrintableText(entry.userQuery) || 'No user query recorded').replace(/\n/g, '<br />');
+      const responseText = escapeHtml(normalizePrintableText(entry.aiResponse) || 'No AI response recorded').replace(/\n/g, '<br />');
+      const reflectionText = escapeHtml(normalizePrintableText(entry.reflection) || 'No reflection provided').replace(/\n/g, '<br />');
       const provider = escapeHtml(entry.aiProvider || 'Provider not recorded');
 
       return `
@@ -811,29 +829,33 @@ export default function App() {
           <title>Activity Log PDF Export</title>
           <style>
             body {
-              font-family: Arial, sans-serif;
-              color: #111827;
+              font-family: Georgia, "Times New Roman", serif;
+              color: #1f2937;
               margin: 0;
-              padding: 32px;
-              background: #f8fafc;
+              padding: 36px;
+              background: #f4f7fb;
             }
             .page-title {
               text-align: center;
-              margin-bottom: 8px;
-              font-size: 28px;
+              margin-bottom: 6px;
+              font-size: 30px;
+              letter-spacing: 0.02em;
             }
             .page-subtitle {
               text-align: center;
               color: #6b7280;
-              margin-bottom: 28px;
-              font-size: 13px;
+              margin-bottom: 30px;
+              font-size: 12px;
+              text-transform: uppercase;
+              letter-spacing: 0.08em;
             }
             .entry {
               background: #ffffff;
-              border: 1px solid #e5e7eb;
-              border-radius: 14px;
-              padding: 20px;
-              margin-bottom: 18px;
+              border: 1px solid #dbe4f0;
+              border-radius: 16px;
+              padding: 22px;
+              margin-bottom: 20px;
+              box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
               page-break-inside: avoid;
             }
             .entry-header {
@@ -841,10 +863,10 @@ export default function App() {
               justify-content: space-between;
               gap: 12px;
               align-items: baseline;
-              margin-bottom: 10px;
+              margin-bottom: 12px;
             }
             .entry-header h2 {
-              font-size: 20px;
+              font-size: 21px;
               margin: 0;
             }
             .timestamp {
@@ -853,48 +875,55 @@ export default function App() {
               white-space: nowrap;
             }
             .provider {
-              color: #6d28d9;
+              color: #4f46e5;
+              font-family: Arial, sans-serif;
               font-weight: 700;
               font-size: 12px;
               text-transform: uppercase;
-              letter-spacing: 0.06em;
-              margin-bottom: 16px;
+              letter-spacing: 0.08em;
+              margin-bottom: 18px;
             }
             .field {
-              margin-top: 14px;
+              margin-top: 16px;
             }
             .label {
               font-size: 12px;
               font-weight: 700;
-              margin-bottom: 6px;
+              margin-bottom: 7px;
+              font-family: Arial, sans-serif;
+              color: #374151;
             }
             .reflection-label {
               color: #581c87;
             }
             .value {
-              border-radius: 10px;
-              border: 1px solid #e5e7eb;
-              padding: 12px;
-              line-height: 1.55;
-              font-size: 13px;
+              border-radius: 12px;
+              border: 1px solid #dbe4f0;
+              padding: 14px 15px;
+              line-height: 1.7;
+              font-size: 14px;
               word-break: break-word;
+              white-space: pre-wrap;
             }
             .query {
-              background: #eff6ff;
-              border-color: #bfdbfe;
+              background: #f5f9ff;
+              border-color: #cfe0ff;
             }
             .response {
               background: #ffffff;
             }
             .reflection {
               background: #faf5ff;
-              border-color: #e9d5ff;
+              border-color: #eadcff;
               color: #6b21a8;
             }
             @media print {
               body {
                 background: #ffffff;
                 padding: 20px;
+              }
+              .entry {
+                box-shadow: none;
               }
             }
           </style>
