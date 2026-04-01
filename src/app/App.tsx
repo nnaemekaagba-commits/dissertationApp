@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, Download, ArrowDown, FileText, LogOut, Paperclip, File, Image as ImageIcon, Trash2, Eraser, Wand2 } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, Download, ArrowDown, FileText, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2 } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -1255,8 +1255,9 @@ export default function App() {
                   <button onClick={exportToDocx} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Export to DOCX">
                     <FileText className="size-4" />
                   </button>
-                  <button onClick={exportToPDF} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Export to PDF">
-                    <File className="size-4" />
+                  <button onClick={exportToPDF} className="h-8 px-2 rounded hover:bg-white/20 flex items-center justify-center gap-1 text-[11px] font-semibold" title="Export to PDF">
+                    <FileDown className="size-4" />
+                    <span>PDF</span>
                   </button>
                   <button onClick={() => setShowArchive(false)} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Close Archive">
                     <X className="size-4" />
