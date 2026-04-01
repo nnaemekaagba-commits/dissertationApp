@@ -85,6 +85,14 @@ const stripMarkdown = (content: string) =>
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
+const escapeHtml = (content: string) =>
+  content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
   const entries: ArchiveEntry[] = [];
   let pendingEntry: ArchiveEntry | null = null;
@@ -764,6 +772,154 @@ export default function App() {
     });
   };
 
+  const exportToPDF = () => {
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=960,height=1200');
+
+    if (!printWindow) {
+      window.alert('Please allow pop-ups to export the archive as PDF.');
+      return;
+    }
+
+    const archiveMarkup = archiveEntries.map((entry, index) => {
+      const timestamp = escapeHtml(formatTimestamp(entry.timestamp));
+      const queryText = escapeHtml(stripMarkdown(entry.userQuery) || 'No user query recorded').replace(/\n/g, '<br />');
+      const responseText = escapeHtml(stripMarkdown(entry.aiResponse) || 'No AI response recorded').replace(/\n/g, '<br />');
+      const reflectionText = escapeHtml(entry.reflection || 'No reflection provided').replace(/\n/g, '<br />');
+      const provider = escapeHtml(entry.aiProvider || 'Provider not recorded');
+
+      return `
+        <section class="entry">
+          <div class="entry-header">
+            <h2>Activity ${index + 1}</h2>
+            <div class="timestamp">${timestamp}</div>
+          </div>
+          <div class="provider">${provider}</div>
+          <div class="field">
+            <div class="label">User Query</div>
+            <div class="value query">${queryText}</div>
+          </div>
+          <div class="field">
+            <div class="label">AI Response</div>
+            <div class="value response">${responseText}</div>
+          </div>
+          <div class="field">
+            <div class="label reflection-label">Reflection</div>
+            <div class="value reflection">${reflectionText}</div>
+          </div>
+        </section>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Activity Log PDF Export</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              color: #111827;
+              margin: 0;
+              padding: 32px;
+              background: #f8fafc;
+            }
+            .page-title {
+              text-align: center;
+              margin-bottom: 8px;
+              font-size: 28px;
+            }
+            .page-subtitle {
+              text-align: center;
+              color: #6b7280;
+              margin-bottom: 28px;
+              font-size: 13px;
+            }
+            .entry {
+              background: #ffffff;
+              border: 1px solid #e5e7eb;
+              border-radius: 14px;
+              padding: 20px;
+              margin-bottom: 18px;
+              page-break-inside: avoid;
+            }
+            .entry-header {
+              display: flex;
+              justify-content: space-between;
+              gap: 12px;
+              align-items: baseline;
+              margin-bottom: 10px;
+            }
+            .entry-header h2 {
+              font-size: 20px;
+              margin: 0;
+            }
+            .timestamp {
+              color: #6b7280;
+              font-size: 12px;
+              white-space: nowrap;
+            }
+            .provider {
+              color: #6d28d9;
+              font-weight: 700;
+              font-size: 12px;
+              text-transform: uppercase;
+              letter-spacing: 0.06em;
+              margin-bottom: 16px;
+            }
+            .field {
+              margin-top: 14px;
+            }
+            .label {
+              font-size: 12px;
+              font-weight: 700;
+              margin-bottom: 6px;
+            }
+            .reflection-label {
+              color: #581c87;
+            }
+            .value {
+              border-radius: 10px;
+              border: 1px solid #e5e7eb;
+              padding: 12px;
+              line-height: 1.55;
+              font-size: 13px;
+              word-break: break-word;
+            }
+            .query {
+              background: #eff6ff;
+              border-color: #bfdbfe;
+            }
+            .response {
+              background: #ffffff;
+            }
+            .reflection {
+              background: #faf5ff;
+              border-color: #e9d5ff;
+              color: #6b21a8;
+            }
+            @media print {
+              body {
+                background: #ffffff;
+                padding: 20px;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <h1 class="page-title">Activity Log</h1>
+          <div class="page-subtitle">Exported ${escapeHtml(new Date().toLocaleString())}</div>
+          ${archiveMarkup || '<p>No archive entries available.</p>'}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    window.setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  };
+
   const clearLog = async () => {
     setShowClearLogDialog(false);
 
@@ -1098,6 +1254,9 @@ export default function App() {
                   </button>
                   <button onClick={exportToDocx} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Export to DOCX">
                     <FileText className="size-4" />
+                  </button>
+                  <button onClick={exportToPDF} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Export to PDF">
+                    <File className="size-4" />
                   </button>
                   <button onClick={() => setShowArchive(false)} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Close Archive">
                     <X className="size-4" />
