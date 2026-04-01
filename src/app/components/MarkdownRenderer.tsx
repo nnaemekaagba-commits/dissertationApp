@@ -8,9 +8,22 @@ import 'katex/dist/katex.min.css';
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  normalizeContent?: boolean;
 }
 
-export function MarkdownRenderer({ content, className = 'markdown' }: MarkdownRendererProps) {
+const normalizeRenderContent = (content: string) =>
+  content
+    .replace(/\\\((.*?)\\\)/gs, '$$$1$$')
+    .replace(/\\\[(.*?)\\\]/gs, '$$$1$$')
+    .replace(/(?<!\\)\b(sin|cos|tan|cot|sec|csc|log|ln)\b/g, '\\$1')
+    .replace(/\\p\b/g, '\\pi')
+    .replace(/([A-Za-z])(?=\d)/g, '$1 ')
+    .replace(/(?<=\d)([A-Za-z])/g, ' $1')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+export function MarkdownRenderer({ content, className = 'markdown', normalizeContent = false }: MarkdownRendererProps) {
+  const renderedContent = normalizeContent ? normalizeRenderContent(content) : content;
   const components: Partial<Components> = {
     p: ({ children }) => <p className="mb-4 leading-relaxed">{children}</p>,
     h1: ({ children }) => <h1 className="text-2xl font-bold mb-3 mt-4 text-slate-800">{children}</h1>,
@@ -95,7 +108,7 @@ export function MarkdownRenderer({ content, className = 'markdown' }: MarkdownRe
         ]}
         components={components}
       >
-        {content}
+        {renderedContent}
       </ReactMarkdown>
     </div>
   );

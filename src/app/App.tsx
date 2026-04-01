@@ -200,10 +200,12 @@ const mergeArchiveMessages = (primaryMessages: Message[], fallbackMessages: Mess
 // Memoized message component to prevent re-renders when input changes
 const MessageItem = memo(({ 
   message, 
-  onFeedbackChange 
+  onFeedbackChange,
+  normalizeContent
 }: { 
   message: Message;
   onFeedbackChange: (id: string, feedback: string) => void;
+  normalizeContent: boolean;
 }) => {
   return (
     <div
@@ -215,7 +217,7 @@ const MessageItem = memo(({
       </div>
       <div className="flex-1">
         <div className={`p-3 rounded-lg ${message.role === 'user' ? 'bg-blue-100 font-bold' : 'bg-gray-100'}`}>
-          <MarkdownRenderer content={message.content} />
+          <MarkdownRenderer content={message.content} normalizeContent={normalizeContent} />
         </div>
         <div className="text-xs text-gray-500 mt-1">
           {message.aiProvider ? `${message.aiProvider} · ` : ''}
@@ -348,6 +350,7 @@ export default function App() {
   const [imagePrompt, setImagePrompt] = useState('');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<ChatProvider>('openai');
+  const [normalizeRenderedContent, setNormalizeRenderedContent] = useState(false);
   const [showClearLogDialog, setShowClearLogDialog] = useState(false);
   const [showClearWorkspaceDialog, setShowClearWorkspaceDialog] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1230,6 +1233,16 @@ export default function App() {
                 <span className="text-sm">Clear Workspace</span>
               </button>
               <button
+                onClick={() => setNormalizeRenderedContent(prev => !prev)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition ${
+                  normalizeRenderedContent ? 'bg-white text-purple-700' : 'bg-white/20 hover:bg-white/30 text-white'
+                }`}
+                title="Render text and formulas more cleanly"
+              >
+                <Wand2 className="size-4" />
+                <span className="text-sm">{normalizeRenderedContent ? 'Rendered' : 'Render Text + Formula'}</span>
+              </button>
+              <button
                 onClick={() => setShowArchive(!showArchive)}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 transition"
               >
@@ -1260,6 +1273,7 @@ export default function App() {
                     key={message.id}
                     message={message}
                     onFeedbackChange={updateFeedback}
+                    normalizeContent={normalizeRenderedContent}
                   />
                 ))}
                 
@@ -1451,7 +1465,7 @@ export default function App() {
                     <div className="mb-3">
                       <div className="mb-1 text-xs font-semibold text-gray-700">User Query</div>
                       <div className="text-sm rounded-md bg-blue-50 border border-blue-100 p-2">
-                        {entry.userQuery ? <MarkdownRenderer content={entry.userQuery} /> : <span className="text-gray-500">No user query recorded</span>}
+                        {entry.userQuery ? <MarkdownRenderer content={entry.userQuery} normalizeContent={normalizeRenderedContent} /> : <span className="text-gray-500">No user query recorded</span>}
                       </div>
                     </div>
                     {entry.attachments && entry.attachments.length > 0 && (
@@ -1470,7 +1484,7 @@ export default function App() {
                     <div className="mb-3">
                       <div className="mb-1 text-xs font-semibold text-gray-700">AI Response</div>
                       <div className="text-sm rounded-md bg-white border border-gray-200 p-2">
-                        {entry.aiResponse ? <MarkdownRenderer content={entry.aiResponse} /> : <span className="text-gray-500">No AI response recorded</span>}
+                        {entry.aiResponse ? <MarkdownRenderer content={entry.aiResponse} normalizeContent={normalizeRenderedContent} /> : <span className="text-gray-500">No AI response recorded</span>}
                       </div>
                     </div>
                     <div className="pt-2 border-t border-purple-200">
