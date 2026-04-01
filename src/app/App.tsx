@@ -803,7 +803,7 @@ export default function App() {
       `;
     }).join('');
 
-    printWindow.document.write(`
+    const printDocumentHtml = `
       <!doctype html>
       <html>
         <head>
