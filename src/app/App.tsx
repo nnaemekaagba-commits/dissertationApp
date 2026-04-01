@@ -5,6 +5,7 @@ import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './components/ui/dialog';
 import { motion } from 'motion/react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
@@ -159,7 +160,10 @@ const getAttachmentExportBlock = (attachments?: Message['attachments']) => {
 const renderPrintableLines = (content: string) =>
   escapeHtml(content).replace(/\n/g, '<br />');
 
-const getAttachmentExportMarkup = (attachments?: Message['attachments']) => {
+const getAttachmentExportMarkup = (
+  attachments: Message['attachments'] | undefined,
+  renderRichText: (content: string) => string
+) => {
   if (!attachments || attachments.length === 0) {
     return '<div class="empty-state">No uploaded documents</div>';
   }
@@ -196,7 +200,7 @@ const getAttachmentExportMarkup = (attachments?: Message['attachments']) => {
         </object>
       `;
     } else if (isTextLike) {
-      previewMarkup = `<pre class="attachment-text">${escapeHtml(normalizePrintableText(attachment.content))}</pre>`;
+      previewMarkup = `<div class="attachment-richtext">${renderRichText(attachment.content)}</div>`;
     } else if (isDocx) {
       previewMarkup = '<div class="empty-state">Word documents remain available in the archive view, but this PDF export includes a document label only.</div>';
     }
@@ -1013,11 +1017,23 @@ export default function App() {
   const exportToPDF = () => {
     const printableUserName = userName || 'Guest User';
     const printableUserEmail = userEmail || 'Guest session';
+    const sharedStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map((node) => node.outerHTML)
+      .join('\n');
+    const renderRichText = (content: string) =>
+      renderToStaticMarkup(
+        <MarkdownRenderer
+          content={content}
+          normalizeContent={normalizeRenderedContent}
+          className="export-markdown"
+        />
+      );
     const archiveMarkup = archiveEntries.map((entry, index) => {
       const timestamp = escapeHtml(formatTimestamp(entry.timestamp));
-      const queryText = renderPrintableLines(normalizePrintableText(removeAttachmentMetadataFromQuery(entry.userQuery)) || 'No user query recorded');
-      const attachmentMarkup = getAttachmentExportMarkup(entry.attachments);
-      const responseText = renderPrintableLines(normalizePrintableText(entry.aiResponse) || 'No AI response recorded');
+      const querySource = removeAttachmentMetadataFromQuery(entry.userQuery) || 'No user query recorded';
+      const queryText = renderRichText(querySource);
+      const attachmentMarkup = getAttachmentExportMarkup(entry.attachments, renderRichText);
+      const responseText = renderRichText(entry.aiResponse || 'No AI response recorded');
       const reflectionText = renderPrintableLines(normalizePrintableText(entry.reflection) || 'No reflection provided');
       const provider = escapeHtml(entry.aiProvider || 'Provider not recorded');
 
@@ -1054,6 +1070,7 @@ export default function App() {
         <head>
           <meta charset="utf-8" />
           <title>Activity Log PDF Export</title>
+          ${sharedStyles}
           <style>
             body {
               font-family: Georgia, "Times New Roman", serif;
@@ -1143,6 +1160,14 @@ export default function App() {
               word-break: break-word;
               white-space: pre-wrap;
             }
+            .value :first-child,
+            .attachment-richtext :first-child {
+              margin-top: 0;
+            }
+            .value :last-child,
+            .attachment-richtext :last-child {
+              margin-bottom: 0;
+            }
             .query {
               background: #f5f9ff;
               border-color: #cfe0ff;
@@ -1217,6 +1242,26 @@ export default function App() {
               font-size: 12px;
               line-height: 1.6;
               color: #1f2937;
+            }
+            .attachment-richtext {
+              border-radius: 8px;
+              border: 1px solid #e5e7eb;
+              background: #f8fafc;
+              padding: 12px;
+            }
+            .export-markdown {
+              font-size: 14px;
+              line-height: 1.7;
+              color: #1f2937;
+            }
+            .export-markdown pre {
+              white-space: pre-wrap;
+              word-break: break-word;
+            }
+            .export-markdown .katex-display {
+              overflow-x: auto;
+              overflow-y: hidden;
+              padding: 6px 0;
             }
             .empty-state {
               border-radius: 8px;
