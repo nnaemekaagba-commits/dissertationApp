@@ -33,6 +33,7 @@ interface ArchiveEntry {
   aiProvider: string;
   aiResponse: string;
   reflection: string;
+  attachments?: Message['attachments'];
 }
 
 type ChatProvider = 'openai' | 'google' | 'claude';
@@ -128,6 +129,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         aiProvider: message.aiProvider || 'Provider not recorded',
         aiResponse: '',
         reflection: '',
+        attachments: message.attachments,
       };
       return;
     }
@@ -140,6 +142,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         aiProvider: message.aiProvider || 'Provider not recorded',
         aiResponse: message.content,
         reflection: message.feedback || '',
+        attachments: message.attachments,
       };
       entries.push(pendingEntry);
       pendingEntry = null;
@@ -149,6 +152,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
     pendingEntry = {
       ...pendingEntry,
       aiProvider: message.aiProvider || pendingEntry.aiProvider,
+      attachments: pendingEntry.attachments || message.attachments,
       aiResponse: pendingEntry.aiResponse
         ? `${pendingEntry.aiResponse}\n\n${message.content}`
         : message.content,
@@ -242,6 +246,88 @@ const MessageItem = memo(({
 });
 
 MessageItem.displayName = 'MessageItem';
+
+const AttachmentPreview = ({ attachment }: { attachment: NonNullable<Message['attachments']>[number] }) => {
+  const isImage = attachment.type.startsWith('image/');
+  const isPdf = attachment.type === 'application/pdf';
+  const isDocx = attachment.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const isTextLike =
+    attachment.type.startsWith('text/') ||
+    attachment.type === 'application/json' ||
+    attachment.type === 'application/javascript' ||
+    attachment.type === 'application/x-python' ||
+    attachment.name.endsWith('.md') ||
+    attachment.name.endsWith('.csv') ||
+    attachment.name.endsWith('.py') ||
+    attachment.name.endsWith('.js') ||
+    attachment.name.endsWith('.java') ||
+    attachment.name.endsWith('.cpp') ||
+    attachment.name.endsWith('.c') ||
+    attachment.name.endsWith('.html') ||
+    attachment.name.endsWith('.css');
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-gray-900">{attachment.name}</div>
+          <div className="text-[11px] text-gray-500">{attachment.type || 'Unknown file type'}</div>
+        </div>
+        {attachment.content && (
+          <a
+            href={attachment.content}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 text-xs font-medium text-blue-600 hover:text-blue-700"
+          >
+            Open
+          </a>
+        )}
+      </div>
+
+      {isImage && attachment.preview && (
+        <img
+          src={attachment.preview}
+          alt={attachment.name}
+          className="max-h-72 w-full rounded-md border border-gray-200 object-contain"
+        />
+      )}
+
+      {isPdf && attachment.content && (
+        <iframe
+          src={attachment.content}
+          title={attachment.name}
+          className="h-80 w-full rounded-md border border-gray-200 bg-white"
+        />
+      )}
+
+      {isTextLike && (
+        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800">
+          {attachment.content}
+        </pre>
+      )}
+
+      {isDocx && attachment.content && (
+        <div className="space-y-2">
+          <iframe
+            src={attachment.content}
+            title={attachment.name}
+            className="h-80 w-full rounded-md border border-gray-200 bg-white"
+          />
+          <p className="text-xs text-gray-500">
+            If your browser cannot render this Word document inline, use the Open link above.
+          </p>
+        </div>
+      )}
+
+      {!isImage && !isPdf && !isTextLike && !isDocx && (
+        <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-3 text-xs text-gray-600">
+          Preview is not available for this file type in the archive. Use the Open link to view it.
+        </div>
+      )}
+    </div>
+  );
+};
 
 const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-09672449`;
 
@@ -1368,6 +1454,19 @@ export default function App() {
                         {entry.userQuery ? <MarkdownRenderer content={entry.userQuery} /> : <span className="text-gray-500">No user query recorded</span>}
                       </div>
                     </div>
+                    {entry.attachments && entry.attachments.length > 0 && (
+                      <div className="mb-3">
+                        <div className="mb-2 text-xs font-semibold text-gray-700">Uploaded Documents</div>
+                        <div className="space-y-3">
+                          {entry.attachments.map((attachment, attachmentIndex) => (
+                            <AttachmentPreview
+                              key={`${entry.id}-attachment-${attachmentIndex}-${attachment.name}`}
+                              attachment={attachment}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="mb-3">
                       <div className="mb-1 text-xs font-semibold text-gray-700">AI Response</div>
                       <div className="text-sm rounded-md bg-white border border-gray-200 p-2">
