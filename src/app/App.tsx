@@ -1309,16 +1309,6 @@ export default function App() {
                 <span className="text-sm">Clear Workspace</span>
               </button>
               <button
-                onClick={() => setNormalizeRenderedContent(prev => !prev)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition ${
-                  normalizeRenderedContent ? 'bg-white text-purple-700' : 'bg-white/20 hover:bg-white/30 text-white'
-                }`}
-                title="Render text and formulas more cleanly"
-              >
-                <Wand2 className="size-4" />
-                <span className="text-sm">{normalizeRenderedContent ? 'Rendered' : 'Render Text + Formula'}</span>
-              </button>
-              <button
                 onClick={() => setShowArchive(!showArchive)}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 transition"
               >
@@ -1426,6 +1416,19 @@ export default function App() {
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
                   AI Provider
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setNormalizeRenderedContent(prev => !prev)}
+                  className={`rounded-full border px-3 py-1.5 text-sm font-medium transition flex items-center gap-2 ${
+                    normalizeRenderedContent
+                      ? 'border-purple-600 bg-purple-600 text-white shadow-sm'
+                      : 'border-gray-300 bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700'
+                  }`}
+                  title="Render text and formulas more cleanly"
+                >
+                  <Wand2 className="size-4" />
+                  <span>{normalizeRenderedContent ? 'Rendered' : 'Render Text + Formula'}</span>
+                </button>
                 {CHAT_PROVIDER_OPTIONS.map((providerOption) => (
                   <button
                     key={providerOption.id}
