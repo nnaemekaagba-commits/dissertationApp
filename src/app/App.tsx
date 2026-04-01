@@ -773,13 +773,6 @@ export default function App() {
   };
 
   const exportToPDF = () => {
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=960,height=1200');
-
-    if (!printWindow) {
-      window.alert('Please allow pop-ups to export the archive as PDF.');
-      return;
-    }
-
     const archiveMarkup = archiveEntries.map((entry, index) => {
       const timestamp = escapeHtml(formatTimestamp(entry.timestamp));
       const queryText = escapeHtml(stripMarkdown(entry.userQuery) || 'No user query recorded').replace(/\n/g, '<br />');
@@ -912,12 +905,53 @@ export default function App() {
           ${archiveMarkup || '<p>No archive entries available.</p>'}
         </body>
       </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    window.setTimeout(() => {
-      printWindow.print();
-    }, 250);
+    `;
+
+    const printFrame = document.createElement('iframe');
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = '0';
+    printFrame.setAttribute('aria-hidden', 'true');
+
+    const cleanup = () => {
+      window.setTimeout(() => {
+        if (printFrame.parentNode) {
+          printFrame.parentNode.removeChild(printFrame);
+        }
+      }, 300);
+    };
+
+    printFrame.onload = () => {
+      const frameWindow = printFrame.contentWindow;
+
+      if (!frameWindow) {
+        cleanup();
+        window.alert('Unable to prepare the PDF export. Please try again.');
+        return;
+      }
+
+      frameWindow.focus();
+      frameWindow.onafterprint = cleanup;
+      window.setTimeout(() => {
+        frameWindow.print();
+      }, 250);
+    };
+
+    document.body.appendChild(printFrame);
+    const frameDocument = printFrame.contentDocument;
+
+    if (!frameDocument) {
+      cleanup();
+      window.alert('Unable to prepare the PDF export. Please try again.');
+      return;
+    }
+
+    frameDocument.open();
+    frameDocument.write(printDocumentHtml);
+    frameDocument.close();
   };
 
   const clearLog = async () => {
