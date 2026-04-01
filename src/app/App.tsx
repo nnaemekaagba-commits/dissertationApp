@@ -156,6 +156,65 @@ const getAttachmentExportBlock = (attachments?: Message['attachments']) => {
     .join('\n\n');
 };
 
+const renderPrintableLines = (content: string) =>
+  escapeHtml(content).replace(/\n/g, '<br />');
+
+const getAttachmentExportMarkup = (attachments?: Message['attachments']) => {
+  if (!attachments || attachments.length === 0) {
+    return '<div class="empty-state">No uploaded documents</div>';
+  }
+
+  return attachments.map((attachment) => {
+    const typeLabel = escapeHtml(attachment.type || 'Unknown file type');
+    const nameLabel = escapeHtml(attachment.name);
+    const isImage = attachment.type.startsWith('image/');
+    const isPdf = attachment.type === 'application/pdf';
+    const isDocx = attachment.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const isTextLike =
+      attachment.type.startsWith('text/') ||
+      attachment.type === 'application/json' ||
+      attachment.type === 'application/javascript' ||
+      attachment.type === 'application/x-python' ||
+      attachment.name.endsWith('.md') ||
+      attachment.name.endsWith('.csv') ||
+      attachment.name.endsWith('.py') ||
+      attachment.name.endsWith('.js') ||
+      attachment.name.endsWith('.java') ||
+      attachment.name.endsWith('.cpp') ||
+      attachment.name.endsWith('.c') ||
+      attachment.name.endsWith('.html') ||
+      attachment.name.endsWith('.css');
+
+    let previewMarkup = '<div class="empty-state">Preview is not available for this file type in PDF export.</div>';
+
+    if (isImage && attachment.preview) {
+      previewMarkup = `<img class="attachment-image" src="${attachment.preview}" alt="${nameLabel}" />`;
+    } else if (isPdf && attachment.content) {
+      previewMarkup = `
+        <object class="attachment-frame" data="${attachment.content}" type="application/pdf">
+          <div class="empty-state">PDF preview is not available in this browser's print view.</div>
+        </object>
+      `;
+    } else if (isTextLike) {
+      previewMarkup = `<pre class="attachment-text">${escapeHtml(normalizePrintableText(attachment.content))}</pre>`;
+    } else if (isDocx) {
+      previewMarkup = '<div class="empty-state">Word documents remain available in the archive view, but this PDF export includes a document label only.</div>';
+    }
+
+    return `
+      <div class="attachment-card">
+        <div class="attachment-header">
+          <div>
+            <div class="attachment-name">${nameLabel}</div>
+            <div class="attachment-type">${typeLabel}</div>
+          </div>
+        </div>
+        ${previewMarkup}
+      </div>
+    `;
+  }).join('');
+};
+
 const escapeHtml = (content: string) =>
   content
     .replace(/&/g, '&amp;')
@@ -956,10 +1015,10 @@ export default function App() {
     const printableUserEmail = userEmail || 'Guest session';
     const archiveMarkup = archiveEntries.map((entry, index) => {
       const timestamp = escapeHtml(formatTimestamp(entry.timestamp));
-      const queryText = escapeHtml(normalizePrintableText(removeAttachmentMetadataFromQuery(entry.userQuery)) || 'No user query recorded').replace(/\n/g, '<br />');
-      const attachmentText = escapeHtml(getAttachmentExportBlock(entry.attachments) || 'No uploaded documents').replace(/\n/g, '<br />');
-      const responseText = escapeHtml(normalizePrintableText(entry.aiResponse) || 'No AI response recorded').replace(/\n/g, '<br />');
-      const reflectionText = escapeHtml(normalizePrintableText(entry.reflection) || 'No reflection provided').replace(/\n/g, '<br />');
+      const queryText = renderPrintableLines(normalizePrintableText(removeAttachmentMetadataFromQuery(entry.userQuery)) || 'No user query recorded');
+      const attachmentMarkup = getAttachmentExportMarkup(entry.attachments);
+      const responseText = renderPrintableLines(normalizePrintableText(entry.aiResponse) || 'No AI response recorded');
+      const reflectionText = renderPrintableLines(normalizePrintableText(entry.reflection) || 'No reflection provided');
       const provider = escapeHtml(entry.aiProvider || 'Provider not recorded');
 
       return `
@@ -975,7 +1034,7 @@ export default function App() {
           </div>
           <div class="field">
             <div class="label">Uploaded Documents</div>
-            <div class="value attachments">${attachmentText}</div>
+            <div class="attachments-list">${attachmentMarkup}</div>
           </div>
           <div class="field">
             <div class="label">AI Response</div>
@@ -1100,6 +1159,74 @@ export default function App() {
               border-color: #eadcff;
               color: #6b21a8;
             }
+            .attachments-list {
+              display: flex;
+              flex-direction: column;
+              gap: 12px;
+            }
+            .attachment-card {
+              border-radius: 12px;
+              border: 1px solid #d7e1ee;
+              background: #ffffff;
+              padding: 14px;
+            }
+            .attachment-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              margin-bottom: 10px;
+            }
+            .attachment-name {
+              font-family: Arial, sans-serif;
+              font-size: 14px;
+              font-weight: 700;
+              color: #111827;
+              word-break: break-word;
+            }
+            .attachment-type {
+              font-family: Arial, sans-serif;
+              font-size: 11px;
+              color: #6b7280;
+              margin-top: 2px;
+            }
+            .attachment-image {
+              display: block;
+              max-width: 100%;
+              max-height: 420px;
+              margin: 0 auto;
+              border-radius: 8px;
+              border: 1px solid #e5e7eb;
+              object-fit: contain;
+            }
+            .attachment-frame {
+              width: 100%;
+              height: 480px;
+              border: 1px solid #e5e7eb;
+              border-radius: 8px;
+              background: #ffffff;
+            }
+            .attachment-text {
+              margin: 0;
+              white-space: pre-wrap;
+              word-break: break-word;
+              border-radius: 8px;
+              border: 1px solid #e5e7eb;
+              background: #f8fafc;
+              padding: 12px;
+              font-family: "Courier New", monospace;
+              font-size: 12px;
+              line-height: 1.6;
+              color: #1f2937;
+            }
+            .empty-state {
+              border-radius: 8px;
+              border: 1px dashed #cbd5e1;
+              background: #f8fafc;
+              padding: 12px;
+              font-family: Arial, sans-serif;
+              font-size: 12px;
+              color: #64748b;
+            }
             @media print {
               body {
                 background: #ffffff;
@@ -1107,6 +1234,9 @@ export default function App() {
               }
               .entry {
                 box-shadow: none;
+              }
+              .attachment-card {
+                break-inside: avoid;
               }
             }
           </style>
