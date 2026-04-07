@@ -1535,19 +1535,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Jump to Latest Button */}
-            {messages.length > 0 && (
-              <motion.button
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                onClick={scrollToBottom}
-                className="absolute bottom-32 right-4 size-12 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center group sm:bottom-28 sm:right-6"
-                title="Jump to Latest Message"
-              >
-                <ArrowDown className="size-5 group-hover:animate-bounce" />
-              </motion.button>
-            )}
-
             {/* Input */}
             <div className="p-4 border-t bg-white">
               {/* Reflection Reminder */}
@@ -1623,14 +1610,24 @@ export default function App() {
               
               <div className="flex gap-2">
                 <div className="flex-1 flex flex-col gap-2">
-                  <Textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    placeholder={needsReflection ? "Please complete the reflection above to continue..." : "Describe your problem or ask a question..."}
-                    className="flex-1 min-h-[60px]"
-                    disabled={needsReflection}
-                  />
+                  <div className="relative">
+                    <Button
+                      onClick={handleSend}
+                      size="icon"
+                      className="absolute left-2 top-1/2 z-10 size-10 -translate-y-1/2 rounded-xl"
+                      disabled={!canSendMessage}
+                    >
+                      <Send className="size-5" />
+                    </Button>
+                    <Textarea
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      placeholder={needsReflection ? "Please complete the reflection above to continue..." : "Describe your problem or ask a question..."}
+                      className="flex-1 min-h-[60px] pl-14"
+                      disabled={needsReflection}
+                    />
+                  </div>
                   <div className="flex items-center gap-2">
                     <input
                       ref={fileInputRef}
@@ -1669,9 +1666,20 @@ export default function App() {
                     </span>
                   </div>
                 </div>
-                <Button onClick={handleSend} size="icon" className="size-[60px]" disabled={!canSendMessage}>
-                  <Send className="size-5" />
-                </Button>
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
+                  <Button
+                    onClick={scrollToBottom}
+                    size="icon"
+                    className="size-[60px] bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg hover:shadow-xl disabled:bg-gray-300 disabled:text-gray-500 disabled:shadow-none"
+                    title="Jump to Latest Message"
+                    disabled={messages.length === 0}
+                  >
+                    <ArrowDown className="size-5" />
+                  </Button>
+                </motion.div>
               </div>
             </div>
           </div>
