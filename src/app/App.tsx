@@ -1541,7 +1541,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 onClick={scrollToBottom}
-                className="absolute bottom-24 right-6 size-12 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center group"
+                className="absolute bottom-32 right-4 size-12 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center group sm:bottom-28 sm:right-6"
                 title="Jump to Latest Message"
               >
                 <ArrowDown className="size-5 group-hover:animate-bounce" />
