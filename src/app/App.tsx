@@ -62,6 +62,7 @@ const formatTimestamp = (timestamp: Date) =>
   });
 
 const getArchiveStorageKey = (currentUserId: string) => `mydis-archive:${currentUserId}`;
+const getWorkspaceClearStorageKey = (currentUserId: string) => `mydis-workspace-cleared-at:${currentUserId}`;
 
 const normalizeMessages = (rawMessages: any[] | undefined): Message[] => {
   if (!Array.isArray(rawMessages)) {
@@ -76,6 +77,14 @@ const normalizeMessages = (rawMessages: any[] | undefined): Message[] => {
 
 const sortMessagesByTime = (items: Message[]) =>
   [...items].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+const filterMessagesForWorkspace = (messages: Message[], clearedAt: Date | null) => {
+  if (!clearedAt) {
+    return messages;
+  }
+
+  return messages.filter((message) => message.timestamp.getTime() > clearedAt.getTime());
+};
 
 const stripMarkdown = (content: string) =>
   content
@@ -485,6 +494,37 @@ export default function App() {
     }
   }, []);
 
+  const loadWorkspaceClearedAt = useCallback((currentUserId: string) => {
+    try {
+      const stored = localStorage.getItem(getWorkspaceClearStorageKey(currentUserId));
+      if (!stored) {
+        return null;
+      }
+
+      const clearedAt = new Date(stored);
+      return Number.isNaN(clearedAt.getTime()) ? null : clearedAt;
+    } catch (error) {
+      console.error('Failed to load workspace clear timestamp:', error);
+      return null;
+    }
+  }, []);
+
+  const persistWorkspaceClearedAt = useCallback((currentUserId: string, clearedAt: Date) => {
+    try {
+      localStorage.setItem(getWorkspaceClearStorageKey(currentUserId), clearedAt.toISOString());
+    } catch (error) {
+      console.error('Failed to persist workspace clear timestamp:', error);
+    }
+  }, []);
+
+  const resetWorkspaceClearedAt = useCallback((currentUserId: string) => {
+    try {
+      localStorage.removeItem(getWorkspaceClearStorageKey(currentUserId));
+    } catch (error) {
+      console.error('Failed to reset workspace clear timestamp:', error);
+    }
+  }, []);
+
   const persistArchive = useCallback((currentUserId: string, nextMessages: Message[]) => {
     try {
       localStorage.setItem(getArchiveStorageKey(currentUserId), JSON.stringify(nextMessages));
@@ -516,6 +556,7 @@ export default function App() {
       if (session?.access_token) {
         const currentUserId = session.user?.id || 'guest';
         const localArchive = loadLocalArchive(currentUserId);
+        const workspaceClearedAt = loadWorkspaceClearedAt(currentUserId);
         setAccessToken(session.access_token);
         setUserName(session.user?.user_metadata?.name || session.user?.email?.split('@')[0] || 'User');
         setUserEmail(session.user?.email || '');
@@ -533,14 +574,14 @@ export default function App() {
             if (data.messages && Array.isArray(data.messages)) {
               const loadedMessages = normalizeMessages(data.messages);
               const nextMessages = mergeArchiveMessages(loadedMessages, localArchive);
-              setMessages(nextMessages);
+              setMessages(filterMessagesForWorkspace(nextMessages, workspaceClearedAt));
               replaceArchiveMessages(currentUserId, nextMessages);
               console.log(`✅ Loaded ${loadedMessages.length} messages on session restore`);
             }
           }
         } catch (error) {
           console.log('Failed to load messages:', error);
-          setMessages(localArchive);
+          setMessages(filterMessagesForWorkspace(localArchive, workspaceClearedAt));
         }
         
         setIsAuthenticated(true);
@@ -548,7 +589,7 @@ export default function App() {
     };
     
     checkSession();
-  }, [loadLocalArchive, replaceArchiveMessages]);
+  }, [loadLocalArchive, loadWorkspaceClearedAt, replaceArchiveMessages]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -664,6 +705,7 @@ export default function App() {
     
     setUserId(newUserId);
     const localArchive = loadLocalArchive(newUserId);
+    const workspaceClearedAt = loadWorkspaceClearedAt(newUserId);
     setArchiveMessages(localArchive);
     
     // Load messages for this user
@@ -677,14 +719,14 @@ export default function App() {
         if (data.messages && Array.isArray(data.messages)) {
           const loadedMessages = normalizeMessages(data.messages);
           const nextMessages = mergeArchiveMessages(loadedMessages, localArchive);
-          setMessages(nextMessages);
+          setMessages(filterMessagesForWorkspace(nextMessages, workspaceClearedAt));
           replaceArchiveMessages(newUserId, nextMessages);
           console.log(`✅ Loaded ${loadedMessages.length} messages for user ${newUserId}`);
         }
       }
     } catch (error) {
       console.log('Failed to load messages:', error);
-      setMessages(localArchive);
+      setMessages(filterMessagesForWorkspace(localArchive, workspaceClearedAt));
     }
     
     // Set authenticated AFTER everything is loaded
@@ -1361,6 +1403,7 @@ export default function App() {
         setMessages([]);
         setArchiveMessages([]);
         localStorage.removeItem(getArchiveStorageKey(userId));
+        resetWorkspaceClearedAt(userId);
         console.log('✅ All messages cleared successfully');
       } else {
         const errorData = await response.json();
@@ -1376,7 +1419,11 @@ export default function App() {
   const clearWorkspace = () => {
     setShowClearWorkspaceDialog(false);
     
-    // Only clear the current messages state without deleting from database
+    if (userId) {
+      persistWorkspaceClearedAt(userId, new Date());
+    }
+
+    // Clear only the current workspace view while preserving archive history.
     setMessages([]);
     console.log('✅ Workspace cleared (archive preserved)');
   };
@@ -1829,7 +1876,7 @@ export default function App() {
           </DialogHeader>
           <div className="py-4">
             <p className="text-sm text-gray-700">
-              Are you sure you want to clear the workspace? This will remove all messages from the current view but keep them in the archive.
+              Are you sure you want to clear the workspace? This will remove all messages from the current view across future sign-ins on this device, while keeping them in the archive.
             </p>
           </div>
           <div className="flex justify-end gap-2">
