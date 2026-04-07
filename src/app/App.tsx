@@ -1614,7 +1614,7 @@ export default function App() {
                     <Button
                       onClick={handleSend}
                       size="icon"
-                      className="absolute left-2 top-1/2 z-10 size-10 -translate-y-1/2 rounded-xl"
+                      className="absolute right-2 top-1/2 z-10 size-10 -translate-y-1/2 rounded-xl"
                       disabled={!canSendMessage}
                     >
                       <Send className="size-5" />
@@ -1624,7 +1624,7 @@ export default function App() {
                       onChange={(e) => setInput(e.target.value)}
                       onKeyPress={handleKeyPress}
                       placeholder={needsReflection ? "Please complete the reflection above to continue..." : "Describe your problem or ask a question..."}
-                      className="flex-1 min-h-[60px] pl-14"
+                      className="flex-1 min-h-[60px] pr-14"
                       disabled={needsReflection}
                     />
                   </div>
