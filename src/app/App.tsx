@@ -63,6 +63,7 @@ const formatTimestamp = (timestamp: Date) =>
 
 const getArchiveStorageKey = (currentUserId: string) => `mydis-archive:${currentUserId}`;
 const getWorkspaceClearStorageKey = (currentUserId: string) => `mydis-workspace-cleared-at:${currentUserId}`;
+const GUEST_USER_ID = 'guest';
 
 const normalizeMessages = (rawMessages: any[] | undefined): Message[] => {
   if (!Array.isArray(rawMessages)) {
@@ -567,13 +568,67 @@ export default function App() {
     persistArchive(currentUserId, sortedMessages);
   }, [persistArchive]);
 
+  const clearLocalArchiveState = useCallback((currentUserId: string) => {
+    setMessages([]);
+    setArchiveMessages([]);
+    persistArchive(currentUserId, []);
+    resetWorkspaceClearedAt(currentUserId);
+  }, [persistArchive, resetWorkspaceClearedAt]);
+
+  const resolveAuthenticatedUser = useCallback(async (
+    token: string,
+    fallbackName: string,
+    authUser?: { id?: string; email?: string | null }
+  ) => {
+    if (!token) {
+      return {
+        id: GUEST_USER_ID,
+        email: '',
+        name: fallbackName || 'Guest',
+      };
+    }
+
+    let resolvedId = authUser?.id || '';
+    let resolvedEmail = authUser?.email || '';
+    let resolvedName = fallbackName;
+
+    if (!resolvedId || !resolvedEmail) {
+      const { data, error } = await supabaseClient.auth.getUser(token);
+      if (error) {
+        console.error('Failed to resolve authenticated user from token:', error);
+      } else if (data.user) {
+        resolvedId = resolvedId || data.user.id || '';
+        resolvedEmail = resolvedEmail || data.user.email || '';
+        resolvedName =
+          resolvedName ||
+          data.user.user_metadata?.name ||
+          data.user.email?.split('@')[0] ||
+          fallbackName;
+      }
+    }
+
+    if (!resolvedId) {
+      throw new Error('Unable to determine authenticated user id');
+    }
+
+    return {
+      id: resolvedId,
+      email: resolvedEmail,
+      name: resolvedName || fallbackName,
+    };
+  }, []);
+
   // Check for existing session on load
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabaseClient.auth.getSession();
       
       if (session?.access_token) {
-        const currentUserId = session.user?.id || 'guest';
+        const currentUserId = session.user?.id;
+        if (!currentUserId) {
+          console.error('Authenticated session missing user id; skipping archive restore.');
+          return;
+        }
         const localArchive = loadLocalArchive(currentUserId);
         const workspaceClearedAt = loadWorkspaceClearedAt(currentUserId);
         setAccessToken(session.access_token);
@@ -659,15 +714,6 @@ export default function App() {
         return nextMessages;
       });
     }
-    
-    // Save feedback to database
-    const clearLocalArchiveState = () => {
-      setMessages([]);
-      setArchiveMessages([]);
-      persistArchive(userId, []);
-      resetWorkspaceClearedAt(userId);
-    };
-
     try {
       const response = await fetch(`${API_BASE_URL}/messages/${userId}/${messageId}/feedback`, {
         method: 'PUT',
@@ -706,24 +752,19 @@ export default function App() {
     }
   }, [buildApiHeaders, userId, upsertArchiveMessage]);
 
-  const handleAuthSuccess = async (token: string, name: string) => {
+  const handleAuthSuccess = async (
+    token: string,
+    name: string,
+    authUser?: { id?: string; email?: string | null }
+  ) => {
+    const resolvedUser = await resolveAuthenticatedUser(token, name, authUser);
+
     setAccessToken(token);
-    setUserName(name);
-    setUserEmail('');
-    
-    // Get userId FIRST before setting isAuthenticated
-    let newUserId = '';
-    if (token) {
-      // Authenticated user - get user ID from session
-      const { data: { session } } = await supabaseClient.auth.getSession();
-      newUserId = session?.user?.id || 'guest';
-      setUserEmail(session?.user?.email || '');
-    } else {
-      // Guest mode
-      newUserId = 'guest';
-    }
-    
-    setUserId(newUserId);
+    setUserName(resolvedUser.name);
+    setUserEmail(resolvedUser.email);
+    setUserId(resolvedUser.id);
+
+    const newUserId = resolvedUser.id;
     const localArchive = loadLocalArchive(newUserId);
     const workspaceClearedAt = loadWorkspaceClearedAt(newUserId);
     setArchiveMessages(localArchive);
@@ -1418,17 +1459,17 @@ export default function App() {
       });
 
       if (response.ok) {
-        clearLocalArchiveState();
+        clearLocalArchiveState(userId);
         console.log('✅ All messages cleared successfully');
       } else {
         const errorData = await response.json().catch(() => null);
         console.error('Failed to clear messages remotely:', errorData?.error || response.statusText);
-        clearLocalArchiveState();
+        clearLocalArchiveState(userId);
         alert('Messages were cleared on this device, but the remote archive could not be cleared right now.');
       }
     } catch (error) {
       console.error('Error clearing messages remotely:', error);
-      clearLocalArchiveState();
+      clearLocalArchiveState(userId);
       alert('Messages were cleared on this device, but the remote archive could not be cleared right now.');
     }
   };

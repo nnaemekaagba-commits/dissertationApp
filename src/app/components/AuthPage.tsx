@@ -7,7 +7,11 @@ import { supabaseClient } from '/utils/supabase/client';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 interface AuthPageProps {
-  onAuthSuccess: (accessToken: string, userName: string) => void;
+  onAuthSuccess: (
+    accessToken: string,
+    userName: string,
+    authUser?: { id?: string; email?: string | null }
+  ) => void;
 }
 
 export function AuthPage({ onAuthSuccess }: AuthPageProps) {
@@ -66,7 +70,10 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
         }
 
         console.log('Sign up successful');
-        onAuthSuccess(data.access_token, name || email.split('@')[0]);
+        onAuthSuccess(data.access_token, name || email.split('@')[0], {
+          id: data.user?.id,
+          email: data.user?.email ?? email,
+        });
       } else {
         // Sign In
         console.log('Attempting sign in for:', email);
@@ -86,7 +93,10 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
         // Get user metadata
         const userName = data.user?.user_metadata?.name || email.split('@')[0];
         console.log('Sign in successful');
-        onAuthSuccess(data.session.access_token, userName);
+        onAuthSuccess(data.session.access_token, userName, {
+          id: data.user?.id,
+          email: data.user?.email || email,
+        });
       }
     } catch (err) {
       console.error('Auth error:', err);
@@ -97,7 +107,7 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
   };
 
   const handleContinueAsGuest = () => {
-    onAuthSuccess('', 'Guest');
+    onAuthSuccess('', 'Guest', { id: 'guest', email: null });
   };
 
   return (
