@@ -664,7 +664,7 @@ export default function App() {
     const clearLocalArchiveState = () => {
       setMessages([]);
       setArchiveMessages([]);
-      localStorage.removeItem(getArchiveStorageKey(userId));
+      persistArchive(userId, []);
       resetWorkspaceClearedAt(userId);
     };
 
