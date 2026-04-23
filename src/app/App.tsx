@@ -480,6 +480,25 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const buildApiHeaders = useCallback(
+    (includeJsonContentType = false) => {
+      const headers: Record<string, string> = {
+        apikey: publicAnonKey,
+      };
+
+      if (includeJsonContentType) {
+        headers['Content-Type'] = 'application/json';
+      }
+
+      if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+
+      return headers;
+    },
+    [accessToken]
+  );
+
   const loadLocalArchive = useCallback((currentUserId: string) => {
     try {
       const stored = localStorage.getItem(getArchiveStorageKey(currentUserId));
@@ -566,7 +585,7 @@ export default function App() {
         // Load messages for this user
         try {
           const response = await fetch(`${API_BASE_URL}/messages/${currentUserId}`, {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            headers: buildApiHeaders()
           });
           
           if (response.ok) {
@@ -589,7 +608,7 @@ export default function App() {
     };
     
     checkSession();
-  }, [loadLocalArchive, loadWorkspaceClearedAt, replaceArchiveMessages]);
+  }, [buildApiHeaders, loadLocalArchive, loadWorkspaceClearedAt, replaceArchiveMessages]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -609,7 +628,7 @@ export default function App() {
 
         try {
           const response = await fetch(`${API_BASE_URL}/messages/${userId}`, {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            headers: buildApiHeaders()
           });
           
           if (response.ok) {
@@ -627,7 +646,7 @@ export default function App() {
     };
     
     loadArchiveMessages();
-  }, [showArchive, userId, loadLocalArchive, replaceArchiveMessages]);
+  }, [buildApiHeaders, showArchive, userId, loadLocalArchive, replaceArchiveMessages]);
 
   // Callback for updating feedback
   const updateFeedback = useCallback(async (messageId: string, feedback: string) => {
@@ -645,10 +664,7 @@ export default function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/messages/${userId}/${messageId}/feedback`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
+        headers: buildApiHeaders(true),
         body: JSON.stringify({ feedback })
       });
 
@@ -659,7 +675,7 @@ export default function App() {
     } catch (error) {
       console.error('Failed to save feedback:', error);
     }
-  }, [userId, persistArchive]);
+  }, [buildApiHeaders, userId, persistArchive]);
 
   // Save a message to the database
   const saveMessage = useCallback(async (message: Message) => {
@@ -670,10 +686,7 @@ export default function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/messages/${userId}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
+        headers: buildApiHeaders(true),
         body: JSON.stringify(message)
       });
 
@@ -684,7 +697,7 @@ export default function App() {
     } catch (error) {
       console.error('Failed to save message:', error);
     }
-  }, [userId, upsertArchiveMessage]);
+  }, [buildApiHeaders, userId, upsertArchiveMessage]);
 
   const handleAuthSuccess = async (token: string, name: string) => {
     setAccessToken(token);
@@ -711,7 +724,10 @@ export default function App() {
     // Load messages for this user
     try {
       const response = await fetch(`${API_BASE_URL}/messages/${newUserId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: {
+          apikey: publicAnonKey,
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
       });
       
       if (response.ok) {
@@ -873,10 +889,7 @@ export default function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
+        headers: buildApiHeaders(true),
         body: JSON.stringify({ 
           message: currentInput, 
           conversationHistory: messages,
@@ -1394,9 +1407,7 @@ export default function App() {
       // Delete all messages from the database for this user
       const response = await fetch(`${API_BASE_URL}/messages/${userId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
-        }
+        headers: buildApiHeaders()
       });
 
       if (response.ok) {
@@ -1455,10 +1466,7 @@ export default function App() {
       console.log('🎨 Sending image generation request:', { prompt });
       const response = await fetch(`${API_BASE_URL}/generate-image`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
+        headers: buildApiHeaders(true),
         body: JSON.stringify({ prompt }),
       });
 
