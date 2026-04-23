@@ -233,14 +233,13 @@ async function runClaudeChat(message: string, conversationHistory: any[] = [], f
   return data.content?.map((part: any) => part.text || "").join("\n") || "No response generated.";
 }
 
-// Supabase function routes are relative to the function name in the URL.
-// Example external path: /functions/v1/make-server-09672449/health
-app.get("/health", (c) => {
+// In this deployed setup, the function name is included in the routed path.
+app.get("/make-server-09672449/health", (c) => {
   return c.json({ status: "ok" });
 });
 
 // Test Supabase connection
-app.get("/debug/test-supabase", async (c) => {
+app.get("/make-server-09672449/debug/test-supabase", async (c) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -281,7 +280,7 @@ app.get("/debug/test-supabase", async (c) => {
 });
 
 // Save a message to the activity log (user-specific)
-app.post("/messages/:userId", async (c) => {
+app.post("/make-server-09672449/messages/:userId", async (c) => {
   try {
     const userId = c.req.param("userId");
     const { id, role, content, timestamp, aiProvider, feedback, attachments, isIncorrect } = await c.req.json();
@@ -311,7 +310,7 @@ app.post("/messages/:userId", async (c) => {
 });
 
 // Get all messages for a specific user
-app.get("/messages/:userId", async (c) => {
+app.get("/make-server-09672449/messages/:userId", async (c) => {
   try {
     const userId = c.req.param("userId");
     
@@ -335,7 +334,7 @@ app.get("/messages/:userId", async (c) => {
 });
 
 // Delete all messages for a specific user
-app.delete("/messages/:userId", async (c) => {
+app.delete("/make-server-09672449/messages/:userId", async (c) => {
   try {
     const userId = c.req.param("userId");
     
@@ -361,7 +360,7 @@ app.delete("/messages/:userId", async (c) => {
 });
 
 // Update feedback for a specific message (user-specific)
-app.put("/messages/:userId/:messageId/feedback", async (c) => {
+app.put("/make-server-09672449/messages/:userId/:messageId/feedback", async (c) => {
   try {
     const userId = c.req.param("userId");
     const messageId = c.req.param("messageId");
@@ -391,7 +390,7 @@ app.put("/messages/:userId/:messageId/feedback", async (c) => {
 });
 
 // Chat endpoint
-app.post("/chat", async (c) => {
+app.post("/make-server-09672449/chat", async (c) => {
   try {
     const { message, conversationHistory = [], files = [], provider = "openai" } = await c.req.json();
 
@@ -589,7 +588,7 @@ Remember: This is a professional educational environment. Mathematical notation 
 });
 
 // DALL-E Image Generation endpoint
-app.post("/generate-image", async (c) => {
+app.post("/make-server-09672449/generate-image", async (c) => {
   try {
     const { prompt, size = "1024x1024", quality = "standard" } = await c.req.json();
 
@@ -645,7 +644,7 @@ app.post("/generate-image", async (c) => {
 });
 
 // Sign Up endpoint
-app.post("/signup", async (c) => {
+app.post("/make-server-09672449/signup", async (c) => {
   try {
     const { email, password, name } = await c.req.json();
     
