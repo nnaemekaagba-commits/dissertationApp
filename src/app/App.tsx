@@ -661,6 +661,13 @@ export default function App() {
     }
     
     // Save feedback to database
+    const clearLocalArchiveState = () => {
+      setMessages([]);
+      setArchiveMessages([]);
+      localStorage.removeItem(getArchiveStorageKey(userId));
+      resetWorkspaceClearedAt(userId);
+    };
+
     try {
       const response = await fetch(`${API_BASE_URL}/messages/${userId}/${messageId}/feedback`, {
         method: 'PUT',
@@ -1411,19 +1418,18 @@ export default function App() {
       });
 
       if (response.ok) {
-        setMessages([]);
-        setArchiveMessages([]);
-        localStorage.removeItem(getArchiveStorageKey(userId));
-        resetWorkspaceClearedAt(userId);
+        clearLocalArchiveState();
         console.log('✅ All messages cleared successfully');
       } else {
-        const errorData = await response.json();
-        console.error('Failed to clear messages:', errorData.error);
-        alert('Failed to clear messages. Please try again.');
+        const errorData = await response.json().catch(() => null);
+        console.error('Failed to clear messages remotely:', errorData?.error || response.statusText);
+        clearLocalArchiveState();
+        alert('Messages were cleared on this device, but the remote archive could not be cleared right now.');
       }
     } catch (error) {
-      console.error('Error clearing messages:', error);
-      alert('Failed to clear messages. Please try again.');
+      console.error('Error clearing messages remotely:', error);
+      clearLocalArchiveState();
+      alert('Messages were cleared on this device, but the remote archive could not be cleared right now.');
     }
   };
 
