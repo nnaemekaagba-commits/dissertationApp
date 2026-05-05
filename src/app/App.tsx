@@ -355,13 +355,16 @@ const MessageItem = memo(({
               <label className="block text-xs font-semibold text-purple-900 mb-1">
                 💭 Reflection
               </label>
-              <p className="text-xs text-purple-700 mb-2">
-                What did you do with this response? How did you use it in your solution?
-              </p>
+              <div className="text-xs text-purple-700 mb-2 space-y-1">
+                <p>Was this AI response reasonable?</p>
+                <p>What did you do with this response?</p>
+                <p>Are you discarding or using it in your solution?</p>
+                <p>What is your goal(s) for the next prompt, if necessary?</p>
+              </div>
               <Textarea
                 value={message.feedback || ''}
                 onChange={(e) => onFeedbackChange(message.id, e.target.value)}
-                placeholder="Describe how you used this response..."
+                placeholder="Reflect on whether and how you used this response..."
                 className="min-h-[60px] text-sm bg-white border-purple-300 focus:border-purple-500 focus:ring-purple-500"
               />
             </div>
