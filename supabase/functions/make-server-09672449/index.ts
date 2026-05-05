@@ -64,6 +64,16 @@ function getAudioInputFormat(file: any): "wav" | "mp3" | null {
   return null;
 }
 
+function getAudioMimeType(file: any): string | null {
+  const fileType = String(file?.type || "").toLowerCase();
+  const fileName = String(file?.name || "").toLowerCase();
+
+  if (fileType.startsWith("audio/")) return fileType;
+  if (fileName.endsWith(".wav")) return "audio/wav";
+  if (fileName.endsWith(".mp3")) return "audio/mpeg";
+  return null;
+}
+
 function getDataUrlPayload(content: string) {
   const markerIndex = content.indexOf(",");
   return markerIndex >= 0 ? content.slice(markerIndex + 1) : content;
@@ -71,6 +81,10 @@ function getDataUrlPayload(content: string) {
 
 function hasOpenAIAudioInput(files: any[] = []) {
   return files.some((file) => Boolean(getAudioInputFormat(file)));
+}
+
+function hasAudioInput(files: any[] = []) {
+  return files.some((file) => Boolean(getAudioMimeType(file)));
 }
 
 function buildConversationText(
@@ -194,6 +208,21 @@ async function runGoogleChat(message: string, conversationHistory: any[] = [], f
   }
 
   const promptText = `${SYSTEM_PROMPT}\n\n${buildConversationText(message, conversationHistory, files)}`;
+  const parts: any[] = [{ text: promptText }];
+
+  for (const file of files) {
+    const audioMimeType = getAudioMimeType(file);
+
+    if (audioMimeType) {
+      parts.push({
+        inline_data: {
+          mime_type: audioMimeType,
+          data: getDataUrlPayload(file.content || ""),
+        },
+      });
+    }
+  }
+
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${googleApiKey}`,
     {
@@ -205,7 +234,7 @@ async function runGoogleChat(message: string, conversationHistory: any[] = [], f
         contents: [
           {
             role: "user",
-            parts: [{ text: promptText }],
+            parts,
           },
         ],
         generationConfig: {
@@ -228,6 +257,10 @@ async function runClaudeChat(message: string, conversationHistory: any[] = [], f
   const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CLAUDE_API_KEY");
   if (!anthropicApiKey) {
     throw new Error("Claude API key not configured");
+  }
+
+  if (hasAudioInput(files)) {
+    throw new Error("Claude raw audio input is not supported by the current Anthropic Messages API integration. Please use OpenAI or Google AI for audio recordings.");
   }
 
   const messages = [

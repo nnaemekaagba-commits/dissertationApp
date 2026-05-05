@@ -6,6 +6,8 @@ import { ScrollArea } from './components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './components/ui/dialog';
 import { motion } from 'motion/react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
@@ -44,6 +46,8 @@ declare global {
   }
 }
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -59,6 +63,7 @@ interface UploadedFile {
   type: string;
   content: string;
   preview?: string;
+  extractedText?: string;
 }
 
 interface ArchiveEntry {
@@ -156,6 +161,29 @@ const isSupportedAudioInput = (file: UploadedFile) => {
   return type === 'audio/wav' || type === 'audio/x-wav' || type === 'audio/mpeg' || type === 'audio/mp3' || name.endsWith('.wav') || name.endsWith('.mp3');
 };
 
+const extractPdfText = async (file: File) => {
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  const pages: string[] = [];
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items
+      .map((item) => ('str' in item ? item.str : ''))
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (pageText) {
+      pages.push(`Page ${pageNumber}:\n${pageText}`);
+    }
+  }
+
+  return pages.join('\n\n').trim();
+};
+
 const getArchiveStorageKey = (currentUserId: string) => `mydis-archive:${currentUserId}`;
 const getWorkspaceClearStorageKey = (currentUserId: string) => `mydis-workspace-cleared-at:${currentUserId}`;
 const GUEST_USER_ID = 'guest';
@@ -242,7 +270,7 @@ const getReadableAttachmentText = (attachment: NonNullable<Message['attachments'
   }
 
   if (attachment.type === 'application/pdf') {
-    return `${header}\nPDF uploaded. Openable from the archive interface.`;
+    return `${header}\nPDF uploaded. Openable from the archive interface.${attachment.extractedText ? `\n\nExtracted text:\n${normalizePrintableText(attachment.extractedText)}` : ''}`;
   }
 
   if (attachment.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
@@ -980,9 +1008,14 @@ export default function App() {
             reader.readAsDataURL(file);
           });
           newFiles.push({ name: file.name, type: fileType, content, preview: content });
+        } else if (fileType === 'application/pdf') {
+          const [content, extractedText] = await Promise.all([
+            blobToDataUrl(file),
+            extractPdfText(file),
+          ]);
+          newFiles.push({ name: file.name, type: fileType, content, extractedText });
         } else if (
           fileType.startsWith('audio/') ||
-          fileType === 'application/pdf' ||
           fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         ) {
           // Handle binary files - convert to base64
@@ -1047,14 +1080,14 @@ export default function App() {
       return;
     }
 
-    if (audioFiles.length > 0 && selectedProvider !== 'openai') {
-      alert('Audio recordings can currently be sent to the AI only with the OpenAI provider. Please select OpenAI or remove the audio attachment.');
+    if (audioFiles.length > 0 && selectedProvider === 'claude') {
+      alert('Claude does not currently support raw audio input through this app. Please select OpenAI or Google AI, or remove the audio attachment.');
       return;
     }
 
     // Build message content with files
     let messageContent = input;
-    const fileContents: Array<{ name: string; type: string; content: string }> = [];
+    const fileContents: UploadedFile[] = [];
     
     if (uploadedFiles.length > 0) {
       messageContent += '\n\n**Attached Files:**\n';
@@ -1069,7 +1102,10 @@ export default function App() {
           messageContent += `\n${index + 1}. ${file.name}:\n\`\`\`\n${file.content}\n\`\`\``;
         } else if (file.type === 'application/pdf') {
           messageContent += `\n${index + 1}. PDF Document: ${file.name}`;
-          fileContents.push({ name: file.name, type: file.type, content: file.content });
+          if (file.extractedText) {
+            messageContent += `\nExtracted text:\n\`\`\`\n${file.extractedText}\n\`\`\``;
+          }
+          fileContents.push(file);
         } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
           messageContent += `\n${index + 1}. Word Document: ${file.name}`;
           fileContents.push({ name: file.name, type: file.type, content: file.content });
