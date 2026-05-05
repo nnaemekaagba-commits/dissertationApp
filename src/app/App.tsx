@@ -997,6 +997,8 @@ export default function App() {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const fileType = file.type;
+      const fileName = file.name.toLowerCase();
+      const isPdf = fileType === 'application/pdf' || fileName.endsWith('.pdf');
       
       try {
         if (fileType.startsWith('image/')) {
@@ -1008,12 +1010,22 @@ export default function App() {
             reader.readAsDataURL(file);
           });
           newFiles.push({ name: file.name, type: fileType, content, preview: content });
-        } else if (fileType === 'application/pdf') {
-          const [content, extractedText] = await Promise.all([
-            blobToDataUrl(file),
-            extractPdfText(file),
-          ]);
-          newFiles.push({ name: file.name, type: fileType, content, extractedText });
+        } else if (isPdf) {
+          const content = await blobToDataUrl(file);
+          let extractedText = '';
+
+          try {
+            extractedText = await extractPdfText(file);
+          } catch (error) {
+            console.error(`PDF text extraction failed for ${file.name}:`, error);
+          }
+
+          newFiles.push({
+            name: file.name,
+            type: 'application/pdf',
+            content,
+            extractedText,
+          });
         } else if (
           fileType.startsWith('audio/') ||
           fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -1026,16 +1038,16 @@ export default function App() {
           fileType === 'application/json' ||
           fileType === 'application/javascript' ||
           fileType === 'application/x-python' ||
-          file.name.endsWith('.txt') ||
-          file.name.endsWith('.md') ||
-          file.name.endsWith('.csv') ||
-          file.name.endsWith('.py') ||
-          file.name.endsWith('.js') ||
-          file.name.endsWith('.java') ||
-          file.name.endsWith('.cpp') ||
-          file.name.endsWith('.c') ||
-          file.name.endsWith('.html') ||
-          file.name.endsWith('.css')
+          fileName.endsWith('.txt') ||
+          fileName.endsWith('.md') ||
+          fileName.endsWith('.csv') ||
+          fileName.endsWith('.py') ||
+          fileName.endsWith('.js') ||
+          fileName.endsWith('.java') ||
+          fileName.endsWith('.cpp') ||
+          fileName.endsWith('.c') ||
+          fileName.endsWith('.html') ||
+          fileName.endsWith('.css')
         ) {
           // Handle text files - read as text
           const reader = new FileReader();
