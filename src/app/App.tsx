@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, Download, ArrowDown, FileText, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, Download, ArrowDown, FileText, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -40,6 +40,7 @@ declare global {
   interface Window {
     SpeechRecognition?: SpeechRecognitionConstructor;
     webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    webkitAudioContext?: typeof AudioContext;
   }
 }
 
@@ -50,12 +51,14 @@ interface Message {
   timestamp: Date;
   aiProvider?: string;
   feedback?: string;
-  attachments?: Array<{
-    name: string;
-    type: string;
-    content?: string;
-    preview?: string;
-  }>;
+  attachments?: UploadedFile[];
+}
+
+interface UploadedFile {
+  name: string;
+  type: string;
+  content: string;
+  preview?: string;
 }
 
 interface ArchiveEntry {
@@ -93,6 +96,65 @@ const formatTimestamp = (timestamp: Date) =>
   });
 
 const formatPromptCount = (count: number) => `${count} ${count === 1 ? 'prompt' : 'prompts'}`;
+
+const blobToDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+const mergeAudioBuffers = (chunks: Float32Array[]) => {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const result = new Float32Array(totalLength);
+  let offset = 0;
+
+  chunks.forEach((chunk) => {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  });
+
+  return result;
+};
+
+const encodeWav = (samples: Float32Array, sampleRate: number) => {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const writeString = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+
+  let offset = 44;
+  for (let index = 0; index < samples.length; index += 1, offset += 2) {
+    const sample = Math.max(-1, Math.min(1, samples[index]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+
+  return new Blob([view], { type: 'audio/wav' });
+};
+
+const isSupportedAudioInput = (file: UploadedFile) => {
+  const type = file.type.toLowerCase();
+  const name = file.name.toLowerCase();
+  return type === 'audio/wav' || type === 'audio/x-wav' || type === 'audio/mpeg' || type === 'audio/mp3' || name.endsWith('.wav') || name.endsWith('.mp3');
+};
 
 const getArchiveStorageKey = (currentUserId: string) => `mydis-archive:${currentUserId}`;
 const getWorkspaceClearStorageKey = (currentUserId: string) => `mydis-workspace-cleared-at:${currentUserId}`;
@@ -175,6 +237,10 @@ const getReadableAttachmentText = (attachment: NonNullable<Message['attachments'
     return `${header}\nImage uploaded. Viewable in the archive interface.`;
   }
 
+  if (attachment.type.startsWith('audio/')) {
+    return `${header}\nAudio uploaded. Playable in the archive interface and sent to the AI provider when supported.`;
+  }
+
   if (attachment.type === 'application/pdf') {
     return `${header}\nPDF uploaded. Openable from the archive interface.`;
   }
@@ -215,6 +281,7 @@ const getAttachmentExportMarkup = (
     const typeLabel = escapeHtml(attachment.type || 'Unknown file type');
     const nameLabel = escapeHtml(attachment.name);
     const isImage = attachment.type.startsWith('image/');
+    const isAudio = attachment.type.startsWith('audio/');
     const isPdf = attachment.type === 'application/pdf';
     const isDocx = attachment.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     const isTextLike =
@@ -236,6 +303,12 @@ const getAttachmentExportMarkup = (
 
     if (isImage && attachment.preview) {
       previewMarkup = `<img class="attachment-image" src="${attachment.preview}" alt="${nameLabel}" />`;
+    } else if (isAudio && attachment.content) {
+      previewMarkup = `
+        <audio class="attachment-audio" controls src="${attachment.content}">
+          Audio preview is not available in this browser's print view.
+        </audio>
+      `;
     } else if (isPdf && attachment.content) {
       previewMarkup = `
         <object class="attachment-frame" data="${attachment.content}" type="application/pdf">
@@ -412,6 +485,7 @@ MessageItem.displayName = 'MessageItem';
 
 const AttachmentPreview = ({ attachment }: { attachment: NonNullable<Message['attachments']>[number] }) => {
   const isImage = attachment.type.startsWith('image/');
+  const isAudio = attachment.type.startsWith('audio/');
   const isPdf = attachment.type === 'application/pdf';
   const isDocx = attachment.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   const isTextLike =
@@ -456,6 +530,14 @@ const AttachmentPreview = ({ attachment }: { attachment: NonNullable<Message['at
         />
       )}
 
+      {isAudio && attachment.content && (
+        <audio
+          controls
+          src={attachment.content}
+          className="w-full"
+        />
+      )}
+
       {isPdf && attachment.content && (
         <iframe
           src={attachment.content}
@@ -483,7 +565,7 @@ const AttachmentPreview = ({ attachment }: { attachment: NonNullable<Message['at
         </div>
       )}
 
-      {!isImage && !isPdf && !isTextLike && !isDocx && (
+      {!isImage && !isAudio && !isPdf && !isTextLike && !isDocx && (
         <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-3 text-xs text-gray-600">
           Preview is not available for this file type in the archive. Use the Open link to view it.
         </div>
@@ -517,10 +599,20 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
   const [speechError, setSpeechError] = useState('');
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [audioRecordingError, setAudioRecordingError] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const speechBaseInputRef = useRef('');
+  const audioRecorderRef = useRef<{
+    stream: MediaStream;
+    audioContext: AudioContext;
+    source: MediaStreamAudioSourceNode;
+    processor: ScriptProcessorNode;
+    chunks: Float32Array[];
+    sampleRate: number;
+  } | null>(null);
 
   const buildApiHeaders = useCallback(
     (includeJsonContentType = false) => {
@@ -718,6 +810,8 @@ export default function App() {
 
     return () => {
       recognitionRef.current?.abort();
+      audioRecorderRef.current?.stream.getTracks().forEach((track) => track.stop());
+      audioRecorderRef.current?.audioContext.close();
     };
   }, []);
 
@@ -870,7 +964,7 @@ export default function App() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const newFiles: Array<{ name: string; type: string; content: string; preview?: string }> = [];
+    const newFiles: UploadedFile[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -886,14 +980,13 @@ export default function App() {
             reader.readAsDataURL(file);
           });
           newFiles.push({ name: file.name, type: fileType, content, preview: content });
-        } else if (fileType === 'application/pdf' || fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-          // Handle PDF and Word documents - convert to base64
-          const reader = new FileReader();
-          const content = await new Promise<string>((resolve, reject) => {
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
+        } else if (
+          fileType.startsWith('audio/') ||
+          fileType === 'application/pdf' ||
+          fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        ) {
+          // Handle binary files - convert to base64
+          const content = await blobToDataUrl(file);
           newFiles.push({ name: file.name, type: fileType, content });
         } else if (
           fileType.startsWith('text/') ||
@@ -920,7 +1013,7 @@ export default function App() {
           });
           newFiles.push({ name: file.name, type: fileType || 'text/plain', content });
         } else {
-          alert(`File type "${fileType || 'unknown'}" for "${file.name}" is not supported. Please upload images, PDFs, Word documents, or text files.`);
+          alert(`File type "${fileType || 'unknown'}" for "${file.name}" is not supported. Please upload audio, images, PDFs, Word documents, or text files.`);
         }
       } catch (error) {
         console.error(`Error reading file ${file.name}:`, error);
@@ -946,6 +1039,19 @@ export default function App() {
       recognitionRef.current?.stop();
     }
 
+    const audioFiles = uploadedFiles.filter((file) => file.type.startsWith('audio/'));
+    const unsupportedAudioFile = audioFiles.find((file) => !isSupportedAudioInput(file));
+
+    if (unsupportedAudioFile) {
+      alert(`Audio file "${unsupportedAudioFile.name}" cannot be sent to the AI as audio. Please use WAV or MP3 audio.`);
+      return;
+    }
+
+    if (audioFiles.length > 0 && selectedProvider !== 'openai') {
+      alert('Audio recordings can currently be sent to the AI only with the OpenAI provider. Please select OpenAI or remove the audio attachment.');
+      return;
+    }
+
     // Build message content with files
     let messageContent = input;
     const fileContents: Array<{ name: string; type: string; content: string }> = [];
@@ -955,6 +1061,9 @@ export default function App() {
       uploadedFiles.forEach((file, index) => {
         if (file.type.startsWith('image/')) {
           messageContent += `\n${index + 1}. Image: ${file.name}`;
+          fileContents.push({ name: file.name, type: file.type, content: file.content });
+        } else if (file.type.startsWith('audio/')) {
+          messageContent += `\n${index + 1}. Audio: ${file.name}`;
           fileContents.push({ name: file.name, type: file.type, content: file.content });
         } else if (file.type.startsWith('text/') || file.type === 'application/json') {
           messageContent += `\n${index + 1}. ${file.name}:\n\`\`\`\n${file.content}\n\`\`\``;
@@ -1050,6 +1159,10 @@ export default function App() {
       return;
     }
 
+    if (isRecordingAudio) {
+      return;
+    }
+
     if (isListening) {
       recognitionRef.current?.stop();
       return;
@@ -1110,6 +1223,96 @@ export default function App() {
       setIsListening(false);
       recognitionRef.current = null;
     }
+  };
+
+  const stopAudioRecording = async () => {
+    const recorder = audioRecorderRef.current;
+    if (!recorder) {
+      return;
+    }
+
+    audioRecorderRef.current = null;
+    setIsRecordingAudio(false);
+
+    recorder.processor.disconnect();
+    recorder.source.disconnect();
+    recorder.stream.getTracks().forEach((track) => track.stop());
+    await recorder.audioContext.close();
+
+    const samples = mergeAudioBuffers(recorder.chunks);
+    if (samples.length === 0) {
+      setAudioRecordingError('No audio was captured.');
+      return;
+    }
+
+    const wavBlob = encodeWav(samples, recorder.sampleRate);
+    const content = await blobToDataUrl(wavBlob);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+    setUploadedFiles((prev) => [
+      ...prev,
+      {
+        name: `voice-recording-${timestamp}.wav`,
+        type: 'audio/wav',
+        content,
+      },
+    ]);
+    setAudioRecordingError('');
+  };
+
+  const startAudioRecording = async () => {
+    if (needsReflection || isRecordingAudio) {
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setAudioRecordingError('Audio recording is not supported in this browser.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+      const audioContext = new AudioContextConstructor();
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const chunks: Float32Array[] = [];
+
+      processor.onaudioprocess = (event) => {
+        chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+      };
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      audioRecorderRef.current = {
+        stream,
+        audioContext,
+        source,
+        processor,
+        chunks,
+        sampleRate: audioContext.sampleRate,
+      };
+      setAudioRecordingError('');
+      setIsRecordingAudio(true);
+    } catch (error) {
+      console.error('Failed to start audio recording:', error);
+      setAudioRecordingError('Microphone access was blocked or unavailable.');
+      setIsRecordingAudio(false);
+    }
+  };
+
+  const toggleAudioRecording = () => {
+    if (isRecordingAudio) {
+      void stopAudioRecording();
+      return;
+    }
+
+    void startAudioRecording();
   };
 
   const scrollToBottom = () => {
@@ -1462,6 +1665,9 @@ export default function App() {
               border: 1px solid #e5e7eb;
               object-fit: contain;
             }
+            .attachment-audio {
+              width: 100%;
+            }
             .attachment-frame {
               width: 100%;
               height: 480px;
@@ -1697,7 +1903,7 @@ export default function App() {
   // Check if the last assistant message has a reflection
   const lastAssistantMessage = [...messages].reverse().find(msg => msg.role === 'assistant');
   const needsReflection = lastAssistantMessage && !lastAssistantMessage.feedback?.trim();
-  const canSendMessage = !needsReflection && (input.trim() || uploadedFiles.length > 0);
+  const canSendMessage = !needsReflection && !isRecordingAudio && (input.trim() || uploadedFiles.length > 0);
   const archiveEntries = buildArchiveEntries(archiveMessages);
   const archiveQueryCount = archiveEntries.length;
 
@@ -1796,7 +2002,9 @@ export default function App() {
                 <div className="mb-2 flex flex-wrap gap-2">
                   {uploadedFiles.map((file, index) => (
                     <div key={index} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                      {file.type.startsWith('image/') ? (
+                      {file.type.startsWith('audio/') ? (
+                        <AudioLines className="size-4 text-blue-600" />
+                      ) : file.type.startsWith('image/') ? (
                         <ImageIcon className="size-4 text-blue-600" />
                       ) : (
                         <File className="size-4 text-blue-600" />
@@ -1888,9 +2096,9 @@ export default function App() {
                       type="file"
                       multiple
                       onChange={handleFileUpload}
-                      accept="image/*,.pdf,.docx,.txt,.md,.csv,.py,.js,.java,.cpp,.c,.html,.css,.json"
+                      accept="audio/*,image/*,.pdf,.docx,.txt,.md,.csv,.py,.js,.java,.cpp,.c,.html,.css,.json"
                       className="hidden"
-                      disabled={needsReflection}
+                      disabled={needsReflection || isRecordingAudio}
                     />
                     <Button
                       type="button"
@@ -1898,10 +2106,26 @@ export default function App() {
                       size="sm"
                       onClick={() => fileInputRef.current?.click()}
                       className="flex items-center gap-2"
-                      disabled={needsReflection}
+                      disabled={needsReflection || isRecordingAudio}
                     >
                       <Paperclip className="size-4" />
                       <span>Attach Files</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={isRecordingAudio ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={toggleAudioRecording}
+                      className={`flex items-center gap-2 ${
+                        isRecordingAudio
+                          ? 'bg-red-600 text-white hover:bg-red-700'
+                          : 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
+                      }`}
+                      disabled={needsReflection}
+                      title={isRecordingAudio ? 'Stop recording and attach audio' : 'Record audio to attach to the prompt'}
+                    >
+                      {isRecordingAudio ? <Square className="size-4" /> : <AudioLines className="size-4" />}
+                      <span>{isRecordingAudio ? 'Stop Recording' : 'Record Audio'}</span>
                     </Button>
                     <Button
                       type="button"
@@ -1909,16 +2133,18 @@ export default function App() {
                       size="sm"
                       onClick={() => setShowImageDialog(true)}
                       className="flex items-center gap-2 bg-gradient-to-r from-pink-50 to-purple-50 hover:from-pink-100 hover:to-purple-100 border-purple-300"
-                      disabled={needsReflection}
+                      disabled={needsReflection || isRecordingAudio}
                       title="Generate images with DALL-E 3"
                     >
                       <Wand2 className="size-4 text-purple-600" />
                       <span className="text-purple-600 font-semibold">Generate Image (DALL-E)</span>
                     </Button>
                     <span className="text-xs text-gray-500">
-                      {isListening
-                        ? 'Listening... speak clearly, then tap the mic to stop.'
-                        : speechError || 'Supports voice, images, PDFs, Word documents, and text files'}
+                      {isRecordingAudio
+                        ? 'Recording audio... tap Stop Recording to attach it.'
+                        : audioRecordingError || (isListening
+                          ? 'Listening... speak clearly, then tap the mic to stop.'
+                          : speechError || 'Supports voice, audio recordings, images, PDFs, Word documents, and text files')}
                     </span>
                   </div>
                 </div>

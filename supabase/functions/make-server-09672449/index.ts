@@ -55,6 +55,24 @@ function flattenMessageContent(content: unknown): string {
   return "";
 }
 
+function getAudioInputFormat(file: any): "wav" | "mp3" | null {
+  const fileType = String(file?.type || "").toLowerCase();
+  const fileName = String(file?.name || "").toLowerCase();
+
+  if (fileType === "audio/wav" || fileType === "audio/x-wav" || fileName.endsWith(".wav")) return "wav";
+  if (fileType === "audio/mpeg" || fileType === "audio/mp3" || fileName.endsWith(".mp3")) return "mp3";
+  return null;
+}
+
+function getDataUrlPayload(content: string) {
+  const markerIndex = content.indexOf(",");
+  return markerIndex >= 0 ? content.slice(markerIndex + 1) : content;
+}
+
+function hasOpenAIAudioInput(files: any[] = []) {
+  return files.some((file) => Boolean(getAudioInputFormat(file)));
+}
+
 function buildConversationText(
   message: string,
   conversationHistory: any[] = [],
@@ -68,6 +86,7 @@ function buildConversationText(
   const fileText = files.length > 0
     ? `\n\nAttached files:\n${files.map((file: any, index: number) => {
         if (file.type?.startsWith("image/")) return `${index + 1}. Image: ${file.name}`;
+        if (file.type?.startsWith("audio/")) return `${index + 1}. Audio: ${file.name}`;
         if (file.type === "application/pdf") return `${index + 1}. PDF: ${file.name}`;
         if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") return `${index + 1}. Word document: ${file.name}`;
         return `${index + 1}. ${file.name}\n${file.content || ""}`;
@@ -78,6 +97,7 @@ function buildConversationText(
 }
 
 function buildOpenAIMessages(message: string, conversationHistory: any[] = [], files: any[] = []) {
+  const includesAudioInput = hasOpenAIAudioInput(files);
   const messages: any[] = [
     {
       role: "system",
@@ -96,13 +116,25 @@ function buildOpenAIMessages(message: string, conversationHistory: any[] = [], f
     const contentParts: any[] = [{ type: "text", text: message }];
 
     for (const file of files) {
-      if (file.type?.startsWith("image/")) {
+      const audioFormat = getAudioInputFormat(file);
+
+      if (audioFormat) {
+        contentParts.push({
+          type: "input_audio",
+          input_audio: {
+            data: getDataUrlPayload(file.content || ""),
+            format: audioFormat,
+          },
+        });
+      } else if (file.type?.startsWith("image/") && !includesAudioInput) {
         contentParts.push({
           type: "image_url",
           image_url: {
             url: file.content,
           },
         });
+      } else if (file.type?.startsWith("image/")) {
+        contentParts[0].text += `\n\n[Image attached but not sent as image because this request includes audio: ${file.name}]`;
       } else if (
         file.type === "application/pdf" ||
         file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -140,7 +172,7 @@ async function runOpenAIChat(message: string, conversationHistory: any[] = [], f
       "Authorization": `Bearer ${openaiApiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o",
+      model: hasOpenAIAudioInput(files) ? "gpt-audio" : "gpt-4o",
       messages: buildOpenAIMessages(message, conversationHistory, files),
       temperature: 0.7,
     }),
