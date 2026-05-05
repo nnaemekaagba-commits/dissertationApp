@@ -6,8 +6,6 @@ import { ScrollArea } from './components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './components/ui/dialog';
 import { motion } from 'motion/react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
@@ -45,8 +43,6 @@ declare global {
     webkitAudioContext?: typeof AudioContext;
   }
 }
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
 interface Message {
   id: string;
@@ -162,6 +158,11 @@ const isSupportedAudioInput = (file: UploadedFile) => {
 };
 
 const extractPdfText = async (file: File) => {
+  const [pdfjsLib, workerModule] = await Promise.all([
+    import('pdfjs-dist'),
+    import('pdfjs-dist/build/pdf.worker.mjs?url'),
+  ]);
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerModule.default;
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   const pages: string[] = [];
