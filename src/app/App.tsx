@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, Download, ArrowDown, FileText, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2 } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, Download, ArrowDown, FileText, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -11,6 +11,37 @@ import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 import { AuthPage } from './components/AuthPage';
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onend: (() => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onresult: ((event: SpeechRecognitionResultEventLike) => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
+interface SpeechRecognitionResultEventLike {
+  resultIndex: number;
+  results: ArrayLike<{
+    isFinal: boolean;
+    0: {
+      transcript: string;
+    };
+  }>;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  }
+}
 
 interface Message {
   id: string;
@@ -60,6 +91,8 @@ const formatTimestamp = (timestamp: Date) =>
     hour: 'numeric',
     minute: '2-digit',
   });
+
+const formatPromptCount = (count: number) => `${count} ${count === 1 ? 'prompt' : 'prompts'}`;
 
 const getArchiveStorageKey = (currentUserId: string) => `mydis-archive:${currentUserId}`;
 const getWorkspaceClearStorageKey = (currentUserId: string) => `mydis-workspace-cleared-at:${currentUserId}`;
@@ -481,8 +514,13 @@ export default function App() {
   const [normalizeRenderedContent, setNormalizeRenderedContent] = useState(false);
   const [showClearLogDialog, setShowClearLogDialog] = useState(false);
   const [showClearWorkspaceDialog, setShowClearWorkspaceDialog] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [speechError, setSpeechError] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const speechBaseInputRef = useRef('');
 
   const buildApiHeaders = useCallback(
     (includeJsonContentType = false) => {
@@ -674,6 +712,14 @@ export default function App() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isTyping]);
+
+  useEffect(() => {
+    setSpeechSupported(Boolean(window.SpeechRecognition || window.webkitSpeechRecognition));
+
+    return () => {
+      recognitionRef.current?.abort();
+    };
+  }, []);
 
   // Load archive messages when archive panel is opened
   useEffect(() => {
@@ -896,6 +942,10 @@ export default function App() {
   const handleSend = async () => {
     if (!input.trim() && uploadedFiles.length === 0) return;
 
+    if (isListening) {
+      recognitionRef.current?.stop();
+    }
+
     // Build message content with files
     let messageContent = input;
     const fileContents: Array<{ name: string; type: string; content: string }> = [];
@@ -995,6 +1045,73 @@ export default function App() {
     }
   };
 
+  const toggleVoiceInput = () => {
+    if (needsReflection) {
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setSpeechSupported(false);
+      setSpeechError('Voice input is not supported in this browser.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+    speechBaseInputRef.current = input.trim();
+    setSpeechError('');
+
+    let finalTranscript = '';
+
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event) => {
+      let interimTranscript = '';
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index][0].transcript;
+
+        if (event.results[index].isFinal) {
+          finalTranscript = `${finalTranscript} ${transcript}`.trim();
+        } else {
+          interimTranscript = `${interimTranscript} ${transcript}`.trim();
+        }
+      }
+
+      const dictatedText = `${finalTranscript} ${interimTranscript}`.trim();
+      const baseInput = speechBaseInputRef.current;
+      setInput([baseInput, dictatedText].filter(Boolean).join(' '));
+    };
+
+    recognition.onerror = (event) => {
+      setSpeechError(event.error === 'not-allowed' ? 'Microphone access was blocked.' : 'Voice input stopped unexpectedly.');
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch (error) {
+      console.error('Failed to start voice input:', error);
+      setSpeechError('Voice input could not be started.');
+      setIsListening(false);
+      recognitionRef.current = null;
+    }
+  };
+
   const scrollToBottom = () => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -1002,8 +1119,8 @@ export default function App() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Timestamp', 'Date', 'Time', 'AI Provider', 'User Query', 'Uploaded Documents', 'AI Response', 'Reflection'];
-    const rows = archiveEntries.map((entry) => {
+    const headers = ['Prompt Number', 'Total Prompts', 'Timestamp', 'Date', 'Time', 'AI Provider', 'User Query', 'Uploaded Documents', 'AI Response', 'Reflection'];
+    const rows = archiveEntries.map((entry, index) => {
       const date = entry.timestamp.toLocaleDateString();
       const time = entry.timestamp.toLocaleTimeString();
       const aiProvider = `"${entry.aiProvider.replace(/"/g, '""')}"`;
@@ -1011,7 +1128,7 @@ export default function App() {
       const attachments = `"${getAttachmentExportBlock(entry.attachments).replace(/"/g, '""')}"`;
       const aiResponse = `"${normalizePrintableText(entry.aiResponse).replace(/"/g, '""')}"`;
       const reflection = `"${normalizePrintableText(entry.reflection).replace(/"/g, '""')}"`;
-      return [entry.timestamp.toISOString(), date, time, aiProvider, userQuery, attachments, aiResponse, reflection].join(',');
+      return [index + 1, archiveQueryCount, entry.timestamp.toISOString(), date, time, aiProvider, userQuery, attachments, aiResponse, reflection].join(',');
     });
 
     const csvContent = [headers.join(','), ...rows].join('\n');
@@ -1038,6 +1155,14 @@ export default function App() {
               text: "Activity Log",
               heading: HeadingLevel.HEADING_1,
               alignment: AlignmentType.CENTER,
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({ text: 'Total Prompts: ', bold: true }),
+                new TextRun(formatPromptCount(archiveQueryCount)),
+              ],
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 240 },
             }),
             ...archiveEntries.flatMap((entry, index) => {
               const timestamp = formatTimestamp(entry.timestamp);
@@ -1209,6 +1334,14 @@ export default function App() {
             }
             .page-user strong {
               color: #111827;
+            }
+            .page-summary {
+              text-align: center;
+              margin: -14px 0 28px;
+              color: #111827;
+              font-family: Arial, sans-serif;
+              font-size: 14px;
+              font-weight: 700;
             }
             .entry {
               background: #ffffff;
@@ -1399,6 +1532,7 @@ export default function App() {
             <div><strong>User:</strong> ${escapeHtml(printableUserName)}</div>
             <div><strong>Email:</strong> ${escapeHtml(printableUserEmail)}</div>
           </div>
+          <div class="page-summary">Total Prompts: ${escapeHtml(formatPromptCount(archiveQueryCount))}</div>
           ${archiveMarkup || '<p>No archive entries available.</p>'}
         </body>
       </html>
@@ -1717,6 +1851,21 @@ export default function App() {
                 <div className="flex-1 flex flex-col gap-2">
                   <div className="relative">
                     <Button
+                      type="button"
+                      onClick={toggleVoiceInput}
+                      size="icon"
+                      variant={isListening ? 'default' : 'outline'}
+                      className={`absolute right-14 top-1/2 z-10 size-10 -translate-y-1/2 rounded-xl ${
+                        isListening
+                          ? 'bg-red-600 text-white hover:bg-red-700'
+                          : 'bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700'
+                      }`}
+                      disabled={needsReflection || !speechSupported}
+                      title={speechSupported ? (isListening ? 'Stop voice input' : 'Start voice input') : 'Voice input is not supported in this browser'}
+                    >
+                      {isListening ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+                    </Button>
+                    <Button
                       onClick={handleSend}
                       size="icon"
                       className="absolute right-2 top-1/2 z-10 size-10 -translate-y-1/2 rounded-xl"
@@ -1729,7 +1878,7 @@ export default function App() {
                       onChange={(e) => setInput(e.target.value)}
                       onKeyPress={handleKeyPress}
                       placeholder={needsReflection ? "Please complete the reflection above to continue..." : "Describe your problem or ask a question..."}
-                      className="flex-1 min-h-[60px] pr-14"
+                      className="flex-1 min-h-[60px] pr-28"
                       disabled={needsReflection}
                     />
                   </div>
@@ -1767,7 +1916,9 @@ export default function App() {
                       <span className="text-purple-600 font-semibold">Generate Image (DALL-E)</span>
                     </Button>
                     <span className="text-xs text-gray-500">
-                      Supports images, PDFs, Word documents, and text files
+                      {isListening
+                        ? 'Listening... speak clearly, then tap the mic to stop.'
+                        : speechError || 'Supports voice, images, PDFs, Word documents, and text files'}
                     </span>
                   </div>
                 </div>
