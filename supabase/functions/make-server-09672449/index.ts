@@ -97,6 +97,20 @@ function hasPdfInput(files: any[] = []) {
   return files.some(isPdfFile);
 }
 
+function getOpenAIResponseText(data: any): string {
+  if (typeof data?.output_text === "string" && data.output_text.trim()) {
+    return data.output_text;
+  }
+
+  const output = Array.isArray(data?.output) ? data.output : [];
+  return output
+    .flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+    .map((part: any) => part?.text || "")
+    .filter(Boolean)
+    .join("\n")
+    .trim() || "No response generated.";
+}
+
 function buildConversationText(
   message: string,
   conversationHistory: any[] = [],
@@ -200,11 +214,9 @@ async function runOpenAIChat(message: string, conversationHistory: any[] = [], f
     for (const file of files) {
       if (isPdfFile(file)) {
         contentParts.push({
-          type: "file",
-          file: {
-            filename: file.name || "document.pdf",
-            file_data: file.content || "",
-          },
+          type: "input_file",
+          filename: file.name || "document.pdf",
+          file_data: file.content || "",
         });
       } else if (file.type?.startsWith("image/")) {
         contentParts.push({
@@ -214,7 +226,7 @@ async function runOpenAIChat(message: string, conversationHistory: any[] = [], f
       }
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -222,16 +234,14 @@ async function runOpenAIChat(message: string, conversationHistory: any[] = [], f
       },
       body: JSON.stringify({
         model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: SYSTEM_PROMPT,
-          },
+        instructions: SYSTEM_PROMPT,
+        input: [
           {
             role: "user",
             content: contentParts,
           },
         ],
+        temperature: 0.7,
       }),
     });
 
@@ -241,7 +251,7 @@ async function runOpenAIChat(message: string, conversationHistory: any[] = [], f
     }
 
     const data = await response.json();
-    return data.choices?.[0]?.message?.content || "No response generated.";
+    return getOpenAIResponseText(data);
   }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {

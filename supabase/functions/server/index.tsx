@@ -221,6 +221,20 @@ const isPdfFile = (file: any) => {
 
 const hasPdfInput = (files: any[] = []) => files.some(isPdfFile);
 
+const getOpenAIResponseText = (data: any): string => {
+  if (typeof data?.output_text === "string" && data.output_text.trim()) {
+    return data.output_text;
+  }
+
+  const output = Array.isArray(data?.output) ? data.output : [];
+  return output
+    .flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+    .map((part: any) => part?.text || "")
+    .filter(Boolean)
+    .join("\n")
+    .trim() || "No response generated.";
+};
+
 const buildGeminiUserParts = (message: string, files: any[]) => {
   const parts: any[] = [{ text: message }];
 
@@ -399,11 +413,9 @@ app.post("/make-server-09672449/chat", async (c) => {
       for (const file of files) {
         if (isPdfFile(file)) {
           contentParts.push({
-            type: "file",
-            file: {
-              filename: file.name || "document.pdf",
-              file_data: file.content || "",
-            },
+            type: "input_file",
+            filename: file.name || "document.pdf",
+            file_data: file.content || "",
           });
         } else if (file.type?.startsWith("image/")) {
           contentParts.push({
@@ -413,7 +425,7 @@ app.post("/make-server-09672449/chat", async (c) => {
         }
       }
 
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      const response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -421,16 +433,14 @@ app.post("/make-server-09672449/chat", async (c) => {
         },
         body: JSON.stringify({
           model: "gpt-4o",
-          messages: [
-            {
-              role: "system",
-              content: SYSTEM_PROMPT,
-            },
+          instructions: SYSTEM_PROMPT,
+          input: [
             {
               role: "user",
               content: contentParts,
             },
           ],
+          temperature: 0.7,
         }),
       });
 
@@ -441,7 +451,7 @@ app.post("/make-server-09672449/chat", async (c) => {
       }
 
       const data = await response.json();
-      const assistantMessage = data.choices?.[0]?.message?.content || "No response generated.";
+      const assistantMessage = getOpenAIResponseText(data);
 
       return c.json({ response: assistantMessage, providerUsed: "openai" });
     }
