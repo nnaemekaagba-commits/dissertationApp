@@ -463,6 +463,7 @@ const MessageItem = memo(({
               </label>
               <div className="text-xs text-purple-700 mb-2 space-y-1">
                 <p>Was this AI response reasonable?</p>
+                <p>Does this AI response sufficiently answer your query?</p>
                 <p>What did you do with this response?</p>
                 <p>Are you discarding or using it in your solution?</p>
                 <p>What is your goal(s) for the next prompt, if necessary?</p>
