@@ -1985,20 +1985,20 @@ export default function App() {
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
+                      size="icon"
                       onClick={() => fileInputRef.current?.click()}
-                      className="h-8 flex items-center gap-1.5 px-2 text-xs"
+                      className="size-8"
                       disabled={needsReflection || isRecordingAudio}
+                      title="Attach files"
                     >
                       <Paperclip className="size-4" />
-                      <span>Attach Files</span>
                     </Button>
                     <Button
                       type="button"
                       variant={isRecordingAudio ? 'default' : 'outline'}
-                      size="sm"
+                      size="icon"
                       onClick={toggleAudioRecording}
-                      className={`h-8 flex items-center gap-1.5 px-2 text-xs ${
+                      className={`size-8 ${
                         isRecordingAudio
                           ? 'bg-red-600 text-white hover:bg-red-700'
                           : 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
@@ -2007,19 +2007,17 @@ export default function App() {
                       title={isRecordingAudio ? 'Stop recording and attach audio' : 'Record audio to attach to the prompt'}
                     >
                       {isRecordingAudio ? <Square className="size-4" /> : <AudioLines className="size-4" />}
-                      <span>{isRecordingAudio ? 'Stop Recording' : 'Record Audio'}</span>
                     </Button>
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
+                      size="icon"
                       onClick={() => setShowImageDialog(true)}
-                      className="h-8 flex items-center gap-1.5 bg-gradient-to-r from-pink-50 to-purple-50 px-2 text-xs hover:from-pink-100 hover:to-purple-100 border-purple-300"
+                      className="size-8 bg-gradient-to-r from-pink-50 to-purple-50 hover:from-pink-100 hover:to-purple-100 border-purple-300"
                       disabled={needsReflection || isRecordingAudio}
                       title="Generate images with DALL-E 3"
                     >
                       <Wand2 className="size-4 text-purple-600" />
-                      <span className="text-purple-600 font-semibold">Generate Image</span>
                     </Button>
                     <span className="text-[11px] text-gray-500">
                       {isRecordingAudio
