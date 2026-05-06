@@ -203,11 +203,36 @@ const parseDataUrl = (value: string) => {
   };
 };
 
+const getDataUrlPayload = (value: string) => {
+  const parsed = parseDataUrl(value);
+  if (parsed) {
+    return parsed.data;
+  }
+
+  const markerIndex = value.indexOf(",");
+  return markerIndex >= 0 ? value.slice(markerIndex + 1) : value;
+};
+
+const isPdfFile = (file: any) => {
+  const fileType = String(file?.type || "").toLowerCase();
+  const fileName = String(file?.name || "").toLowerCase();
+  return fileType === "application/pdf" || fileName.endsWith(".pdf");
+};
+
+const hasPdfInput = (files: any[] = []) => files.some(isPdfFile);
+
 const buildGeminiUserParts = (message: string, files: any[]) => {
   const parts: any[] = [{ text: message }];
 
   for (const file of files) {
-    if (file.type?.startsWith("image/")) {
+    if (isPdfFile(file)) {
+      parts.push({
+        inline_data: {
+          mime_type: "application/pdf",
+          data: getDataUrlPayload(file.content || ""),
+        },
+      });
+    } else if (file.type?.startsWith("image/")) {
       const parsed = parseDataUrl(file.content);
       if (parsed) {
         parts.push({
@@ -226,10 +251,19 @@ const buildGeminiUserParts = (message: string, files: any[]) => {
 };
 
 const buildAnthropicUserContent = (message: string, files: any[]) => {
-  const contentParts: any[] = [{ type: "text", text: message }];
+  const contentParts: any[] = [];
 
   for (const file of files) {
-    if (file.type?.startsWith("image/")) {
+    if (isPdfFile(file)) {
+      contentParts.push({
+        type: "document",
+        source: {
+          type: "base64",
+          media_type: "application/pdf",
+          data: getDataUrlPayload(file.content || ""),
+        },
+      });
+    } else if (file.type?.startsWith("image/")) {
       const parsed = parseDataUrl(file.content);
       if (parsed) {
         contentParts.push({
@@ -241,11 +275,10 @@ const buildAnthropicUserContent = (message: string, files: any[]) => {
           },
         });
       }
-    } else if (file.name) {
-      contentParts[0].text += `\n\n[File attached: ${file.name}]`;
     }
   }
 
+  contentParts.push({ type: "text", text: message });
   return contentParts;
 };
 
@@ -353,6 +386,64 @@ app.post("/make-server-09672449/chat", async (c) => {
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiApiKey) {
       return c.json({ error: "OpenAI API key not configured" }, 500);
+    }
+
+    if (hasPdfInput(files)) {
+      const contentParts: any[] = [
+        {
+          type: "input_text",
+          text: `${SYSTEM_PROMPT}\n\n${message}`,
+        },
+      ];
+
+      for (const file of files) {
+        if (isPdfFile(file)) {
+          contentParts.push({
+            type: "input_file",
+            filename: file.name || "document.pdf",
+            file_data: getDataUrlPayload(file.content || ""),
+          });
+        } else if (file.type?.startsWith("image/")) {
+          contentParts.push({
+            type: "input_image",
+            image_url: file.content,
+          });
+        }
+      }
+
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${openaiApiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          input: [
+            {
+              role: "user",
+              content: contentParts,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("OpenAI API error:", errorData);
+        return c.json({ error: `OpenAI API error: ${errorData.error?.message || 'Unknown error'}` }, response.status);
+      }
+
+      const data = await response.json();
+      const assistantMessage =
+        data.output_text ||
+        data.output?.flatMap((item: any) => item.content || [])
+          ?.map((part: any) => part.text || "")
+          ?.filter(Boolean)
+          ?.join("\n") ||
+        "No response generated.";
+
+      return c.json({ response: assistantMessage, providerUsed: "openai" });
     }
 
     // Build message array for OpenAI
