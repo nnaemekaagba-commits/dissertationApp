@@ -399,9 +399,11 @@ app.post("/make-server-09672449/chat", async (c) => {
       for (const file of files) {
         if (isPdfFile(file)) {
           contentParts.push({
-            type: "input_file",
-            filename: file.name || "document.pdf",
-            file_data: getDataUrlPayload(file.content || ""),
+            type: "file",
+            file: {
+              filename: file.name || "document.pdf",
+              file_data: file.content || "",
+            },
           });
         } else if (file.type?.startsWith("image/")) {
           contentParts.push({
@@ -411,7 +413,7 @@ app.post("/make-server-09672449/chat", async (c) => {
         }
       }
 
-      const response = await fetch("https://api.openai.com/v1/responses", {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -419,7 +421,11 @@ app.post("/make-server-09672449/chat", async (c) => {
         },
         body: JSON.stringify({
           model: "gpt-4o",
-          input: [
+          messages: [
+            {
+              role: "system",
+              content: SYSTEM_PROMPT,
+            },
             {
               role: "user",
               content: contentParts,
@@ -435,13 +441,7 @@ app.post("/make-server-09672449/chat", async (c) => {
       }
 
       const data = await response.json();
-      const assistantMessage =
-        data.output_text ||
-        data.output?.flatMap((item: any) => item.content || [])
-          ?.map((part: any) => part.text || "")
-          ?.filter(Boolean)
-          ?.join("\n") ||
-        "No response generated.";
+      const assistantMessage = data.choices?.[0]?.message?.content || "No response generated.";
 
       return c.json({ response: assistantMessage, providerUsed: "openai" });
     }
