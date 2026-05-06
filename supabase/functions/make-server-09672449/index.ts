@@ -74,6 +74,12 @@ function getAudioMimeType(file: any): string | null {
   return null;
 }
 
+function isPdfFile(file: any): boolean {
+  const fileType = String(file?.type || "").toLowerCase();
+  const fileName = String(file?.name || "").toLowerCase();
+  return fileType === "application/pdf" || fileName.endsWith(".pdf");
+}
+
 function getDataUrlPayload(content: string) {
   const markerIndex = content.indexOf(",");
   return markerIndex >= 0 ? content.slice(markerIndex + 1) : content;
@@ -85,6 +91,10 @@ function hasOpenAIAudioInput(files: any[] = []) {
 
 function hasAudioInput(files: any[] = []) {
   return files.some((file) => Boolean(getAudioMimeType(file)));
+}
+
+function hasPdfInput(files: any[] = []) {
+  return files.some(isPdfFile);
 }
 
 function buildConversationText(
@@ -179,6 +189,61 @@ async function runOpenAIChat(message: string, conversationHistory: any[] = [], f
     throw new Error("OpenAI API key not configured");
   }
 
+  if (hasPdfInput(files)) {
+    const contentParts: any[] = [
+      {
+        type: "input_text",
+        text: buildConversationText(message, conversationHistory, files),
+      },
+    ];
+
+    for (const file of files) {
+      if (isPdfFile(file)) {
+        contentParts.push({
+          type: "input_file",
+          filename: file.name || "document.pdf",
+          file_data: getDataUrlPayload(file.content || ""),
+        });
+      } else if (file.type?.startsWith("image/")) {
+        contentParts.push({
+          type: "input_image",
+          image_url: file.content,
+        });
+      }
+    }
+
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${openaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        instructions: SYSTEM_PROMPT,
+        input: [
+          {
+            role: "user",
+            content: contentParts,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`OpenAI API error: ${errorData.error?.message || "Unknown error"}`);
+    }
+
+    const data = await response.json();
+    return data.output_text ||
+      data.output?.flatMap((item: any) => item.content || [])
+        ?.map((part: any) => part.text || "")
+        ?.filter(Boolean)
+        ?.join("\n") ||
+      "No response generated.";
+  }
+
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -217,6 +282,13 @@ async function runGoogleChat(message: string, conversationHistory: any[] = [], f
       parts.push({
         inline_data: {
           mime_type: audioMimeType,
+          data: getDataUrlPayload(file.content || ""),
+        },
+      });
+    } else if (isPdfFile(file)) {
+      parts.push({
+        inline_data: {
+          mime_type: "application/pdf",
           data: getDataUrlPayload(file.content || ""),
         },
       });
@@ -263,6 +335,26 @@ async function runClaudeChat(message: string, conversationHistory: any[] = [], f
     throw new Error("Claude raw audio input is not supported by the current Anthropic Messages API integration. Please use OpenAI or Google AI for audio recordings.");
   }
 
+  const userContent: any[] = [];
+
+  for (const file of files) {
+    if (isPdfFile(file)) {
+      userContent.push({
+        type: "document",
+        source: {
+          type: "base64",
+          media_type: "application/pdf",
+          data: getDataUrlPayload(file.content || ""),
+        },
+      });
+    }
+  }
+
+  userContent.push({
+    type: "text",
+    text: `${message}${files.length ? `\n\nAttached files:\n${files.map((file: any) => file.name).join("\n")}` : ""}`,
+  });
+
   const messages = [
     ...conversationHistory.map((msg: any) => ({
       role: msg.role === "assistant" ? "assistant" : "user",
@@ -270,7 +362,7 @@ async function runClaudeChat(message: string, conversationHistory: any[] = [], f
     })),
     {
       role: "user",
-      content: `${message}${files.length ? `\n\nAttached files:\n${files.map((file: any) => file.name).join("\n")}` : ""}`,
+      content: userContent,
     },
   ];
 
