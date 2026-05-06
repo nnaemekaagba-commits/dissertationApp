@@ -1795,38 +1795,38 @@ export default function App() {
   return (
     <div className="h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
       <div className="w-full h-full bg-white flex flex-col">{/* Header */}
-        <div className="p-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white flex-shrink-0">
+        <div className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white flex-shrink-0">
           <div className="flex items-center gap-3 justify-between">
             <div className="flex items-center gap-3">
-              <Brain className="size-6" />
+              <Brain className="size-5" />
               <div>
-                <h1 className="text-lg font-semibold">Open-Ended Problem Solving Support</h1>
-                <p className="text-xs text-white/80">Welcome, {userName}!</p>
+                <h1 className="text-base font-semibold leading-tight">Open-Ended Problem Solving Support</h1>
+                <p className="text-[11px] leading-tight text-white/80">Welcome, {userName}!</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowClearWorkspaceDialog(true)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 transition"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition"
                 title="Clear Workspace (preserves archive)"
               >
                 <Eraser className="size-4" />
-                <span className="text-sm">Clear Workspace</span>
+                <span className="text-xs font-medium">Clear Workspace</span>
               </button>
               <button
                 onClick={() => setShowArchive(!showArchive)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 transition"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition"
               >
                 <Archive className="size-4" />
-                <span className="text-sm">Archive</span>
+                <span className="text-xs font-medium">Archive</span>
               </button>
               <button
                 onClick={handleSignOut}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 transition"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition"
                 title="Sign Out"
               >
                 <LogOut className="size-4" />
-                <span className="text-sm">Sign Out</span>
+                <span className="text-xs font-medium">Sign Out</span>
               </button>
             </div>
           </div>
@@ -1837,8 +1837,8 @@ export default function App() {
           
           {/* Chat */}
           <div className="flex-1 flex flex-col min-w-0 relative">
-            <div className="flex-1 overflow-y-auto p-4 min-h-0">
-              <div ref={scrollRef} className="space-y-4">
+            <div className="flex-1 overflow-y-auto p-3 min-h-0">
+              <div ref={scrollRef} className="space-y-3">
                 {messages.map((message) => (
                   <MessageItem
                     key={message.id}
@@ -1866,19 +1866,16 @@ export default function App() {
             </div>
 
             {/* Input */}
-            <div className="p-4 border-t bg-white">
+            <div className="border-t bg-white px-3 py-2">
               {/* Reflection Reminder */}
               {needsReflection && (
-                <div className="mb-3 p-3 bg-yellow-50 border border-yellow-300 rounded-lg flex items-start gap-2">
-                  <div className="size-5 rounded-full bg-yellow-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <div className="mb-2 flex items-center gap-2 rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2">
+                  <div className="size-5 rounded-full bg-yellow-500 flex items-center justify-center flex-shrink-0">
                     <span className="text-white text-xs font-bold">!</span>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-yellow-900 mb-1">Reflection Required</p>
-                    <p className="text-xs text-yellow-800">
-                      Please complete the reflection for the AI's last response before continuing.
-                    </p>
-                  </div>
+                  <p className="text-xs text-yellow-900">
+                    <span className="font-semibold">Reflection Required:</span> complete the AI response reflection before continuing.
+                  </p>
                 </div>
               )}
               
@@ -1906,14 +1903,14 @@ export default function App() {
                 </div>
               )}
 
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
                   AI Provider
                 </span>
                 <button
                   type="button"
                   onClick={() => setNormalizeRenderedContent(prev => !prev)}
-                  className={`rounded-full border px-3 py-1.5 text-sm font-medium transition flex items-center gap-2 ${
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition flex items-center gap-1.5 ${
                     normalizeRenderedContent
                       ? 'border-purple-600 bg-purple-600 text-white shadow-sm'
                       : 'border-gray-300 bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700'
@@ -1929,7 +1926,7 @@ export default function App() {
                     type="button"
                     onClick={() => setSelectedProvider(providerOption.id)}
                     disabled={isTyping}
-                    className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
                       selectedProvider === providerOption.id
                         ? 'border-purple-600 bg-purple-600 text-white shadow-sm'
                         : 'border-gray-300 bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700'
@@ -1941,14 +1938,14 @@ export default function App() {
               </div>
               
               <div className="flex gap-2">
-                <div className="flex-1 flex flex-col gap-2">
+                <div className="flex-1 flex flex-col gap-1.5">
                   <div className="relative">
                     <Button
                       type="button"
                       onClick={toggleVoiceInput}
                       size="icon"
                       variant={isListening ? 'default' : 'outline'}
-                      className={`absolute right-14 top-1/2 z-10 size-10 -translate-y-1/2 rounded-xl ${
+                      className={`absolute right-12 top-1/2 z-10 size-9 -translate-y-1/2 rounded-xl ${
                         isListening
                           ? 'bg-red-600 text-white hover:bg-red-700'
                           : 'bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700'
@@ -1956,26 +1953,26 @@ export default function App() {
                       disabled={needsReflection || !speechSupported}
                       title={speechSupported ? (isListening ? 'Stop voice input' : 'Start voice input') : 'Voice input is not supported in this browser'}
                     >
-                      {isListening ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+                      {isListening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
                     </Button>
                     <Button
                       onClick={handleSend}
                       size="icon"
-                      className="absolute right-2 top-1/2 z-10 size-10 -translate-y-1/2 rounded-xl"
+                      className="absolute right-2 top-1/2 z-10 size-9 -translate-y-1/2 rounded-xl"
                       disabled={!canSendMessage}
                     >
-                      <Send className="size-5" />
+                      <Send className="size-4" />
                     </Button>
                     <Textarea
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyPress={handleKeyPress}
                       placeholder={needsReflection ? "Please complete the reflection above to continue..." : "Describe your problem or ask a question..."}
-                      className="flex-1 min-h-[60px] pr-28"
+                      className="flex-1 min-h-[44px] pr-24 text-sm"
                       disabled={needsReflection}
                     />
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -1990,7 +1987,7 @@ export default function App() {
                       variant="outline"
                       size="sm"
                       onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center gap-2"
+                      className="h-8 flex items-center gap-1.5 px-2 text-xs"
                       disabled={needsReflection || isRecordingAudio}
                     >
                       <Paperclip className="size-4" />
@@ -2001,7 +1998,7 @@ export default function App() {
                       variant={isRecordingAudio ? 'default' : 'outline'}
                       size="sm"
                       onClick={toggleAudioRecording}
-                      className={`flex items-center gap-2 ${
+                      className={`h-8 flex items-center gap-1.5 px-2 text-xs ${
                         isRecordingAudio
                           ? 'bg-red-600 text-white hover:bg-red-700'
                           : 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
@@ -2017,14 +2014,14 @@ export default function App() {
                       variant="outline"
                       size="sm"
                       onClick={() => setShowImageDialog(true)}
-                      className="flex items-center gap-2 bg-gradient-to-r from-pink-50 to-purple-50 hover:from-pink-100 hover:to-purple-100 border-purple-300"
+                      className="h-8 flex items-center gap-1.5 bg-gradient-to-r from-pink-50 to-purple-50 px-2 text-xs hover:from-pink-100 hover:to-purple-100 border-purple-300"
                       disabled={needsReflection || isRecordingAudio}
                       title="Generate images with DALL-E 3"
                     >
                       <Wand2 className="size-4 text-purple-600" />
-                      <span className="text-purple-600 font-semibold">Generate Image (DALL-E)</span>
+                      <span className="text-purple-600 font-semibold">Generate Image</span>
                     </Button>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-[11px] text-gray-500">
                       {isRecordingAudio
                         ? 'Recording audio... tap Stop Recording to attach it.'
                         : audioRecordingError || (isListening
@@ -2040,7 +2037,7 @@ export default function App() {
                   <Button
                     onClick={scrollToBottom}
                     size="icon"
-                    className="size-[60px] bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg hover:shadow-xl disabled:bg-gray-300 disabled:text-gray-500 disabled:shadow-none"
+                    className="size-11 bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg hover:shadow-xl disabled:bg-gray-300 disabled:text-gray-500 disabled:shadow-none"
                     title="Jump to Latest Message"
                     disabled={messages.length === 0}
                   >
