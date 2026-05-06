@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, Download, ArrowDown, File as FileIcon, FileText, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -9,7 +9,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 import { AuthPage } from './components/AuthPage';
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
@@ -1333,133 +1332,6 @@ export default function App() {
     }
   };
 
-  const exportToCSV = () => {
-    const headers = ['Prompt Number', 'Total Prompts', 'Timestamp', 'Date', 'Time', 'AI Provider', 'User Query', 'Uploaded Documents', 'AI Response', 'Reflection'];
-    const rows = archiveEntries.map((entry, index) => {
-      const date = entry.timestamp.toLocaleDateString();
-      const time = entry.timestamp.toLocaleTimeString();
-      const aiProvider = `"${entry.aiProvider.replace(/"/g, '""')}"`;
-      const userQuery = `"${normalizePrintableText(removeAttachmentMetadataFromQuery(entry.userQuery)).replace(/"/g, '""')}"`;
-      const attachments = `"${getAttachmentExportBlock(entry.attachments).replace(/"/g, '""')}"`;
-      const aiResponse = `"${normalizePrintableText(entry.aiResponse).replace(/"/g, '""')}"`;
-      const reflection = `"${normalizePrintableText(entry.reflection).replace(/"/g, '""')}"`;
-      return [index + 1, archiveQueryCount, entry.timestamp.toISOString(), date, time, aiProvider, userQuery, attachments, aiResponse, reflection].join(',');
-    });
-
-    const csvContent = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', `activity-log-${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const exportToDocx = () => {
-    const doc = new Document({
-      sections: [
-        {
-          properties: {},
-          children: [
-            new Paragraph({
-              text: "Activity Log",
-              heading: HeadingLevel.HEADING_1,
-              alignment: AlignmentType.CENTER,
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({ text: 'Total Prompts: ', bold: true }),
-                new TextRun(formatPromptCount(archiveQueryCount)),
-              ],
-              alignment: AlignmentType.CENTER,
-              spacing: { after: 240 },
-            }),
-            ...archiveEntries.flatMap((entry, index) => {
-              const timestamp = formatTimestamp(entry.timestamp);
-              const queryText = normalizePrintableText(removeAttachmentMetadataFromQuery(entry.userQuery)) || 'No user query recorded';
-              const attachmentText = getAttachmentExportBlock(entry.attachments);
-              const responseText = normalizePrintableText(entry.aiResponse) || 'No AI response recorded';
-              const reflectionText = normalizePrintableText(entry.reflection) || 'No reflection provided';
-
-              return [
-                new Paragraph({
-                  text: `Activity ${index + 1}`,
-                  heading: HeadingLevel.HEADING_2,
-                  spacing: { before: 240, after: 120 },
-                }),
-                new Paragraph({
-                  children: [
-                    new TextRun({ text: 'Timestamp: ', bold: true }),
-                    new TextRun(timestamp),
-                  ],
-                }),
-                new Paragraph({
-                  children: [
-                    new TextRun({ text: 'AI Provider: ', bold: true }),
-                    new TextRun(entry.aiProvider),
-                  ],
-                }),
-                new Paragraph({
-                  children: [
-                    new TextRun({ text: 'User Query', bold: true }),
-                  ],
-                  spacing: { before: 160, after: 80 },
-                }),
-                new Paragraph({
-                  text: queryText,
-                }),
-                ...(attachmentText
-                  ? [
-                      new Paragraph({
-                        children: [
-                          new TextRun({ text: 'Uploaded Documents', bold: true }),
-                        ],
-                        spacing: { before: 160, after: 80 },
-                      }),
-                      new Paragraph({
-                        text: attachmentText,
-                      }),
-                    ]
-                  : []),
-                new Paragraph({
-                  children: [
-                    new TextRun({ text: 'AI Response', bold: true }),
-                  ],
-                  spacing: { before: 160, after: 80 },
-                }),
-                new Paragraph({
-                  text: responseText,
-                }),
-                new Paragraph({
-                  children: [
-                    new TextRun({ text: 'Reflection', bold: true, color: '7C3AED' }),
-                  ],
-                  spacing: { before: 160, after: 80 },
-                }),
-                new Paragraph({
-                  text: reflectionText,
-                }),
-              ];
-            }),
-          ],
-        },
-      ],
-    });
-
-    Packer.toBlob(doc).then(blob => {
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `activity-log-${new Date().toISOString().split('T')[0]}.docx`;
-      link.click();
-    });
-  };
-
   const exportToPDF = () => {
     const printableUserName = userName || 'Guest User';
     const printableUserEmail = userEmail || 'Guest session';
@@ -2189,12 +2061,6 @@ export default function App() {
                 <div className="flex gap-1">
                   <button onClick={() => setShowClearLogDialog(true)} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Clear All Messages">
                     <Trash2 className="size-4" />
-                  </button>
-                  <button onClick={exportToCSV} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Export to CSV">
-                    <Download className="size-4" />
-                  </button>
-                  <button onClick={exportToDocx} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Export to DOCX">
-                    <FileText className="size-4" />
                   </button>
                   <button onClick={exportToPDF} className="h-8 px-2 rounded hover:bg-white/20 flex items-center justify-center gap-1 text-[11px] font-semibold" title="Export to PDF">
                     <FileDown className="size-4" />
