@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, Download, ArrowDown, FileText, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, Download, ArrowDown, File as FileIcon, FileText, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -155,34 +155,6 @@ const isSupportedAudioInput = (file: UploadedFile) => {
   const type = file.type.toLowerCase();
   const name = file.name.toLowerCase();
   return type === 'audio/wav' || type === 'audio/x-wav' || type === 'audio/mpeg' || type === 'audio/mp3' || name.endsWith('.wav') || name.endsWith('.mp3');
-};
-
-const extractPdfText = async (file: File) => {
-  const [pdfjsLib, workerModule] = await Promise.all([
-    import('pdfjs-dist'),
-    import('pdfjs-dist/build/pdf.worker.mjs?url'),
-  ]);
-  pdfjsLib.GlobalWorkerOptions.workerSrc = workerModule.default;
-  const buffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-  const pages: string[] = [];
-
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .map((item) => ('str' in item ? item.str : ''))
-      .filter(Boolean)
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (pageText) {
-      pages.push(`Page ${pageNumber}:\n${pageText}`);
-    }
-  }
-
-  return pages.join('\n\n').trim();
 };
 
 const getArchiveStorageKey = (currentUserId: string) => `mydis-archive:${currentUserId}`;
@@ -1013,19 +985,10 @@ export default function App() {
           newFiles.push({ name: file.name, type: fileType, content, preview: content });
         } else if (isPdf) {
           const content = await blobToDataUrl(file);
-          let extractedText = '';
-
-          try {
-            extractedText = await extractPdfText(file);
-          } catch (error) {
-            console.error(`PDF text extraction failed for ${file.name}:`, error);
-          }
-
           newFiles.push({
             name: file.name,
             type: 'application/pdf',
             content,
-            extractedText,
           });
         } else if (
           fileType.startsWith('audio/') ||
@@ -2056,7 +2019,7 @@ export default function App() {
                       ) : file.type.startsWith('image/') ? (
                         <ImageIcon className="size-4 text-blue-600" />
                       ) : (
-                        <File className="size-4 text-blue-600" />
+                        <FileIcon className="size-4 text-blue-600" />
                       )}
                       <span className="text-sm text-blue-900 max-w-[200px] truncate">{file.name}</span>
                       <button
