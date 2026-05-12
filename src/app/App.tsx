@@ -6,7 +6,8 @@ import { ScrollArea } from './components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './components/ui/dialog';
 import { motion } from 'motion/react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { publicAnonKey } from '/utils/supabase/info';
+import { API_BASE_URL, API_BACKEND_LABEL } from '/utils/api';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { AuthPage } from './components/AuthPage';
@@ -441,13 +442,13 @@ const MessageItem = memo(({
   return (
     <div
       key={message.id}
-      className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+      className={`flex gap-2 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
     >
-      <div className={`size-8 rounded-full flex items-center justify-center ${message.role === 'user' ? 'bg-blue-600' : 'bg-purple-600'}`}>
-        {message.role === 'user' ? <User className="size-4 text-white" /> : <Sparkles className="size-4 text-white" />}
+      <div className={`size-7 rounded-full flex items-center justify-center flex-shrink-0 ${message.role === 'user' ? 'bg-blue-600' : 'bg-purple-600'}`}>
+        {message.role === 'user' ? <User className="size-3.5 text-white" /> : <Sparkles className="size-3.5 text-white" />}
       </div>
-      <div className="flex-1">
-        <div className={`p-3 rounded-lg ${message.role === 'user' ? 'bg-blue-100 font-bold' : 'bg-gray-100'}`}>
+      <div className="flex-1 min-w-0">
+        <div className={`p-3 rounded-md ${message.role === 'user' ? 'bg-blue-100 font-bold' : 'bg-gray-100'}`}>
           <MarkdownRenderer content={message.content} normalizeContent={normalizeContent} />
         </div>
         <div className="text-xs text-gray-500 mt-1">
@@ -457,11 +458,11 @@ const MessageItem = memo(({
         
         {message.role === 'assistant' && (
           <div className="mt-2">
-            <div className="bg-gradient-to-r from-purple-100 to-pink-100 border border-purple-300 rounded-lg p-3">
+            <div className="bg-gradient-to-r from-purple-100 to-pink-100 border border-purple-300 rounded-md p-2.5">
               <label className="block text-xs font-semibold text-purple-900 mb-1">
                 💭 Reflection
               </label>
-              <div className="text-xs text-purple-700 mb-2 space-y-1">
+              <div className="text-xs text-purple-700 mb-1.5 space-y-0.5">
                 <p>Was this AI response reasonable?</p>
                 <p>Does this AI response sufficiently answer your query?</p>
                 <p>What did you do with this response?</p>
@@ -472,7 +473,7 @@ const MessageItem = memo(({
                 value={message.feedback || ''}
                 onChange={(e) => onFeedbackChange(message.id, e.target.value)}
                 placeholder="Reflect on whether and how you used this response..."
-                className="min-h-[60px] text-sm bg-white border-purple-300 focus:border-purple-500 focus:ring-purple-500"
+                className="min-h-[52px] text-sm bg-white border-purple-300 focus:border-purple-500 focus:ring-purple-500"
               />
             </div>
           </div>
@@ -574,8 +575,6 @@ const AttachmentPreview = ({ attachment }: { attachment: NonNullable<Message['at
     </div>
   );
 };
-
-const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-09672449`;
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -1793,52 +1792,50 @@ export default function App() {
   const archiveQueryCount = archiveEntries.length;
 
   return (
-    <div className="h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+    <div className="h-screen bg-slate-50 flex">
       <div className="w-full h-full bg-white flex flex-col">{/* Header */}
-        <div className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white flex-shrink-0">
+        <div className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white flex-shrink-0">
           <div className="flex items-center gap-3 justify-between">
             <div className="flex items-center gap-3">
-              <Brain className="size-5" />
+              <Brain className="size-5 flex-shrink-0" />
               <div>
-                <h1 className="text-base font-semibold leading-tight">Open-Ended Problem Solving Support</h1>
-                <p className="text-[11px] leading-tight text-white/80">Welcome, {userName}!</p>
+                <h1 className="text-sm font-semibold leading-tight">Solvepistemic</h1>
+                <p className="text-[11px] leading-tight text-white/80">Welcome, {userName}! Backend: {API_BACKEND_LABEL}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowClearWorkspaceDialog(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition"
+                className="size-8 rounded-lg bg-white/20 hover:bg-white/30 transition flex items-center justify-center"
                 title="Clear Workspace (preserves archive)"
               >
                 <Eraser className="size-4" />
-                <span className="text-xs font-medium">Clear Workspace</span>
               </button>
               <button
                 onClick={() => setShowArchive(!showArchive)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition"
+                className="size-8 rounded-lg bg-white/20 hover:bg-white/30 transition flex items-center justify-center"
+                title="Archive"
               >
                 <Archive className="size-4" />
-                <span className="text-xs font-medium">Archive</span>
               </button>
               <button
                 onClick={handleSignOut}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition"
+                className="size-8 rounded-lg bg-white/20 hover:bg-white/30 transition flex items-center justify-center"
                 title="Sign Out"
               >
                 <LogOut className="size-4" />
-                <span className="text-xs font-medium">Sign Out</span>
               </button>
             </div>
           </div>
         </div>
 
         {/* Main Area */}
-        <div className="flex-1 flex overflow-hidden min-h-0">
+        <div className="flex-1 flex overflow-hidden min-h-0 bg-slate-50">
           
           {/* Chat */}
           <div className="flex-1 flex flex-col min-w-0 relative">
-            <div className="flex-1 overflow-y-auto p-3 min-h-0">
-              <div ref={scrollRef} className="space-y-3">
+            <div className="flex-1 overflow-y-auto p-2 sm:p-3 min-h-0">
+              <div ref={scrollRef} className="space-y-2">
                 {messages.map((message) => (
                   <MessageItem
                     key={message.id}
@@ -1849,11 +1846,11 @@ export default function App() {
                 ))}
                 
                 {isTyping && (
-                  <div className="flex gap-3">
-                    <div className="size-8 rounded-full bg-purple-600 flex items-center justify-center">
+                  <div className="flex gap-2">
+                    <div className="size-7 rounded-full bg-purple-600 flex items-center justify-center">
                       <Sparkles className="size-4 text-white" />
                     </div>
-                    <div className="p-3 rounded-lg bg-gray-100">
+                    <div className="p-2 rounded-lg bg-gray-100">
                       <div className="flex gap-1">
                         <span className="size-2 bg-gray-400 rounded-full animate-bounce"></span>
                         <span className="size-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
@@ -1866,10 +1863,10 @@ export default function App() {
             </div>
 
             {/* Input */}
-            <div className="border-t bg-white px-3 py-2">
+            <div className="border-t bg-white px-2 py-1.5">
               {/* Reflection Reminder */}
               {needsReflection && (
-                <div className="mb-2 flex items-center gap-2 rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2">
+                <div className="mb-1.5 flex items-center gap-2 rounded-md border border-yellow-300 bg-yellow-50 px-2.5 py-1.5">
                   <div className="size-5 rounded-full bg-yellow-500 flex items-center justify-center flex-shrink-0">
                     <span className="text-white text-xs font-bold">!</span>
                   </div>
@@ -1881,9 +1878,9 @@ export default function App() {
               
               {/* File Previews */}
               {uploadedFiles.length > 0 && (
-                <div className="mb-2 flex flex-wrap gap-2">
+                <div className="mb-1.5 flex flex-wrap gap-1.5">
                   {uploadedFiles.map((file, index) => (
-                    <div key={index} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                    <div key={index} className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-md px-2 py-1.5">
                       {file.type.startsWith('audio/') ? (
                         <AudioLines className="size-4 text-blue-600" />
                       ) : file.type.startsWith('image/') ? (
@@ -1903,7 +1900,7 @@ export default function App() {
                 </div>
               )}
 
-              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
                   AI Provider
                 </span>
@@ -1937,7 +1934,7 @@ export default function App() {
                 ))}
               </div>
               
-              <div className="flex gap-2">
+              <div className="flex gap-1.5">
                 <div className="flex-1 flex flex-col gap-1.5">
                   <div className="relative">
                     <Button
@@ -1945,7 +1942,7 @@ export default function App() {
                       onClick={toggleVoiceInput}
                       size="icon"
                       variant={isListening ? 'default' : 'outline'}
-                      className={`absolute right-12 top-1/2 z-10 size-9 -translate-y-1/2 rounded-xl ${
+                      className={`absolute right-10 top-1/2 z-10 size-8 -translate-y-1/2 rounded-lg ${
                         isListening
                           ? 'bg-red-600 text-white hover:bg-red-700'
                           : 'bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700'
@@ -1958,7 +1955,7 @@ export default function App() {
                     <Button
                       onClick={handleSend}
                       size="icon"
-                      className="absolute right-2 top-1/2 z-10 size-9 -translate-y-1/2 rounded-xl"
+                      className="absolute right-1.5 top-1/2 z-10 size-8 -translate-y-1/2 rounded-lg"
                       disabled={!canSendMessage}
                     >
                       <Send className="size-4" />
@@ -1968,11 +1965,11 @@ export default function App() {
                       onChange={(e) => setInput(e.target.value)}
                       onKeyPress={handleKeyPress}
                       placeholder={needsReflection ? "Please complete the reflection above to continue..." : "Describe your problem or ask a question..."}
-                      className="flex-1 min-h-[44px] pr-24 text-sm"
+                      className="flex-1 min-h-[40px] pr-20 text-sm"
                       disabled={needsReflection}
                     />
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1">
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -1987,18 +1984,18 @@ export default function App() {
                       variant="outline"
                       size="icon"
                       onClick={() => fileInputRef.current?.click()}
-                      className="size-8"
+                      className="size-7 rounded-lg"
                       disabled={needsReflection || isRecordingAudio}
                       title="Attach files"
                     >
-                      <Paperclip className="size-4" />
+                      <Paperclip className="size-3.5" />
                     </Button>
                     <Button
                       type="button"
                       variant={isRecordingAudio ? 'default' : 'outline'}
                       size="icon"
                       onClick={toggleAudioRecording}
-                      className={`size-8 ${
+                      className={`size-7 rounded-lg ${
                         isRecordingAudio
                           ? 'bg-red-600 text-white hover:bg-red-700'
                           : 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
@@ -2006,20 +2003,20 @@ export default function App() {
                       disabled={needsReflection}
                       title={isRecordingAudio ? 'Stop recording and attach audio' : 'Record audio to attach to the prompt'}
                     >
-                      {isRecordingAudio ? <Square className="size-4" /> : <AudioLines className="size-4" />}
+                      {isRecordingAudio ? <Square className="size-3.5" /> : <AudioLines className="size-3.5" />}
                     </Button>
                     <Button
                       type="button"
                       variant="outline"
                       size="icon"
                       onClick={() => setShowImageDialog(true)}
-                      className="size-8 bg-gradient-to-r from-pink-50 to-purple-50 hover:from-pink-100 hover:to-purple-100 border-purple-300"
+                      className="size-7 rounded-lg bg-gradient-to-r from-pink-50 to-purple-50 hover:from-pink-100 hover:to-purple-100 border-purple-300"
                       disabled={needsReflection || isRecordingAudio}
                       title="Generate images with DALL-E 3"
                     >
-                      <Wand2 className="size-4 text-purple-600" />
+                      <Wand2 className="size-3.5 text-purple-600" />
                     </Button>
-                    <span className="text-[11px] text-gray-500">
+                    <span className="text-[11px] text-gray-500 min-w-0 flex-1 truncate">
                       {isRecordingAudio
                         ? 'Recording audio... tap Stop Recording to attach it.'
                         : audioRecordingError || (isListening
@@ -2035,11 +2032,11 @@ export default function App() {
                   <Button
                     onClick={scrollToBottom}
                     size="icon"
-                    className="size-11 bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg hover:shadow-xl disabled:bg-gray-300 disabled:text-gray-500 disabled:shadow-none"
+                    className="size-9 bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg hover:shadow-xl disabled:bg-gray-300 disabled:text-gray-500 disabled:shadow-none"
                     title="Jump to Latest Message"
                     disabled={messages.length === 0}
                   >
-                    <ArrowDown className="size-5" />
+                    <ArrowDown className="size-4" />
                   </Button>
                 </motion.div>
               </div>

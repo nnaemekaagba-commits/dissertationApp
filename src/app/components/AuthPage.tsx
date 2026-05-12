@@ -4,7 +4,8 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { motion } from 'motion/react';
 import { supabaseClient } from '/utils/supabase/client';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { publicAnonKey } from '/utils/supabase/info';
+import { AUTH_API_BASE_URL, USE_AWS_AUTH } from '/utils/api';
 
 interface AuthPageProps {
   onAuthSuccess: (
@@ -29,9 +30,8 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
 
     try {
       if (isSignUp) {
-        // Sign Up via server endpoint which auto-confirms email
         console.log('Attempting sign up for:', email);
-        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-09672449/signup`, {
+        const response = await fetch(`${AUTH_API_BASE_URL}/signup`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -75,8 +75,36 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
           email: data.user?.email ?? email,
         });
       } else {
-        // Sign In
         console.log('Attempting sign in for:', email);
+        if (USE_AWS_AUTH) {
+          const response = await fetch(`${AUTH_API_BASE_URL}/signin`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email, password }),
+          });
+
+          const responseText = await response.text();
+          const data = JSON.parse(responseText);
+
+          if (!response.ok) {
+            throw new Error(data.error || data.message || 'Sign in failed');
+          }
+
+          if (!data.access_token) {
+            throw new Error('Sign in succeeded but no access token was returned');
+          }
+
+          const userName = data.user?.user_metadata?.name || email.split('@')[0];
+          console.log('AWS sign in successful');
+          onAuthSuccess(data.access_token, userName, {
+            id: data.user?.id,
+            email: data.user?.email || email,
+          });
+          return;
+        }
+
         const { data, error: signInError } = await supabaseClient.auth.signInWithPassword({
           email,
           password,
@@ -120,10 +148,10 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
         {/* Title */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Open-Ended Problem Solving Support
+            Solvepistemic
           </h1>
           <p className="text-gray-600">
-            Powered by OpenAI
+            Open-Ended Problem Solving Support
           </p>
         </div>
 
@@ -269,7 +297,7 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
 
         {/* Footer */}
         <p className="text-center text-sm text-gray-500 mt-6">
-          Powered by OpenAI • Secure Authentication
+          Solvepistemic • Secure Authentication
         </p>
       </motion.div>
     </div>
