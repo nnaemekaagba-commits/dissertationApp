@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -439,16 +439,42 @@ const MessageItem = memo(({
   onFeedbackChange: (id: string, feedback: string) => void;
   normalizeContent: boolean;
 }) => {
+  const [copiedResponse, setCopiedResponse] = useState(false);
+
+  const copyResponse = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedResponse(true);
+      window.setTimeout(() => setCopiedResponse(false), 1600);
+    } catch {
+      setCopiedResponse(false);
+    }
+  };
+
   return (
     <div
       key={message.id}
-      className={`flex gap-2 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+      className={`message-row flex gap-2 ${message.role === 'user' ? 'flex-row-reverse' : 'assistant-row'}`}
     >
       <div className={`size-7 rounded-full flex items-center justify-center flex-shrink-0 ${message.role === 'user' ? 'bg-blue-600' : 'bg-purple-600'}`}>
         {message.role === 'user' ? <User className="size-3.5 text-white" /> : <Sparkles className="size-3.5 text-white" />}
       </div>
       <div className="flex-1 min-w-0">
-        <div className={`p-3 rounded-md ${message.role === 'user' ? 'bg-blue-100 font-bold' : 'bg-gray-100'}`}>
+        <div className={message.role === 'user' ? 'user-message-surface font-bold' : 'assistant-message-surface'}>
+          {message.role === 'assistant' && (
+            <div className="assistant-response-toolbar">
+              <span className="assistant-response-label">AI response</span>
+              <button
+                type="button"
+                className="assistant-copy-button"
+                onClick={copyResponse}
+                title="Copy response"
+                aria-label="Copy response"
+              >
+                {copiedResponse ? <Check className="size-4" /> : <Copy className="size-4" />}
+              </button>
+            </div>
+          )}
           <MarkdownRenderer content={message.content} normalizeContent={normalizeContent} />
         </div>
         <div className="text-xs text-gray-500 mt-1">

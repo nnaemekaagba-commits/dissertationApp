@@ -190,6 +190,64 @@
   }
 }
 
+/* Chat response surfaces */
+.message-row.assistant-row {
+  align-items: flex-start;
+}
+
+.assistant-message-surface {
+  width: 100%;
+  max-width: min(960px, 100%);
+  border: 1px solid #e4e9f2;
+  border-radius: 1rem;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+  padding: 1rem 1.15rem 1.2rem;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.07);
+}
+
+.user-message-surface {
+  border-radius: 0.75rem;
+  background: #dbeafe;
+  padding: 0.8rem 0.95rem;
+}
+
+.assistant-response-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.assistant-response-label {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assistant-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  color: #334155;
+  background: #ffffff;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.assistant-copy-button:hover {
+  border-color: #cbd5e1;
+  color: #111827;
+  background: #f8fafc;
+}
+
 /* Markdown Styles for AI Responses */
 .markdown {
   color: #182337;
@@ -199,21 +257,21 @@
 
 /* Headings */
 .markdown h1 {
-  font-size: 1.65rem;
+  font-size: 1.72rem;
   font-weight: 700;
-  margin-top: 1.75rem;
-  margin-bottom: 0.85rem;
+  margin-top: 1.85rem;
+  margin-bottom: 0.9rem;
   line-height: 1.25;
   color: #111827;
   letter-spacing: 0;
 }
 
 .markdown h2 {
-  font-size: 1.35rem;
+  font-size: 1.38rem;
   font-weight: 700;
   margin-top: 2rem;
   margin-bottom: 0.75rem;
-  padding-top: 1.2rem;
+  padding-top: 1.3rem;
   border-top: 1px solid #e2e8f0;
   line-height: 1.35;
   color: #172033;
@@ -221,7 +279,7 @@
 }
 
 .markdown h3 {
-  font-size: 1.12rem;
+  font-size: 1.16rem;
   font-weight: 700;
   margin-top: 1.35rem;
   margin-bottom: 0.55rem;
@@ -249,6 +307,7 @@
 /* Paragraphs */
 .markdown p {
   margin-bottom: 1.05rem;
+  max-width: 78ch;
   line-height: 1.78;
   color: #24324a;
 }
@@ -275,6 +334,7 @@
 }
 
 .markdown li {
+  max-width: 76ch;
   margin-bottom: 0.45rem;
   color: #24324a;
   padding-left: 0.15rem;
@@ -388,6 +448,7 @@
 
 /* Blockquotes */
 .markdown blockquote {
+  max-width: 78ch;
   border-left: 4px solid #7c3aed;
   margin: 1.25rem 0;
   color: #3b2f5c;
@@ -421,6 +482,20 @@
   border: none;
   border-top: 1px solid #dbe3ee;
   margin: 1.65rem 0;
+}
+
+.markdown h2 + p,
+.markdown h3 + p {
+  margin-top: 0;
+}
+
+.markdown ol > li::marker {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.markdown ul > li::marker {
+  color: #64748b;
 }
 
 /* Tables */
@@ -521,10 +596,14 @@
 
 .markdown .katex-display {
   margin: 1.5rem 0;
-  padding: 1rem 0;
+  max-width: 78ch;
+  padding: 1rem;
   overflow-x: auto;
   overflow-y: hidden;
   text-align: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #f8fafc;
 }
 
 .markdown .katex-display > .katex {
