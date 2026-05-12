@@ -191,41 +191,52 @@
 }
 
 /* Markdown Styles for AI Responses */
+.markdown {
+  color: #182337;
+  font-size: 1rem;
+  line-height: 1.75;
+}
 
 /* Headings */
 .markdown h1 {
-  font-size: 1.5rem;
+  font-size: 1.65rem;
   font-weight: 700;
-  margin-top: 1.5rem;
-  margin-bottom: 0.75rem;
-  line-height: 1.3;
-  color: #1e293b;
+  margin-top: 1.75rem;
+  margin-bottom: 0.85rem;
+  line-height: 1.25;
+  color: #111827;
+  letter-spacing: 0;
 }
 
 .markdown h2 {
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 700;
-  margin-top: 1.25rem;
-  margin-bottom: 0.625rem;
-  line-height: 1.4;
-  color: #334155;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid #e2e8f0;
+  line-height: 1.35;
+  color: #172033;
+  letter-spacing: 0;
 }
 
 .markdown h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin-top: 1rem;
-  margin-bottom: 0.5rem;
-  line-height: 1.4;
-  color: #475569;
+  font-size: 1.12rem;
+  font-weight: 700;
+  margin-top: 1.35rem;
+  margin-bottom: 0.55rem;
+  line-height: 1.35;
+  color: #1f2937;
+  letter-spacing: 0;
 }
 
 .markdown h4 {
   font-size: 1rem;
-  font-weight: 600;
-  margin-top: 0.875rem;
+  font-weight: 700;
+  margin-top: 1rem;
   margin-bottom: 0.5rem;
-  color: #64748b;
+  color: #334155;
+  letter-spacing: 0;
 }
 
 /* First heading has no top margin */
@@ -237,9 +248,9 @@
 
 /* Paragraphs */
 .markdown p {
-  margin-bottom: 1rem;
-  line-height: 1.7;
-  color: #334155;
+  margin-bottom: 1.05rem;
+  line-height: 1.78;
+  color: #24324a;
 }
 
 .markdown p:last-child {
@@ -249,9 +260,10 @@
 /* Lists */
 .markdown ul,
 .markdown ol {
-  margin-bottom: 1rem;
-  padding-left: 1.5rem;
-  line-height: 1.7;
+  margin-top: 0.35rem;
+  margin-bottom: 1.1rem;
+  padding-left: 1.65rem;
+  line-height: 1.72;
 }
 
 .markdown ul {
@@ -263,8 +275,9 @@
 }
 
 .markdown li {
-  margin-bottom: 0.375rem;
-  color: #334155;
+  margin-bottom: 0.45rem;
+  color: #24324a;
+  padding-left: 0.15rem;
 }
 
 .markdown li:last-child {
@@ -289,46 +302,98 @@
 }
 
 /* Code */
-.markdown code {
-  background-color: rgba(0, 0, 0, 0.06);
-  padding: 0.125rem 0.375rem;
-  border-radius: 0.25rem;
+.markdown .inline-code {
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.3rem;
   font-size: 0.875em;
-  font-family: 'Monaco', 'Courier New', monospace;
-  color: #be185d;
+  font-family: 'SFMono-Regular', 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+  color: #9f1239;
 }
 
-.markdown pre {
-  background-color: #1e293b;
-  border-radius: 0.5rem;
-  padding: 1rem;
-  margin: 1rem 0;
+.markdown .code-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 1rem;
+  background: #fbfbfc;
+  overflow: hidden;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+}
+
+.markdown .code-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3rem;
+  padding: 0.6rem 0.85rem 0.55rem 1rem;
+  border-bottom: 1px solid #edf0f5;
+  color: #111827;
+  background: #ffffff;
+}
+
+.markdown .code-card-language {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.markdown .code-card-mark {
+  color: #111827;
+  font-family: 'SFMono-Regular', 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.markdown .code-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: #111827;
+  background: transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.markdown .code-copy-button:hover {
+  border-color: #e5e7eb;
+  background: #f8fafc;
+}
+
+.markdown .code-card-body {
+  margin: 0;
+  padding: 1.2rem 1.3rem;
   overflow-x: auto;
-  border: 1px solid #334155;
+  background: #fbfbfc;
+  color: #111827;
 }
 
-.markdown pre code {
+.markdown .code-card-body code {
   background-color: transparent;
   padding: 0;
   border-radius: 0;
-  color: #e2e8f0;
-  font-size: 0.875rem;
-  line-height: 1.6;
+  color: inherit;
+  font-size: 0.92rem;
+  line-height: 1.75;
   display: block;
   white-space: pre;
   word-wrap: normal;
+  font-family: 'SFMono-Regular', 'Cascadia Code', 'Consolas', 'Courier New', monospace;
 }
 
 /* Blockquotes */
 .markdown blockquote {
-  border-left: 4px solid #3b82f6;
-  padding-left: 1rem;
-  margin: 1rem 0;
-  color: #64748b;
-  font-style: italic;
-  background-color: rgba(59, 130, 246, 0.05);
-  padding: 0.75rem 1rem;
-  border-radius: 0.25rem;
+  border-left: 4px solid #7c3aed;
+  margin: 1.25rem 0;
+  color: #3b2f5c;
+  background-color: #f7f3ff;
+  padding: 0.9rem 1.05rem;
+  border-radius: 0.55rem;
 }
 
 .markdown blockquote p {
@@ -341,8 +406,9 @@
 
 /* Links */
 .markdown a {
-  color: #3b82f6;
+  color: #2563eb;
   text-decoration: underline;
+  text-underline-offset: 0.18em;
   transition: color 0.2s;
 }
 
@@ -353,28 +419,38 @@
 /* Horizontal Rule */
 .markdown hr {
   border: none;
-  border-top: 2px solid #e2e8f0;
-  margin: 1.5rem 0;
+  border-top: 1px solid #dbe3ee;
+  margin: 1.65rem 0;
 }
 
 /* Tables */
+.markdown .markdown-table-wrap {
+  overflow-x: auto;
+  margin: 1.15rem 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+}
+
 .markdown table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1rem 0;
+  margin: 0;
+  background: #ffffff;
 }
 
 .markdown th {
-  background-color: #f1f5f9;
+  background-color: #f8fafc;
   font-weight: 600;
-  padding: 0.625rem;
+  padding: 0.75rem 0.85rem;
   text-align: left;
   border: 1px solid #e2e8f0;
+  color: #1f2937;
 }
 
 .markdown td {
-  padding: 0.625rem;
+  padding: 0.75rem 0.85rem;
   border: 1px solid #e2e8f0;
+  vertical-align: top;
 }
 
 .markdown tr:nth-child(even) {
@@ -384,7 +460,7 @@
 /* Emphasis */
 .markdown strong {
   font-weight: 700;
-  color: #1e293b;
+  color: #0f172a;
 }
 
 .markdown em {
