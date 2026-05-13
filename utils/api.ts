@@ -8,6 +8,10 @@ export const API_BASE_URL = trimTrailingSlash(
   import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl
 );
 
+export const CHAT_API_BASE_URL = trimTrailingSlash(
+  import.meta.env.VITE_CHAT_API_BASE_URL || API_BASE_URL
+);
+
 export const AUTH_API_BASE_URL = trimTrailingSlash(
   import.meta.env.VITE_AUTH_API_BASE_URL || defaultApiBaseUrl
 );

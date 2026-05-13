@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from './components/u
 import { motion } from 'motion/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { publicAnonKey } from '/utils/supabase/info';
-import { API_BASE_URL, API_BACKEND_LABEL } from '/utils/api';
+import { API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } from '/utils/api';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { AuthPage } from './components/AuthPage';
@@ -73,6 +73,60 @@ interface ArchiveEntry {
 }
 
 type ChatProvider = 'openai' | 'google' | 'claude';
+
+const sanitizeMessageForRemoteSave = (message: Message): Message => ({
+  ...message,
+  attachments: message.attachments?.map((attachment) => ({
+    name: attachment.name,
+    type: attachment.type,
+    content: '',
+    preview: undefined,
+    extractedText: attachment.extractedText,
+  })),
+});
+
+const sanitizeConversationHistoryForChat = (history: Message[]): Message[] =>
+  history.map((message) => sanitizeMessageForRemoteSave(message));
+
+const getBase64PayloadLength = (value: string) => {
+  const markerIndex = value.indexOf(',');
+  return markerIndex >= 0 ? value.length - markerIndex - 1 : value.length;
+};
+
+const getApproxPayloadBytes = (value: unknown) => new Blob([JSON.stringify(value)]).size;
+
+const compressImageForAI = async (file: UploadedFile): Promise<UploadedFile> => {
+  if (!file.type.startsWith('image/') || file.type === 'image/gif') {
+    return file;
+  }
+
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const element = new Image();
+    element.onload = () => resolve(element);
+    element.onerror = reject;
+    element.src = file.content;
+  });
+
+  const maxSide = 1600;
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+
+  if (!context) {
+    return file;
+  }
+
+  context.drawImage(image, 0, 0, width, height);
+  const compressedContent = canvas.toDataURL('image/jpeg', 0.82);
+
+  return getBase64PayloadLength(compressedContent) < getBase64PayloadLength(file.content)
+    ? { name: file.name.replace(/\.[^.]+$/, '.jpg'), type: 'image/jpeg', content: compressedContent }
+    : file;
+};
 
 const CHAT_PROVIDER_OPTIONS: Array<{ id: ChatProvider; label: string }> = [
   { id: 'openai', label: 'OpenAI' },
@@ -909,7 +963,7 @@ export default function App() {
       const response = await fetch(`${API_BASE_URL}/messages/${userId}`, {
         method: 'POST',
         headers: buildApiHeaders(true),
-        body: JSON.stringify(message)
+        body: JSON.stringify(sanitizeMessageForRemoteSave(message))
       });
 
       if (!response.ok) {
@@ -1092,10 +1146,10 @@ export default function App() {
     
     if (uploadedFiles.length > 0) {
       messageContent += '\n\n**Attached Files:**\n';
-      uploadedFiles.forEach((file, index) => {
+      for (const [index, file] of uploadedFiles.entries()) {
         if (file.type.startsWith('image/')) {
           messageContent += `\n${index + 1}. Image: ${file.name}`;
-          fileContents.push({ name: file.name, type: file.type, content: file.content });
+          fileContents.push(await compressImageForAI(file));
         } else if (file.type.startsWith('audio/')) {
           messageContent += `\n${index + 1}. Audio: ${file.name}`;
           fileContents.push({ name: file.name, type: file.type, content: file.content });
@@ -1113,7 +1167,7 @@ export default function App() {
         } else {
           messageContent += `\n${index + 1}. File: ${file.name}`;
         }
-      });
+      }
     }
 
     const userMessage: Message = {
@@ -1125,28 +1179,43 @@ export default function App() {
       attachments: uploadedFiles.length > 0 ? uploadedFiles : undefined
     };
 
-    setMessages(prev => [...prev, userMessage]);
-    saveMessage(userMessage);
     const currentInput = messageContent;
     const currentFiles = fileContents;
+    const conversationHistory = sanitizeConversationHistoryForChat(messages);
+    const chatPayload = {
+      message: currentInput,
+      conversationHistory,
+      files: currentFiles,
+      provider: selectedProvider,
+    };
+    const maxGatewayPayloadBytes = 9_000_000;
+
+    if (getApproxPayloadBytes(chatPayload) > maxGatewayPayloadBytes) {
+      alert('This file is too large to send through the current AWS API Gateway connection. Please try a smaller PDF/image, split the PDF, or compress the image before uploading.');
+      return;
+    }
+
+    setMessages(prev => [...prev, userMessage]);
+    saveMessage(userMessage);
     setInput('');
     setUploadedFiles([]);
     setIsTyping(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/chat`, {
+      const response = await fetch(`${CHAT_API_BASE_URL}/chat`, {
         method: 'POST',
         headers: buildApiHeaders(true),
-        body: JSON.stringify({ 
-          message: currentInput, 
-          conversationHistory: messages,
-          files: currentFiles,
-          provider: selectedProvider,
-        }),
+        body: JSON.stringify(chatPayload),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const responseText = await response.text();
+        let errorData: { error?: string } = {};
+        try {
+          errorData = JSON.parse(responseText);
+        } catch {
+          errorData = {};
+        }
         throw new Error(errorData.error || `Failed to get response`);
       }
 
