@@ -488,7 +488,7 @@ const MessageItem = memo(({
               <label className="block text-xs font-semibold text-purple-900 mb-1">
                 💭 Reflection
               </label>
-              <div className="text-xs text-purple-700 mb-1.5 space-y-0.5">
+              <div className="reflection-questions">
                 <p>Was this AI response reasonable?</p>
                 <p>Does this AI response sufficiently answer your query?</p>
                 <p>What did you do with this response?</p>

@@ -248,6 +248,27 @@
   background: #f8fafc;
 }
 
+.reflection-questions {
+  margin-bottom: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #a855f7;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.82);
+  color: #3b0764;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.45;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+
+.reflection-questions p {
+  margin: 0 0 0.2rem;
+}
+
+.reflection-questions p:last-child {
+  margin-bottom: 0;
+}
+
 /* Markdown Styles for AI Responses */
 .markdown {
   color: #182337;
