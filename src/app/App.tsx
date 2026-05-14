@@ -101,10 +101,9 @@ const compressImageForAI = async (file: UploadedFile): Promise<UploadedFile> => 
   }
 
   const originalBytes = getBase64PayloadLength(file.content);
-  const targetBytes = 6 * 1024 * 1024;
-  const isPng = file.type === 'image/png';
+  const targetBytes = 3 * 1024 * 1024;
 
-  if (originalBytes <= targetBytes && isPng) {
+  if (originalBytes <= targetBytes && file.type === 'image/jpeg') {
     return file;
   }
 
@@ -136,10 +135,11 @@ const compressImageForAI = async (file: UploadedFile): Promise<UploadedFile> => 
   };
 
   const attempts = [
-    { maxSide: 1800, quality: 0.86 },
-    { maxSide: 1600, quality: 0.8 },
-    { maxSide: 1400, quality: 0.72 },
-    { maxSide: 1200, quality: 0.64 },
+    { maxSide: 1800, quality: 0.82 },
+    { maxSide: 1600, quality: 0.76 },
+    { maxSide: 1400, quality: 0.68 },
+    { maxSide: 1200, quality: 0.6 },
+    { maxSide: 1000, quality: 0.54 },
   ];
 
   let bestContent: string | null = null;
@@ -1245,7 +1245,8 @@ export default function App() {
         } catch {
           errorData = {};
         }
-        throw new Error(errorData.error || `Failed to get response`);
+        const responseDetail = errorData.error || responseText.slice(0, 240) || response.statusText || 'Failed to get response';
+        throw new Error(`HTTP ${response.status}: ${responseDetail}`);
       }
 
       const data = await response.json();
