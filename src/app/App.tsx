@@ -100,6 +100,14 @@ const compressImageForAI = async (file: UploadedFile): Promise<UploadedFile> => 
     return file;
   }
 
+  const originalBytes = getBase64PayloadLength(file.content);
+  const targetBytes = 6 * 1024 * 1024;
+  const isPng = file.type === 'image/png';
+
+  if (originalBytes <= targetBytes && isPng) {
+    return file;
+  }
+
   const image = await new Promise<HTMLImageElement>((resolve, reject) => {
     const element = new Image();
     element.onload = () => resolve(element);
@@ -107,24 +115,45 @@ const compressImageForAI = async (file: UploadedFile): Promise<UploadedFile> => 
     element.src = file.content;
   });
 
-  const maxSide = 1280;
-  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
-  const width = Math.max(1, Math.round(image.naturalWidth * scale));
-  const height = Math.max(1, Math.round(image.naturalHeight * scale));
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d');
+  const makeCompressedImage = (maxSide: number, quality: number) => {
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
 
-  if (!context) {
-    return file;
+    if (!context) {
+      return null;
+    }
+
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(image, 0, 0, width, height);
+
+    return canvas.toDataURL('image/jpeg', quality);
+  };
+
+  const attempts = [
+    { maxSide: 1800, quality: 0.86 },
+    { maxSide: 1600, quality: 0.8 },
+    { maxSide: 1400, quality: 0.72 },
+    { maxSide: 1200, quality: 0.64 },
+  ];
+
+  let bestContent: string | null = null;
+
+  for (const attempt of attempts) {
+    const compressedContent = makeCompressedImage(attempt.maxSide, attempt.quality);
+    if (!compressedContent) return file;
+    if (getBase64PayloadLength(compressedContent) >= originalBytes) continue;
+    bestContent = compressedContent;
+    if (getBase64PayloadLength(compressedContent) <= targetBytes) break;
   }
 
-  context.drawImage(image, 0, 0, width, height);
-  const compressedContent = canvas.toDataURL('image/jpeg', 0.68);
-
-  return getBase64PayloadLength(compressedContent) < getBase64PayloadLength(file.content)
-    ? { name: file.name.replace(/\.[^.]+$/, '.jpg'), type: 'image/jpeg', content: compressedContent }
+  return bestContent
+    ? { name: file.name.replace(/\.[^.]+$/, '.jpg'), type: 'image/jpeg', content: bestContent }
     : file;
 };
 
