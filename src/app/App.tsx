@@ -107,7 +107,7 @@ const compressImageForAI = async (file: UploadedFile): Promise<UploadedFile> => 
     element.src = file.content;
   });
 
-  const maxSide = 1600;
+  const maxSide = 1280;
   const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
   const height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -121,7 +121,7 @@ const compressImageForAI = async (file: UploadedFile): Promise<UploadedFile> => 
   }
 
   context.drawImage(image, 0, 0, width, height);
-  const compressedContent = canvas.toDataURL('image/jpeg', 0.82);
+  const compressedContent = canvas.toDataURL('image/jpeg', 0.68);
 
   return getBase64PayloadLength(compressedContent) < getBase64PayloadLength(file.content)
     ? { name: file.name.replace(/\.[^.]+$/, '.jpg'), type: 'image/jpeg', content: compressedContent }
