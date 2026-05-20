@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -73,7 +73,8 @@ function CodeBlock({ children, className, ...props }: any) {
 }
 
 export function MarkdownRenderer({ content, className = 'markdown', normalizeContent = false }: MarkdownRendererProps) {
-  const renderedContent = normalizeContent ? normalizeRenderContent(content) : content;
+  const containsInlineImage = content.includes('data:image/');
+  const renderedContent = normalizeContent && !containsInlineImage ? normalizeRenderContent(content) : content;
   const components: Partial<Components> = {
     p: ({ children }) => <p>{children}</p>,
     h1: ({ children }) => <h1>{children}</h1>,
@@ -97,6 +98,14 @@ export function MarkdownRenderer({ content, className = 'markdown', normalizeCon
       <a href={href} target="_blank" rel="noopener noreferrer">
         {children}
       </a>
+    ),
+    img: ({ src, alt }) => (
+      <img
+        src={src || ''}
+        alt={alt || 'Generated image'}
+        className="my-4 max-w-full rounded-lg border border-slate-200 shadow-sm"
+        loading="lazy"
+      />
     ),
     table: ({ children }) => (
       <div className="markdown-table-wrap">
@@ -144,6 +153,9 @@ export function MarkdownRenderer({ content, className = 'markdown', normalizeCon
             }
           }]
         ]}
+        urlTransform={(url) => (
+          url.startsWith('data:image/') ? url : defaultUrlTransform(url)
+        )}
         components={components}
       >
         {renderedContent}
