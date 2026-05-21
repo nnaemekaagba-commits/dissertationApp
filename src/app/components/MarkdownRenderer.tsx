@@ -33,6 +33,8 @@ function getTextContent(children: unknown): string {
   return String(children);
 }
 
+const inlineDataImagePattern = /!\[([^\]]*)\]\((data:image\/[a-zA-Z0-9.+-]+;base64,[^)]+)\)/g;
+
 function CodeBlock({ children, className, ...props }: any) {
   const [copied, setCopied] = useState(false);
   const language = /language-(\w+)/.exec(className || '')?.[1] || 'Text';
@@ -75,6 +77,14 @@ function CodeBlock({ children, className, ...props }: any) {
 export function MarkdownRenderer({ content, className = 'markdown', normalizeContent = false }: MarkdownRendererProps) {
   const containsInlineImage = content.includes('data:image/');
   const renderedContent = normalizeContent && !containsInlineImage ? normalizeRenderContent(content) : content;
+  const inlineDataImages = Array.from(renderedContent.matchAll(inlineDataImagePattern)).map((match, index) => ({
+    id: `${index}-${match[1] || 'generated-image'}`,
+    alt: match[1] || 'Generated image',
+    src: match[2],
+  }));
+  const markdownContent = inlineDataImages.length > 0
+    ? renderedContent.replace(inlineDataImagePattern, '').replace(/\n{3,}/g, '\n\n').trim()
+    : renderedContent;
   const components: Partial<Components> = {
     p: ({ children }) => <p>{children}</p>,
     h1: ({ children }) => <h1>{children}</h1>,
@@ -158,8 +168,17 @@ export function MarkdownRenderer({ content, className = 'markdown', normalizeCon
         )}
         components={components}
       >
-        {renderedContent}
+        {markdownContent}
       </ReactMarkdown>
+      {inlineDataImages.map((image) => (
+        <img
+          key={image.id}
+          src={image.src}
+          alt={image.alt}
+          className="my-4 max-w-full rounded-lg border border-slate-200 shadow-sm"
+          loading="lazy"
+        />
+      ))}
     </div>
   );
 }

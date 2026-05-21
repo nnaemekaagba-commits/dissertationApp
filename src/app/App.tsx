@@ -168,7 +168,7 @@ const CHAT_PROVIDER_LABELS: Record<ChatProvider, string> = {
   google: 'Google Gemini',
   claude: 'Anthropic Claude',
 };
-const IMAGE_PROVIDER_LABEL = 'OpenAI DALL-E 3';
+const IMAGE_PROVIDER_LABEL = 'OpenAI Image';
 
 const formatTimestamp = (timestamp: Date) =>
   timestamp.toLocaleString([], {
@@ -2137,7 +2137,7 @@ export default function App() {
                       onClick={() => setShowImageDialog(true)}
                       className="size-7 rounded-lg bg-gradient-to-r from-pink-50 to-purple-50 hover:from-pink-100 hover:to-purple-100 border-purple-300"
                       disabled={needsReflection || isRecordingAudio}
-                      title="Generate images with DALL-E 3"
+                      title="Generate images with OpenAI"
                     >
                       <Wand2 className="size-3.5 text-purple-600" />
                     </Button>
@@ -2247,7 +2247,7 @@ export default function App() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Wand2 className="size-5 text-purple-600" />
-              Generate Image with DALL-E
+              Generate Image
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
