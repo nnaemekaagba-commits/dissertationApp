@@ -60,6 +60,7 @@ interface UploadedFile {
   content: string;
   preview?: string;
   extractedText?: string;
+  generated?: boolean;
 }
 
 interface ArchiveEntry {
@@ -83,6 +84,25 @@ const sanitizeMessageForRemoteSave = (message: Message): Message => ({
     preview: undefined,
     extractedText: attachment.extractedText,
   })),
+});
+
+const dataImageMarkdownPattern = /!\[([^\]]*)\]\((data:image\/[a-zA-Z0-9.+-]+;base64,[^)]+)\)/g;
+
+const sanitizeMessageForLocalArchive = (message: Message): Message => ({
+  ...message,
+  content: message.content
+    .replace(dataImageMarkdownPattern, '$1')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim(),
+  attachments: message.attachments?.map((attachment) =>
+    attachment.generated
+      ? {
+          ...attachment,
+          content: '',
+          preview: undefined,
+        }
+      : attachment
+  ),
 });
 
 const sanitizeConversationHistoryForChat = (history: Message[]): Message[] =>
@@ -559,6 +579,21 @@ const MessageItem = memo(({
             </div>
           )}
           <MarkdownRenderer content={message.content} normalizeContent={normalizeContent} />
+          {message.attachments?.some((attachment) => attachment.type.startsWith('image/') && attachment.preview) && (
+            <div className="mt-4 space-y-3">
+              {message.attachments
+                .filter((attachment) => attachment.type.startsWith('image/') && attachment.preview)
+                .map((attachment, index) => (
+                  <img
+                    key={`${message.id}-generated-image-${index}`}
+                    src={attachment.preview}
+                    alt={attachment.name || 'Generated image'}
+                    className="max-h-[640px] w-full rounded-lg border border-slate-200 object-contain shadow-sm"
+                    loading="lazy"
+                  />
+                ))}
+            </div>
+          )}
         </div>
         <div className="text-xs text-gray-500 mt-1">
           {message.aiProvider ? `${message.aiProvider} · ` : ''}
@@ -789,7 +824,8 @@ export default function App() {
 
   const persistArchive = useCallback((currentUserId: string, nextMessages: Message[]) => {
     try {
-      localStorage.setItem(getArchiveStorageKey(currentUserId), JSON.stringify(nextMessages));
+      const compactMessages = nextMessages.map((message) => sanitizeMessageForLocalArchive(message));
+      localStorage.setItem(getArchiveStorageKey(currentUserId), JSON.stringify(compactMessages));
     } catch (error) {
       console.error('Failed to persist archive locally:', error);
     }
@@ -1879,15 +1915,26 @@ export default function App() {
 
       const data = await response.json();
       console.log('✅ Image generated successfully:', data);
+      const imageUrl = typeof data.imageUrl === 'string' ? data.imageUrl : '';
+      const revisedPrompt = data.revisedPrompt || prompt;
       
       // Add generated image as assistant message
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `🎨 **Generated Image**\n\n![Generated Image](${data.imageUrl})\n\n**Prompt**: ${data.revisedPrompt}`,
+        content: `Generated Image\n\n**Prompt**: ${revisedPrompt}`,
         timestamp: new Date(),
         aiProvider: IMAGE_PROVIDER_LABEL
       };
+      assistantMessage.attachments = imageUrl
+        ? [{
+            name: `${revisedPrompt.toString().trim().slice(0, 60) || 'generated-image'}.png`,
+            type: 'image/png',
+            content: imageUrl,
+            preview: imageUrl,
+            generated: true,
+          }]
+        : undefined;
       
       setMessages(prev => [...prev, assistantMessage]);
       saveMessage(assistantMessage);
