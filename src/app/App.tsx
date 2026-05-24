@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check } from 'lucide-react';
 import { Button } from './components/ui/button';
+import { Input } from './components/ui/input';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './components/ui/dialog';
@@ -74,6 +75,26 @@ interface ArchiveEntry {
 }
 
 type ChatProvider = 'openai' | 'google' | 'claude';
+
+const reflectionQuestions = [
+  'Was this AI response reasonable?',
+  'Does this AI response sufficiently answer your query?',
+  'What did you do with this response?',
+  'Are you discarding or using it in your solution?',
+  'What is your goal(s) for the next prompt, if necessary?',
+];
+
+const parseReflectionAnswers = (feedback = '') =>
+  reflectionQuestions.map((question) => {
+    const escapedQuestion = question.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = feedback.match(new RegExp(`${escapedQuestion}\\s*\\n?Answer:\\s*([\\s\\S]*?)(?=\\n\\n[^\\n]+\\?\\s*\\n?Answer:|$)`, 'i'));
+    return match?.[1]?.trim() || '';
+  });
+
+const formatReflectionAnswers = (answers: string[]) =>
+  reflectionQuestions
+    .map((question, index) => `${question}\nAnswer: ${answers[index]?.trim() || ''}`)
+    .join('\n\n');
 
 const sanitizeMessageForRemoteSave = (message: Message): Message => ({
   ...message,
@@ -607,18 +628,26 @@ const MessageItem = memo(({
                 💭 Reflection
               </label>
               <div className="reflection-questions">
-                <p>Was this AI response reasonable?</p>
-                <p>Does this AI response sufficiently answer your query?</p>
-                <p>What did you do with this response?</p>
-                <p>Are you discarding or using it in your solution?</p>
-                <p>What is your goal(s) for the next prompt, if necessary?</p>
+                {reflectionQuestions.map((question, index) => {
+                  const answers = parseReflectionAnswers(message.feedback || '');
+
+                  return (
+                    <label key={question} className="reflection-question-field">
+                      <span>{question}</span>
+                      <Input
+                        value={answers[index] || ''}
+                        onChange={(e) => {
+                          const nextAnswers = [...answers];
+                          nextAnswers[index] = e.target.value;
+                          onFeedbackChange(message.id, formatReflectionAnswers(nextAnswers));
+                        }}
+                        placeholder="Answer..."
+                        className="h-8 bg-white text-sm font-normal text-slate-900 border-purple-300 focus:border-purple-600 focus:ring-purple-600"
+                      />
+                    </label>
+                  );
+                })}
               </div>
-              <Textarea
-                value={message.feedback || ''}
-                onChange={(e) => onFeedbackChange(message.id, e.target.value)}
-                placeholder="Reflect on whether and how you used this response..."
-                className="min-h-[52px] text-sm bg-white border-purple-300 focus:border-purple-500 focus:ring-purple-500"
-              />
             </div>
           </div>
         )}
