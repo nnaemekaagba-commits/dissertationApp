@@ -250,8 +250,8 @@
 
 .reflection-questions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.65rem;
   margin-bottom: 0.5rem;
   padding: 0.6rem;
   border: 1px solid #a855f7;
@@ -265,21 +265,26 @@
 }
 
 .reflection-question-field {
-  display: grid;
-  grid-template-columns: minmax(9.5rem, 1fr) minmax(9rem, 1.15fr);
-  align-items: center;
-  gap: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
   min-width: 0;
 }
 
 .reflection-question-field span {
   color: #25024d;
+  display: block;
+  min-height: 2.05rem;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 720px) {
-  .reflection-question-field {
+  .reflection-questions {
     grid-template-columns: 1fr;
-    gap: 0.25rem;
+  }
+
+  .reflection-question-field span {
+    min-height: 0;
   }
 }
 

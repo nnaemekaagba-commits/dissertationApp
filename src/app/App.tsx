@@ -96,6 +96,9 @@ const formatReflectionAnswers = (answers: string[]) =>
     .map((question, index) => `${question}\nAnswer: ${answers[index]?.trim() || ''}`)
     .join('\n\n');
 
+const isReflectionComplete = (feedback?: string) =>
+  parseReflectionAnswers(feedback).every((answer) => answer.trim().length > 0);
+
 const sanitizeMessageForRemoteSave = (message: Message): Message => ({
   ...message,
   attachments: message.attachments?.map((attachment) => ({
@@ -1987,7 +1990,7 @@ export default function App() {
 
   // Check if the last assistant message has a reflection
   const lastAssistantMessage = [...messages].reverse().find(msg => msg.role === 'assistant');
-  const needsReflection = lastAssistantMessage && !lastAssistantMessage.feedback?.trim();
+  const needsReflection = lastAssistantMessage && !isReflectionComplete(lastAssistantMessage.feedback);
   const canSendMessage = !needsReflection && !isRecordingAudio && (input.trim() || uploadedFiles.length > 0);
   const archiveEntries = buildArchiveEntries(archiveMessages);
   const archiveQueryCount = archiveEntries.length;
@@ -2072,7 +2075,7 @@ export default function App() {
                     <span className="text-white text-xs font-bold">!</span>
                   </div>
                   <p className="text-xs text-yellow-900">
-                    <span className="font-semibold">Reflection Required:</span> complete the AI response reflection before continuing.
+                    <span className="font-semibold">Reflection Required:</span> answer all five reflection questions before continuing.
                   </p>
                 </div>
               )}
