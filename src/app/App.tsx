@@ -85,10 +85,16 @@ const reflectionQuestions = [
 ];
 
 const parseReflectionAnswers = (feedback = '') =>
-  reflectionQuestions.map((question) => {
-    const escapedQuestion = question.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const match = feedback.match(new RegExp(`${escapedQuestion}\\s*\\n?Answer:\\s*([\\s\\S]*?)(?=\\n\\n[^\\n]+\\?\\s*\\n?Answer:|$)`, 'i'));
-    return match?.[1]?.trim() || '';
+  reflectionQuestions.map((question, index) => {
+    const answerStart = feedback.indexOf(`${question}\nAnswer:`);
+    if (answerStart === -1) return '';
+
+    const valueStart = answerStart + `${question}\nAnswer:`.length;
+    const nextQuestion = reflectionQuestions[index + 1];
+    const valueEnd = nextQuestion ? feedback.indexOf(`\n\n${nextQuestion}\nAnswer:`, valueStart) : -1;
+    const rawAnswer = valueEnd === -1 ? feedback.slice(valueStart) : feedback.slice(valueStart, valueEnd);
+
+    return rawAnswer.trim();
   });
 
 const formatReflectionAnswers = (answers: string[]) =>
@@ -644,7 +650,7 @@ const MessageItem = memo(({
                           nextAnswers[index] = e.target.value;
                           onFeedbackChange(message.id, formatReflectionAnswers(nextAnswers));
                         }}
-                        placeholder="Answer..."
+                        placeholder=""
                         className="h-8 bg-white text-sm font-normal text-slate-900 border-purple-300 focus:border-purple-600 focus:ring-purple-600"
                       />
                     </label>
