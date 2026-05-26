@@ -53,6 +53,8 @@ interface Message {
   aiProvider?: string;
   feedback?: string;
   attachments?: UploadedFile[];
+  isIncorrect?: boolean;
+  isConflicting?: boolean;
 }
 
 interface UploadedFile {
@@ -72,6 +74,7 @@ interface ArchiveEntry {
   aiResponse: string;
   reflection: string;
   attachments?: Message['attachments'];
+  isConflicting?: boolean;
 }
 
 type ChatProvider = 'openai' | 'google' | 'claude';
@@ -495,6 +498,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         aiResponse: '',
         reflection: '',
         attachments: message.attachments,
+        isConflicting: Boolean(message.isConflicting || message.isIncorrect),
       };
       return;
     }
@@ -508,6 +512,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         aiResponse: message.content,
         reflection: message.feedback || '',
         attachments: message.attachments,
+        isConflicting: Boolean(message.isConflicting || message.isIncorrect),
       };
       entries.push(pendingEntry);
       pendingEntry = null;
@@ -522,6 +527,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         ? `${pendingEntry.aiResponse}\n\n${message.content}`
         : message.content,
       reflection: message.feedback || pendingEntry.reflection,
+      isConflicting: Boolean(pendingEntry.isConflicting || message.isConflicting || message.isIncorrect),
     };
     entries.push(pendingEntry);
     pendingEntry = null;
@@ -555,6 +561,8 @@ const mergeArchiveMessages = (primaryMessages: Message[], fallbackMessages: Mess
       aiProvider: message.aiProvider || existing.aiProvider,
       feedback: message.feedback ?? existing.feedback,
       attachments: message.attachments || existing.attachments,
+      isIncorrect: message.isIncorrect ?? existing.isIncorrect,
+      isConflicting: message.isConflicting ?? existing.isConflicting,
       timestamp: message.timestamp || existing.timestamp,
     });
   });
@@ -1324,8 +1332,14 @@ export default function App() {
       }
 
       const data = await response.json();
-      console.log('🔍 Received from API:', { hasIsIncorrect: 'isIncorrect' in data, isIncorrect: data.isIncorrect });
-      console.log('📊 SERVER RESPONSE - isIncorrect flag:', data.isIncorrect);
+      const isConflicting = Boolean(data.isConflicting ?? data.isIncorrect);
+      console.log('Received from API:', {
+        hasIsConflicting: 'isConflicting' in data,
+        isConflicting,
+        hasIsIncorrect: 'isIncorrect' in data,
+        isIncorrect: data.isIncorrect,
+      });
+      console.log('SERVER RESPONSE - conflict flag:', isConflicting);
       const providerUsed = data.providerUsed && data.providerUsed in CHAT_PROVIDER_LABELS
         ? CHAT_PROVIDER_LABELS[data.providerUsed as ChatProvider]
         : CHAT_PROVIDER_LABELS[selectedProvider];
@@ -1334,7 +1348,9 @@ export default function App() {
         role: 'assistant',
         content: data.response,
         timestamp: new Date(),
-        aiProvider: providerUsed
+        aiProvider: providerUsed,
+        isIncorrect: data.isIncorrect,
+        isConflicting,
       };
       
       setMessages(prev => [...prev, assistantMessage]);
@@ -1553,14 +1569,19 @@ export default function App() {
       const responseText = renderRichText(entry.aiResponse || 'No AI response recorded');
       const reflectionText = renderPrintableLines(normalizePrintableText(entry.reflection) || 'No reflection provided');
       const provider = escapeHtml(entry.aiProvider || 'Provider not recorded');
+      const conflictClass = entry.isConflicting ? ' conflict-entry' : '';
+      const conflictBadge = entry.isConflicting ? '<span class="conflict-badge">Conflicting response</span>' : '';
 
       return `
-        <section class="entry">
+        <section class="entry${conflictClass}">
           <div class="entry-header">
             <h2>Activity ${index + 1}</h2>
             <div class="timestamp">${timestamp}</div>
           </div>
-          <div class="provider">${provider}</div>
+          <div class="provider-row">
+            <div class="provider">${provider}</div>
+            ${conflictBadge}
+          </div>
           <div class="field">
             <div class="label">User Query</div>
             <div class="value query">${queryText}</div>
@@ -1638,6 +1659,11 @@ export default function App() {
               box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
               page-break-inside: avoid;
             }
+            .conflict-entry {
+              border-color: #f59e0b;
+              background: #fffbeb;
+              box-shadow: 0 8px 22px rgba(245, 158, 11, 0.14);
+            }
             .entry-header {
               display: flex;
               justify-content: space-between;
@@ -1661,7 +1687,25 @@ export default function App() {
               font-size: 12px;
               text-transform: uppercase;
               letter-spacing: 0.08em;
+            }
+            .provider-row {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 12px;
               margin-bottom: 18px;
+            }
+            .conflict-badge {
+              border-radius: 999px;
+              background: #fef3c7;
+              border: 1px solid #f59e0b;
+              color: #92400e;
+              font-family: Arial, sans-serif;
+              font-size: 11px;
+              font-weight: 800;
+              letter-spacing: 0.03em;
+              padding: 5px 10px;
+              text-transform: uppercase;
             }
             .field {
               margin-top: 16px;
@@ -1699,6 +1743,10 @@ export default function App() {
             }
             .response {
               background: #ffffff;
+            }
+            .conflict-entry .response {
+              background: #fff7ed;
+              border-color: #f59e0b;
             }
             .attachments {
               background: #f8fafc;
@@ -2277,15 +2325,29 @@ export default function App() {
               
               <div className="flex-1 overflow-y-auto p-3">
                 {archiveEntries.map((entry, index) => (
-                  <div key={entry.id} className="p-3 mb-3 rounded-lg border bg-gray-50 border-gray-200">
+                  <div
+                    key={entry.id}
+                    className={`p-3 mb-3 rounded-lg border ${
+                      entry.isConflicting
+                        ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200'
+                        : 'bg-gray-50 border-gray-200'
+                    }`}
+                  >
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-semibold text-sm">
                         Activity {index + 1}
                       </div>
                       <div className="text-xs text-gray-500">{formatTimestamp(entry.timestamp)}</div>
                     </div>
-                    <div className="mb-3 text-[11px] font-medium uppercase tracking-wide text-purple-700">
-                      {entry.aiProvider || 'Provider not recorded'}
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-purple-700">
+                        {entry.aiProvider || 'Provider not recorded'}
+                      </div>
+                      {entry.isConflicting && (
+                        <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                          Conflicting response
+                        </span>
+                      )}
                     </div>
                     <div className="mb-3">
                       <div className="mb-1 text-xs font-semibold text-gray-700">User Query</div>
@@ -2308,7 +2370,13 @@ export default function App() {
                     )}
                     <div className="mb-3">
                       <div className="mb-1 text-xs font-semibold text-gray-700">AI Response</div>
-                      <div className="text-sm rounded-md bg-white border border-gray-200 p-2">
+                      <div
+                        className={`text-sm rounded-md border p-2 ${
+                          entry.isConflicting
+                            ? 'bg-amber-50 border-amber-300'
+                            : 'bg-white border-gray-200'
+                        }`}
+                      >
                         {entry.aiResponse ? <MarkdownRenderer content={entry.aiResponse} normalizeContent={normalizeRenderedContent} /> : <span className="text-gray-500">No AI response recorded</span>}
                       </div>
                     </div>
