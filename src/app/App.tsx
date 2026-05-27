@@ -109,7 +109,7 @@ const isReflectionComplete = (feedback?: string) =>
   parseReflectionAnswers(feedback).every((answer) => answer.trim().length > 0);
 
 const conflictResponsePattern =
-  /(conflicting|alternative|counterargument|competing).{0,80}(response|interpretation|method|view|assumption)/i;
+  /(conflicting|contradictory|contradiction|alternative|counterargument|competing).{0,80}(response|interpretation|method|view|assumption|claim|answer)/i;
 
 const hasConflictingResponse = (message: Pick<Message, 'content' | 'isConflicting' | 'isIncorrect'>) =>
   Boolean(
@@ -117,7 +117,7 @@ const hasConflictingResponse = (message: Pick<Message, 'content' | 'isConflictin
       message.isIncorrect ||
       conflictResponsePattern.test(message.content || '') ||
       (/primary response/i.test(message.content || '') &&
-        /conflicting or alternative response/i.test(message.content || ''))
+        (/conflicting or alternative response/i.test(message.content || '') || /contradictory response/i.test(message.content || '')))
   );
 
 const sanitizeMessageForRemoteSave = (message: Message): Message => ({
@@ -620,7 +620,7 @@ const MessageItem = memo(({
               <div className="assistant-response-heading">
                 <span className="assistant-response-label">AI response</span>
                 {isConflictingResponse && (
-                  <span className="assistant-conflict-badge">Conflicting response</span>
+                  <span className="assistant-conflict-badge">Contradictory response</span>
                 )}
               </div>
               <button
@@ -1588,7 +1588,7 @@ export default function App() {
       const reflectionText = renderPrintableLines(normalizePrintableText(entry.reflection) || 'No reflection provided');
       const provider = escapeHtml(entry.aiProvider || 'Provider not recorded');
       const conflictClass = entry.isConflicting ? ' conflict-entry' : '';
-      const conflictBadge = entry.isConflicting ? '<span class="conflict-badge">Conflicting response</span>' : '';
+      const conflictBadge = entry.isConflicting ? '<span class="conflict-badge">Contradictory response</span>' : '';
 
       return `
         <section class="entry${conflictClass}">
