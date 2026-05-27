@@ -108,6 +108,18 @@ const formatReflectionAnswers = (answers: string[]) =>
 const isReflectionComplete = (feedback?: string) =>
   parseReflectionAnswers(feedback).every((answer) => answer.trim().length > 0);
 
+const conflictResponsePattern =
+  /(conflicting|alternative|counterargument|competing).{0,80}(response|interpretation|method|view|assumption)/i;
+
+const hasConflictingResponse = (message: Pick<Message, 'content' | 'isConflicting' | 'isIncorrect'>) =>
+  Boolean(
+    message.isConflicting ||
+      message.isIncorrect ||
+      conflictResponsePattern.test(message.content || '') ||
+      (/primary response/i.test(message.content || '') &&
+        /conflicting or alternative response/i.test(message.content || ''))
+  );
+
 const sanitizeMessageForRemoteSave = (message: Message): Message => ({
   ...message,
   attachments: message.attachments?.map((attachment) => ({
@@ -498,7 +510,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         aiResponse: '',
         reflection: '',
         attachments: message.attachments,
-        isConflicting: Boolean(message.isConflicting || message.isIncorrect),
+        isConflicting: hasConflictingResponse(message),
       };
       return;
     }
@@ -512,7 +524,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         aiResponse: message.content,
         reflection: message.feedback || '',
         attachments: message.attachments,
-        isConflicting: Boolean(message.isConflicting || message.isIncorrect),
+        isConflicting: hasConflictingResponse(message),
       };
       entries.push(pendingEntry);
       pendingEntry = null;
@@ -527,7 +539,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         ? `${pendingEntry.aiResponse}\n\n${message.content}`
         : message.content,
       reflection: message.feedback || pendingEntry.reflection,
-      isConflicting: Boolean(pendingEntry.isConflicting || message.isConflicting || message.isIncorrect),
+      isConflicting: Boolean(pendingEntry.isConflicting || hasConflictingResponse(message)),
     };
     entries.push(pendingEntry);
     pendingEntry = null;
@@ -581,6 +593,7 @@ const MessageItem = memo(({
   normalizeContent: boolean;
 }) => {
   const [copiedResponse, setCopiedResponse] = useState(false);
+  const isConflictingResponse = message.role === 'assistant' && hasConflictingResponse(message);
 
   const copyResponse = async () => {
     try {
@@ -601,10 +614,15 @@ const MessageItem = memo(({
         {message.role === 'user' ? <User className="size-3.5 text-white" /> : <Sparkles className="size-3.5 text-white" />}
       </div>
       <div className="flex-1 min-w-0">
-        <div className={message.role === 'user' ? 'user-message-surface font-bold' : 'assistant-message-surface'}>
+        <div className={message.role === 'user' ? 'user-message-surface font-bold' : `assistant-message-surface${isConflictingResponse ? ' assistant-message-conflicting' : ''}`}>
           {message.role === 'assistant' && (
             <div className="assistant-response-toolbar">
-              <span className="assistant-response-label">AI response</span>
+              <div className="assistant-response-heading">
+                <span className="assistant-response-label">AI response</span>
+                {isConflictingResponse && (
+                  <span className="assistant-conflict-badge">Conflicting response</span>
+                )}
+              </div>
               <button
                 type="button"
                 className="assistant-copy-button"

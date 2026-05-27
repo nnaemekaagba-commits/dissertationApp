@@ -205,6 +205,11 @@
   box-shadow: 0 16px 38px rgba(15, 23, 42, 0.07);
 }
 
+.assistant-message-conflicting {
+  border-color: #f59e0b;
+  box-shadow: 0 16px 38px rgba(146, 64, 14, 0.12);
+}
+
 .user-message-surface {
   border-radius: 0.75rem;
   background: #dbeafe;
@@ -221,11 +226,31 @@
   border-bottom: 1px solid #edf2f7;
 }
 
+.assistant-response-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
 .assistant-response-label {
   color: #64748b;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assistant-conflict-badge {
+  border: 1px solid #f59e0b;
+  border-radius: 999px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.32rem 0.5rem;
   text-transform: uppercase;
 }
 
