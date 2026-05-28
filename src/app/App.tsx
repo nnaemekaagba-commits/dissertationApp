@@ -120,6 +120,13 @@ const hasConflictingResponse = (message: Pick<Message, 'content' | 'isConflictin
         (/conflicting or alternative response/i.test(message.content || '') || /contradictory response/i.test(message.content || '')))
   );
 
+const archiveIncorrectPattern = /\[\[ARCHIVE_INCORRECT\]\]([\s\S]*?)\[\[\/ARCHIVE_INCORRECT\]\]/g;
+
+const stripArchiveIncorrectMarkers = (content = '') =>
+  content
+    .replace(/\[\[ARCHIVE_INCORRECT\]\]/g, '')
+    .replace(/\[\[\/ARCHIVE_INCORRECT\]\]/g, '');
+
 const sanitizeMessageForRemoteSave = (message: Message): Message => ({
   ...message,
   attachments: message.attachments?.map((attachment) => ({
@@ -492,6 +499,49 @@ const escapeHtml = (content: string) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+const ArchiveResponseRenderer = ({
+  content,
+  normalizeContent,
+}: {
+  content: string;
+  normalizeContent: boolean;
+}) => {
+  const segments: Array<{ content: string; incorrect: boolean }> = [];
+  let lastIndex = 0;
+
+  content.replace(archiveIncorrectPattern, (match, markedContent, offset) => {
+    if (offset > lastIndex) {
+      segments.push({ content: content.slice(lastIndex, offset), incorrect: false });
+    }
+
+    segments.push({ content: markedContent, incorrect: true });
+    lastIndex = offset + match.length;
+    return match;
+  });
+
+  if (lastIndex < content.length) {
+    segments.push({ content: content.slice(lastIndex), incorrect: false });
+  }
+
+  return (
+    <div className="archive-response-renderer">
+      {(segments.length ? segments : [{ content, incorrect: false }]).map((segment, index) => {
+        const cleanContent = stripArchiveIncorrectMarkers(segment.content);
+        if (!cleanContent.trim()) return null;
+
+        return (
+          <div
+            key={`${segment.incorrect ? 'incorrect' : 'correct'}-${index}`}
+            className={segment.incorrect ? 'archive-incorrect-text' : undefined}
+          >
+            <MarkdownRenderer content={cleanContent} normalizeContent={normalizeContent} />
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
   const entries: ArchiveEntry[] = [];
   let pendingEntry: ArchiveEntry | null = null;
@@ -593,10 +643,11 @@ const MessageItem = memo(({
   normalizeContent: boolean;
 }) => {
   const [copiedResponse, setCopiedResponse] = useState(false);
+  const displayContent = stripArchiveIncorrectMarkers(message.content);
 
   const copyResponse = async () => {
     try {
-      await navigator.clipboard.writeText(message.content);
+      await navigator.clipboard.writeText(displayContent);
       setCopiedResponse(true);
       window.setTimeout(() => setCopiedResponse(false), 1600);
     } catch {
@@ -630,7 +681,7 @@ const MessageItem = memo(({
               </button>
             </div>
           )}
-          <MarkdownRenderer content={message.content} normalizeContent={normalizeContent} />
+          <MarkdownRenderer content={displayContent} normalizeContent={normalizeContent} />
           {message.attachments?.some((attachment) => attachment.type.startsWith('image/') && attachment.preview) && (
             <div className="mt-4 space-y-3">
               {message.attachments
@@ -1575,26 +1626,42 @@ export default function App() {
           className="export-markdown"
         />
       );
+    const renderArchiveResponseText = (content: string) => {
+      const segments: string[] = [];
+      let lastIndex = 0;
+
+      content.replace(archiveIncorrectPattern, (match, markedContent, offset) => {
+        if (offset > lastIndex) {
+          segments.push(renderRichText(stripArchiveIncorrectMarkers(content.slice(lastIndex, offset))));
+        }
+
+        segments.push(`<div class="archive-incorrect-text export-incorrect-text">${renderRichText(stripArchiveIncorrectMarkers(markedContent))}</div>`);
+        lastIndex = offset + match.length;
+        return match;
+      });
+
+      if (lastIndex < content.length) {
+        segments.push(renderRichText(stripArchiveIncorrectMarkers(content.slice(lastIndex))));
+      }
+
+      return segments.length ? segments.join('') : renderRichText(stripArchiveIncorrectMarkers(content));
+    };
     const archiveMarkup = archiveEntries.map((entry, index) => {
       const timestamp = escapeHtml(formatTimestamp(entry.timestamp));
       const querySource = removeAttachmentMetadataFromQuery(entry.userQuery) || 'No user query recorded';
       const queryText = renderRichText(querySource);
       const attachmentMarkup = getAttachmentExportMarkup(entry.attachments, renderRichText);
-      const responseText = renderRichText(entry.aiResponse || 'No AI response recorded');
+      const responseText = renderArchiveResponseText(entry.aiResponse || 'No AI response recorded');
       const reflectionText = renderPrintableLines(normalizePrintableText(entry.reflection) || 'No reflection provided');
       const provider = escapeHtml(entry.aiProvider || 'Provider not recorded');
-      const conflictClass = entry.isConflicting ? ' conflict-entry' : '';
-      const conflictBadge = entry.isConflicting ? '<span class="conflict-badge">Archive flag: contains conflicting output</span>' : '';
-
       return `
-        <section class="entry${conflictClass}">
+        <section class="entry">
           <div class="entry-header">
             <h2>Activity ${index + 1}</h2>
             <div class="timestamp">${timestamp}</div>
           </div>
           <div class="provider-row">
             <div class="provider">${provider}</div>
-            ${conflictBadge}
           </div>
           <div class="field">
             <div class="label">User Query</div>
@@ -1673,11 +1740,6 @@ export default function App() {
               box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
               page-break-inside: avoid;
             }
-            .conflict-entry {
-              border-color: #f59e0b;
-              background: #fffbeb;
-              box-shadow: 0 8px 22px rgba(245, 158, 11, 0.14);
-            }
             .entry-header {
               display: flex;
               justify-content: space-between;
@@ -1708,18 +1770,6 @@ export default function App() {
               align-items: center;
               gap: 12px;
               margin-bottom: 18px;
-            }
-            .conflict-badge {
-              border-radius: 999px;
-              background: #fef3c7;
-              border: 1px solid #f59e0b;
-              color: #92400e;
-              font-family: Arial, sans-serif;
-              font-size: 11px;
-              font-weight: 800;
-              letter-spacing: 0.03em;
-              padding: 5px 10px;
-              text-transform: uppercase;
             }
             .field {
               margin-top: 16px;
@@ -1758,9 +1808,24 @@ export default function App() {
             .response {
               background: #ffffff;
             }
-            .conflict-entry .response {
-              background: #fff7ed;
-              border-color: #f59e0b;
+            .archive-incorrect-text {
+              border: 1px solid #f87171;
+              border-left: 4px solid #dc2626;
+              border-radius: 8px;
+              background: #fee2e2;
+              color: #7f1d1d;
+              padding: 6px 8px;
+              margin: 6px 0;
+            }
+            .archive-incorrect-text,
+            .archive-incorrect-text * {
+              color: #7f1d1d !important;
+            }
+            .archive-incorrect-text :first-child {
+              margin-top: 0;
+            }
+            .archive-incorrect-text :last-child {
+              margin-bottom: 0;
             }
             .attachments {
               background: #f8fafc;
@@ -2341,11 +2406,7 @@ export default function App() {
                 {archiveEntries.map((entry, index) => (
                   <div
                     key={entry.id}
-                    className={`p-3 mb-3 rounded-lg border ${
-                      entry.isConflicting
-                        ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200'
-                        : 'bg-gray-50 border-gray-200'
-                    }`}
+                    className="p-3 mb-3 rounded-lg border bg-gray-50 border-gray-200"
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-semibold text-sm">
@@ -2357,11 +2418,6 @@ export default function App() {
                       <div className="text-[11px] font-medium uppercase tracking-wide text-purple-700">
                         {entry.aiProvider || 'Provider not recorded'}
                       </div>
-                      {entry.isConflicting && (
-                        <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
-                          Archive flag
-                        </span>
-                      )}
                     </div>
                     <div className="mb-3">
                       <div className="mb-1 text-xs font-semibold text-gray-700">User Query</div>
@@ -2384,14 +2440,8 @@ export default function App() {
                     )}
                     <div className="mb-3">
                       <div className="mb-1 text-xs font-semibold text-gray-700">AI Response</div>
-                      <div
-                        className={`text-sm rounded-md border p-2 ${
-                          entry.isConflicting
-                            ? 'bg-amber-50 border-amber-300'
-                            : 'bg-white border-gray-200'
-                        }`}
-                      >
-                        {entry.aiResponse ? <MarkdownRenderer content={entry.aiResponse} normalizeContent={normalizeRenderedContent} /> : <span className="text-gray-500">No AI response recorded</span>}
+                      <div className="text-sm rounded-md border p-2 bg-white border-gray-200">
+                        {entry.aiResponse ? <ArchiveResponseRenderer content={entry.aiResponse} normalizeContent={normalizeRenderedContent} /> : <span className="text-gray-500">No AI response recorded</span>}
                       </div>
                     </div>
                     <div className="pt-2 border-t border-purple-200">
