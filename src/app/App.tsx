@@ -593,7 +593,6 @@ const MessageItem = memo(({
   normalizeContent: boolean;
 }) => {
   const [copiedResponse, setCopiedResponse] = useState(false);
-  const isConflictingResponse = message.role === 'assistant' && hasConflictingResponse(message);
 
   const copyResponse = async () => {
     try {
@@ -614,14 +613,11 @@ const MessageItem = memo(({
         {message.role === 'user' ? <User className="size-3.5 text-white" /> : <Sparkles className="size-3.5 text-white" />}
       </div>
       <div className="flex-1 min-w-0">
-        <div className={message.role === 'user' ? 'user-message-surface font-bold' : `assistant-message-surface${isConflictingResponse ? ' assistant-message-conflicting' : ''}`}>
+        <div className={message.role === 'user' ? 'user-message-surface font-bold' : 'assistant-message-surface'}>
           {message.role === 'assistant' && (
             <div className="assistant-response-toolbar">
               <div className="assistant-response-heading">
                 <span className="assistant-response-label">AI response</span>
-                {isConflictingResponse && (
-                  <span className="assistant-conflict-badge">Contradictory response</span>
-                )}
               </div>
               <button
                 type="button"
@@ -1588,7 +1584,7 @@ export default function App() {
       const reflectionText = renderPrintableLines(normalizePrintableText(entry.reflection) || 'No reflection provided');
       const provider = escapeHtml(entry.aiProvider || 'Provider not recorded');
       const conflictClass = entry.isConflicting ? ' conflict-entry' : '';
-      const conflictBadge = entry.isConflicting ? '<span class="conflict-badge">Contradictory response</span>' : '';
+      const conflictBadge = entry.isConflicting ? '<span class="conflict-badge">Archive flag: contains conflicting output</span>' : '';
 
       return `
         <section class="entry${conflictClass}">
@@ -2363,7 +2359,7 @@ export default function App() {
                       </div>
                       {entry.isConflicting && (
                         <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
-                          Conflicting response
+                          Archive flag
                         </span>
                       )}
                     </div>
