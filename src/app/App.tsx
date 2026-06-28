@@ -101,12 +101,14 @@ const parseReflectionAnswers = (feedback = '') =>
     const valueEnd = nextQuestion ? feedback.indexOf(`\n\n${nextQuestion}\nAnswer:`, valueStart) : -1;
     const rawAnswer = valueEnd === -1 ? feedback.slice(valueStart) : feedback.slice(valueStart, valueEnd);
 
-    return rawAnswer.trim();
+    if (rawAnswer.startsWith('\n')) return rawAnswer.slice(1);
+    if (rawAnswer.startsWith(' ')) return rawAnswer.slice(1);
+    return rawAnswer;
   });
 
 const formatReflectionAnswers = (answers: string[]) =>
   reflectionQuestions
-    .map((question, index) => `${question}\nAnswer: ${answers[index]?.trim() || ''}`)
+    .map((question, index) => `${question}\nAnswer:\n${answers[index] || ''}`)
     .join('\n\n');
 
 const isReflectionComplete = (feedback?: string) =>
@@ -692,7 +694,12 @@ const MessageItem = memo(({
   normalizeContent: boolean;
 }) => {
   const [copiedResponse, setCopiedResponse] = useState(false);
+  const [reflectionDrafts, setReflectionDrafts] = useState(() => parseReflectionAnswers(message.feedback || ''));
   const displayContent = stripArchiveIncorrectMarkers(message.content);
+
+  useEffect(() => {
+    setReflectionDrafts(parseReflectionAnswers(message.feedback || ''));
+  }, [message.id, message.feedback]);
 
   const copyResponse = async () => {
     try {
@@ -778,18 +785,19 @@ const MessageItem = memo(({
               </label>
               <div className="reflection-questions">
                 {reflectionQuestions.map((question, index) => {
-                  const answers = parseReflectionAnswers(message.feedback || '');
-
                   return (
                     <label key={question} className="reflection-question-field">
                       <span>{question}</span>
                       <Textarea
-                        value={answers[index] || ''}
+                        value={reflectionDrafts[index] || ''}
                         onChange={(e) => {
-                          const nextAnswers = [...answers];
+                          const nextAnswers = [...reflectionDrafts];
                           nextAnswers[index] = e.target.value;
+                          setReflectionDrafts(nextAnswers);
                           onFeedbackChange(message.id, formatReflectionAnswers(nextAnswers));
                         }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        onKeyUp={(e) => e.stopPropagation()}
                         placeholder=""
                         className="min-h-[92px] resize-y bg-white text-sm font-normal leading-5 text-slate-900 border-purple-300 focus:border-purple-600 focus:ring-purple-600"
                       />
