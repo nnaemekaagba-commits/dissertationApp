@@ -13,6 +13,7 @@ interface MarkdownRendererProps {
   content: string;
   className?: string;
   normalizeContent?: boolean;
+  onCopyContent?: (text: string, source: 'code') => void;
 }
 
 const normalizeRenderContent = (content: string) =>
@@ -35,7 +36,7 @@ function getTextContent(children: unknown): string {
 
 const inlineDataImagePattern = /!\[([^\]]*)\]\((data:image\/[a-zA-Z0-9.+-]+;base64,[^)]+)\)/g;
 
-function CodeBlock({ children, className, ...props }: any) {
+function CodeBlock({ children, className, onCopyContent, ...props }: any) {
   const [copied, setCopied] = useState(false);
   const language = /language-(\w+)/.exec(className || '')?.[1] || 'Text';
   const codeText = getTextContent(children).replace(/\n$/, '');
@@ -43,6 +44,7 @@ function CodeBlock({ children, className, ...props }: any) {
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(codeText);
+      onCopyContent?.(codeText, 'code');
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
@@ -74,7 +76,7 @@ function CodeBlock({ children, className, ...props }: any) {
   );
 }
 
-export function MarkdownRenderer({ content, className = 'markdown', normalizeContent = false }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className = 'markdown', normalizeContent = false, onCopyContent }: MarkdownRendererProps) {
   const containsInlineImage = content.includes('data:image/');
   const renderedContent = normalizeContent && !containsInlineImage ? normalizeRenderContent(content) : content;
   const inlineDataImages = Array.from(renderedContent.matchAll(inlineDataImagePattern)).map((match, index) => ({
@@ -99,7 +101,7 @@ export function MarkdownRenderer({ content, className = 'markdown', normalizeCon
       if (inline) {
         return <code className="inline-code" {...props}>{children}</code>;
       }
-      return <CodeBlock className={className} {...props}>{children}</CodeBlock>;
+      return <CodeBlock className={className} onCopyContent={onCopyContent} {...props}>{children}</CodeBlock>;
     },
     strong: ({ children }) => <strong>{children}</strong>,
     em: ({ children }) => <em>{children}</em>,

@@ -45,6 +45,12 @@ declare global {
   }
 }
 
+interface CopyEvent {
+  timestamp: Date;
+  source: 'response' | 'selection' | 'code';
+  text: string;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -55,6 +61,7 @@ interface Message {
   attachments?: UploadedFile[];
   isIncorrect?: boolean;
   isConflicting?: boolean;
+  copyEvents?: CopyEvent[];
 }
 
 interface UploadedFile {
@@ -75,6 +82,7 @@ interface ArchiveEntry {
   reflection: string;
   attachments?: Message['attachments'];
   isConflicting?: boolean;
+  copyEvents?: CopyEvent[];
 }
 
 type ChatProvider = 'openai' | 'google' | 'claude';
@@ -253,6 +261,39 @@ const formatTimestamp = (timestamp: Date) =>
 
 const formatPromptCount = (count: number) => `${count} ${count === 1 ? 'prompt' : 'prompts'}`;
 
+const MAX_COPY_LOG_TEXT_LENGTH = 2000;
+
+const normalizeCopiedText = (text = '') => {
+  const normalized = text.trim();
+  if (normalized.length <= MAX_COPY_LOG_TEXT_LENGTH) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, MAX_COPY_LOG_TEXT_LENGTH)}...`;
+};
+
+const mergeCopyEvents = (...groups: Array<CopyEvent[] | undefined>) => {
+  const seen = new Set<string>();
+
+  return groups.flatMap((group) => group || []).filter((event) => {
+    const timestamp = event.timestamp instanceof Date ? event.timestamp.getTime() : new Date(event.timestamp).getTime();
+    const key = `${timestamp}|${event.source}|${event.text}`;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+};
+
+const formatCopySource = (source: CopyEvent['source']) => {
+  if (source === 'response') return 'Full AI response copied';
+  if (source === 'code') return 'Code block copied';
+  return 'Selected AI response text copied';
+};
+
 const blobToDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -324,6 +365,12 @@ const normalizeMessages = (rawMessages: any[] | undefined): Message[] => {
   return rawMessages.map((msg) => ({
     ...msg,
     timestamp: new Date(msg.timestamp),
+    copyEvents: Array.isArray(msg.copyEvents)
+      ? msg.copyEvents.map((event: CopyEvent) => ({
+          ...event,
+          timestamp: new Date(event.timestamp),
+        }))
+      : undefined,
   }));
 };
 
@@ -561,6 +608,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         reflection: '',
         attachments: message.attachments,
         isConflicting: hasConflictingResponse(message),
+        copyEvents: message.copyEvents || [],
       };
       return;
     }
@@ -575,6 +623,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         reflection: message.feedback || '',
         attachments: message.attachments,
         isConflicting: hasConflictingResponse(message),
+        copyEvents: message.copyEvents || [],
       };
       entries.push(pendingEntry);
       pendingEntry = null;
@@ -590,6 +639,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         : message.content,
       reflection: message.feedback || pendingEntry.reflection,
       isConflicting: Boolean(pendingEntry.isConflicting || hasConflictingResponse(message)),
+      copyEvents: mergeCopyEvents(pendingEntry.copyEvents, message.copyEvents),
     };
     entries.push(pendingEntry);
     pendingEntry = null;
@@ -625,6 +675,7 @@ const mergeArchiveMessages = (primaryMessages: Message[], fallbackMessages: Mess
       attachments: message.attachments || existing.attachments,
       isIncorrect: message.isIncorrect ?? existing.isIncorrect,
       isConflicting: message.isConflicting ?? existing.isConflicting,
+      copyEvents: mergeCopyEvents(existing.copyEvents, message.copyEvents),
       timestamp: message.timestamp || existing.timestamp,
     });
   });
@@ -636,10 +687,12 @@ const mergeArchiveMessages = (primaryMessages: Message[], fallbackMessages: Mess
 const MessageItem = memo(({ 
   message, 
   onFeedbackChange,
+  onCopyLog,
   normalizeContent
 }: { 
   message: Message;
   onFeedbackChange: (id: string, feedback: string) => void;
+  onCopyLog: (id: string, source: CopyEvent['source'], copiedText: string) => void;
   normalizeContent: boolean;
 }) => {
   const [copiedResponse, setCopiedResponse] = useState(false);
@@ -648,11 +701,22 @@ const MessageItem = memo(({
   const copyResponse = async () => {
     try {
       await navigator.clipboard.writeText(displayContent);
+      onCopyLog(message.id, 'response', displayContent);
       setCopiedResponse(true);
       window.setTimeout(() => setCopiedResponse(false), 1600);
     } catch {
       setCopiedResponse(false);
     }
+  };
+
+  const logSelectedCopy = () => {
+    if (message.role !== 'assistant') return;
+    onCopyLog(message.id, 'selection', window.getSelection()?.toString() || '');
+  };
+
+  const logMarkdownCopy = (text: string, source: 'code') => {
+    if (message.role !== 'assistant') return;
+    onCopyLog(message.id, source, text);
   };
 
   return (
@@ -664,7 +728,10 @@ const MessageItem = memo(({
         {message.role === 'user' ? <User className="size-3.5 text-white" /> : <Sparkles className="size-3.5 text-white" />}
       </div>
       <div className="flex-1 min-w-0">
-        <div className={message.role === 'user' ? 'user-message-surface font-bold' : 'assistant-message-surface'}>
+        <div
+          className={message.role === 'user' ? 'user-message-surface font-bold' : 'assistant-message-surface'}
+          onCopy={message.role === 'assistant' ? logSelectedCopy : undefined}
+        >
           {message.role === 'assistant' && (
             <div className="assistant-response-toolbar">
               <div className="assistant-response-heading">
@@ -681,7 +748,11 @@ const MessageItem = memo(({
               </button>
             </div>
           )}
-          <MarkdownRenderer content={displayContent} normalizeContent={normalizeContent} />
+          <MarkdownRenderer
+            content={displayContent}
+            normalizeContent={normalizeContent}
+            onCopyContent={message.role === 'assistant' ? logMarkdownCopy : undefined}
+          />
           {message.attachments?.some((attachment) => attachment.type.startsWith('image/') && attachment.preview) && (
             <div className="mt-4 space-y-3">
               {message.attachments
@@ -1150,6 +1221,49 @@ export default function App() {
       console.error('Failed to save message:', error);
     }
   }, [buildApiHeaders, userId, upsertArchiveMessage]);
+
+  const recordCopyEvent = useCallback((messageId: string, source: CopyEvent['source'], copiedText: string) => {
+    const text = normalizeCopiedText(copiedText);
+    if (!text) return;
+
+    const event: CopyEvent = {
+      timestamp: new Date(),
+      source,
+      text,
+    };
+    let updatedMessage: Message | null = null;
+
+    setMessages((prev) =>
+      prev.map((message) => {
+        if (message.id !== messageId) return message;
+
+        updatedMessage = {
+          ...message,
+          copyEvents: mergeCopyEvents(message.copyEvents, [event]),
+        };
+
+        return updatedMessage;
+      })
+    );
+
+    if (userId) {
+      setArchiveMessages((prev) => {
+        const nextMessages = prev.map((message) =>
+          message.id === messageId
+            ? { ...message, copyEvents: mergeCopyEvents(message.copyEvents, [event]) }
+            : message
+        );
+        persistArchive(userId, nextMessages);
+        return nextMessages;
+      });
+    }
+
+    window.setTimeout(() => {
+      if (updatedMessage) {
+        void saveMessage(updatedMessage);
+      }
+    }, 0);
+  }, [persistArchive, saveMessage, userId]);
 
   const handleAuthSuccess = async (
     token: string,
@@ -1652,6 +1766,14 @@ export default function App() {
       const queryText = renderRichText(querySource);
       const attachmentMarkup = getAttachmentExportMarkup(entry.attachments, renderRichText);
       const responseText = renderArchiveResponseText(entry.aiResponse || 'No AI response recorded');
+      const copyLogMarkup = entry.copyEvents && entry.copyEvents.length > 0
+        ? entry.copyEvents.map((event) => `
+          <div class="copy-log-item">
+            <div class="copy-log-meta">${escapeHtml(formatCopySource(event.source))} - ${escapeHtml(formatTimestamp(event.timestamp))}</div>
+            <div class="copy-log-text">${renderPrintableLines(normalizePrintableText(event.text))}</div>
+          </div>
+        `).join('')
+        : '<div class="empty-state">No copied AI response text recorded.</div>';
       const reflectionText = renderPrintableLines(normalizePrintableText(entry.reflection) || 'No reflection provided');
       const provider = escapeHtml(entry.aiProvider || 'Provider not recorded');
       return `
@@ -1674,6 +1796,10 @@ export default function App() {
           <div class="field">
             <div class="label">AI Response</div>
             <div class="value response">${responseText}</div>
+          </div>
+          <div class="field">
+            <div class="label">Copy Log</div>
+            <div class="copy-log-list">${copyLogMarkup}</div>
           </div>
           <div class="field">
             <div class="label reflection-label">Reflection</div>
@@ -1835,6 +1961,30 @@ export default function App() {
               background: #faf5ff;
               border-color: #eadcff;
               color: #6b21a8;
+            }
+            .copy-log-list {
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+            }
+            .copy-log-item {
+              border-radius: 10px;
+              border: 1px solid #dbe4f0;
+              background: #f8fafc;
+              padding: 10px 12px;
+            }
+            .copy-log-meta {
+              font-family: Arial, sans-serif;
+              font-size: 11px;
+              font-weight: 700;
+              color: #475569;
+              margin-bottom: 6px;
+            }
+            .copy-log-text {
+              font-size: 12px;
+              line-height: 1.6;
+              color: #1f2937;
+              word-break: break-word;
             }
             .attachments-list {
               display: flex;
@@ -2178,6 +2328,7 @@ export default function App() {
                     key={message.id}
                     message={message}
                     onFeedbackChange={updateFeedback}
+                    onCopyLog={recordCopyEvent}
                     normalizeContent={normalizeRenderedContent}
                   />
                 ))}
@@ -2442,6 +2593,23 @@ export default function App() {
                       <div className="mb-1 text-xs font-semibold text-gray-700">AI Response</div>
                       <div className="text-sm rounded-md border p-2 bg-white border-gray-200">
                         {entry.aiResponse ? <ArchiveResponseRenderer content={entry.aiResponse} normalizeContent={normalizeRenderedContent} /> : <span className="text-gray-500">No AI response recorded</span>}
+                      </div>
+                    </div>
+                    <div className="mb-3">
+                      <div className="mb-1 text-xs font-semibold text-gray-700">Copy Log</div>
+                      <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+                        {entry.copyEvents && entry.copyEvents.length > 0 ? (
+                          entry.copyEvents.map((event, copyIndex) => (
+                            <div key={entry.id + '-copy-' + copyIndex} className="rounded border border-slate-200 bg-white p-2 text-xs text-slate-700">
+                              <div className="mb-1 font-semibold text-slate-900">
+                                {formatCopySource(event.source)} - {formatTimestamp(event.timestamp)}
+                              </div>
+                              <div className="whitespace-pre-wrap break-words">{event.text}</div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-xs text-slate-500">No copied AI response text recorded.</div>
+                        )}
                       </div>
                     </div>
                     <div className="pt-2 border-t border-purple-200">
