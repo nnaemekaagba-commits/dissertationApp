@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check } from 'lucide-react';
 import { Button } from './components/ui/button';
-import { Input } from './components/ui/input';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './components/ui/dialog';
@@ -88,11 +87,8 @@ interface ArchiveEntry {
 type ChatProvider = 'openai' | 'google' | 'claude';
 
 const reflectionQuestions = [
-  'Was this AI response reasonable?',
-  'Does this AI response sufficiently answer your query?',
-  'What did you do with this response?',
-  'Are you discarding or using it in your solution?',
-  'What is your goal(s) for the next prompt, if necessary?',
+  'Are you satisfied with the response and why?',
+  'How did you use this response in finding solution to the problem you want to solve?',
 ];
 
 const parseReflectionAnswers = (feedback = '') =>
@@ -787,7 +783,7 @@ const MessageItem = memo(({
                   return (
                     <label key={question} className="reflection-question-field">
                       <span>{question}</span>
-                      <Input
+                      <Textarea
                         value={answers[index] || ''}
                         onChange={(e) => {
                           const nextAnswers = [...answers];
@@ -795,7 +791,7 @@ const MessageItem = memo(({
                           onFeedbackChange(message.id, formatReflectionAnswers(nextAnswers));
                         }}
                         placeholder=""
-                        className="h-8 bg-white text-sm font-normal text-slate-900 border-purple-300 focus:border-purple-600 focus:ring-purple-600"
+                        className="min-h-[92px] resize-y bg-white text-sm font-normal leading-5 text-slate-900 border-purple-300 focus:border-purple-600 focus:ring-purple-600"
                       />
                     </label>
                   );
@@ -2359,7 +2355,7 @@ export default function App() {
                     <span className="text-white text-xs font-bold">!</span>
                   </div>
                   <p className="text-xs text-yellow-900">
-                    <span className="font-semibold">Reflection Required:</span> answer all five reflection questions before continuing.
+                    <span className="font-semibold">Reflection Required:</span> answer both reflection questions before continuing.
                   </p>
                 </div>
               )}
