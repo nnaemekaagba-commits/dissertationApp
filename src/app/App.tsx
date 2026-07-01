@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Bot, Globe2 } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -681,21 +681,39 @@ const mergeArchiveMessages = (primaryMessages: Message[], fallbackMessages: Mess
   return sortMessagesByTime(Array.from(mergedMessages.values()));
 };
 
+const findPreviousUserPrompt = (messages: Message[], messageIndex: number) => {
+  for (let index = messageIndex - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === 'user') {
+      return stripArchiveIncorrectMarkers(messages[index].content).trim();
+    }
+  }
+
+  return '';
+};
+
 // Memoized message component to prevent re-renders when input changes
 const MessageItem = memo(({ 
   message, 
+  sourcePrompt,
   onFeedbackChange,
   onCopyLog,
+  onCompareWithAnotherAI,
   normalizeContent
 }: { 
   message: Message;
+  sourcePrompt?: string;
   onFeedbackChange: (id: string, feedback: string) => void;
   onCopyLog: (id: string, source: CopyEvent['source'], copiedText: string) => void;
+  onCompareWithAnotherAI: (sourcePrompt: string, responseContent: string) => void;
   normalizeContent: boolean;
 }) => {
   const [copiedResponse, setCopiedResponse] = useState(false);
   const [reflectionDrafts, setReflectionDrafts] = useState(() => parseReflectionAnswers(message.feedback || ''));
   const displayContent = stripArchiveIncorrectMarkers(message.content);
+  const hasSourcePrompt = Boolean(sourcePrompt?.trim());
+  const webSourceUrl = hasSourcePrompt
+    ? `https://www.google.com/search?q=${encodeURIComponent(sourcePrompt || '')}`
+    : '';
 
   useEffect(() => {
     setReflectionDrafts(parseReflectionAnswers(message.feedback || ''));
@@ -756,6 +774,33 @@ const MessageItem = memo(({
             normalizeContent={normalizeContent}
             onCopyContent={message.role === 'assistant' ? logMarkdownCopy : undefined}
           />
+          {message.role === 'assistant' && hasSourcePrompt && (
+            <div className="source-review-card" aria-label="Review response sources">
+              <p className="source-review-title">Want to review this answer?</p>
+              <p className="source-review-question">
+                Do you want to know what another AI has to say, or view external web sources?
+              </p>
+              <div className="source-review-actions">
+                <button
+                  type="button"
+                  className="source-review-link source-review-ai"
+                  onClick={() => onCompareWithAnotherAI(sourcePrompt || '', displayContent)}
+                >
+                  <Bot className="size-4" />
+                  <span>Ask another AI</span>
+                </button>
+                <a
+                  className="source-review-link source-review-web"
+                  href={webSourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Globe2 className="size-4" />
+                  <span>View external web sources</span>
+                </a>
+              </div>
+            </div>
+          )}
           {message.attachments?.some((attachment) => attachment.type.startsWith('image/') && attachment.preview) && (
             <div className="mt-4 space-y-3">
               {message.attachments
@@ -1203,6 +1248,17 @@ export default function App() {
       console.error('Failed to save feedback:', error);
     }
   }, [buildApiHeaders, userId, persistArchive]);
+
+  const prepareAiComparisonPrompt = useCallback((sourcePrompt: string, responseContent: string) => {
+    setSelectedProvider((currentProvider) => {
+      if (currentProvider === 'openai') return 'google';
+      if (currentProvider === 'google') return 'claude';
+      return 'openai';
+    });
+    setInput(
+      `What does another AI say about this query? Compare your answer with the previous response and point out any differences.\n\nOriginal query:\n${sourcePrompt}\n\nPrevious AI response:\n${responseContent}`
+    );
+  }, []);
 
   // Save a message to the database
   const saveMessage = useCallback(async (message: Message) => {
@@ -2327,12 +2383,14 @@ export default function App() {
           <div className="flex-1 flex flex-col min-w-0 relative">
             <div className="flex-1 overflow-y-auto p-2 sm:p-3 min-h-0">
               <div ref={scrollRef} className="space-y-2">
-                {messages.map((message) => (
+                {messages.map((message, index) => (
                   <MessageItem
                     key={message.id}
                     message={message}
+                    sourcePrompt={message.role === 'assistant' ? findPreviousUserPrompt(messages, index) : ''}
                     onFeedbackChange={updateFeedback}
                     onCopyLog={recordCopyEvent}
+                    onCompareWithAnotherAI={prepareAiComparisonPrompt}
                     normalizeContent={normalizeRenderedContent}
                   />
                 ))}
