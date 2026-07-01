@@ -1249,17 +1249,6 @@ export default function App() {
     }
   }, [buildApiHeaders, userId, persistArchive]);
 
-  const prepareAiComparisonPrompt = useCallback((sourcePrompt: string, responseContent: string) => {
-    setSelectedProvider((currentProvider) => {
-      if (currentProvider === 'openai') return 'google';
-      if (currentProvider === 'google') return 'claude';
-      return 'openai';
-    });
-    setInput(
-      `What does another AI say about this query? Compare your answer with the previous response and point out any differences.\n\nOriginal query:\n${sourcePrompt}\n\nPrevious AI response:\n${responseContent}`
-    );
-  }, []);
-
   // Save a message to the database
   const saveMessage = useCallback(async (message: Message) => {
     if (userId) {
@@ -1470,14 +1459,23 @@ export default function App() {
     setUploadedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSend = async () => {
-    if (!input.trim() && uploadedFiles.length === 0) return;
+  const handleSend = async (options?: {
+    displayInput?: string;
+    requestInput?: string;
+    provider?: ChatProvider;
+  }) => {
+    const displayInput = options?.displayInput ?? input;
+    const requestInput = options?.requestInput ?? displayInput;
+    const requestProvider = options?.provider ?? selectedProvider;
+    const activeUploadedFiles = options?.requestInput ? [] : uploadedFiles;
+
+    if (!displayInput.trim() && activeUploadedFiles.length === 0) return;
 
     if (isListening) {
       recognitionRef.current?.stop();
     }
 
-    const audioFiles = uploadedFiles.filter((file) => file.type.startsWith('audio/'));
+    const audioFiles = activeUploadedFiles.filter((file) => file.type.startsWith('audio/'));
     const unsupportedAudioFile = audioFiles.find((file) => !isSupportedAudioInput(file));
 
     if (unsupportedAudioFile) {
@@ -1485,37 +1483,46 @@ export default function App() {
       return;
     }
 
-    if (audioFiles.length > 0 && selectedProvider === 'claude') {
+    if (audioFiles.length > 0 && requestProvider === 'claude') {
       alert('Claude does not currently support raw audio input through this app. Please select OpenAI or Google AI, or remove the audio attachment.');
       return;
     }
 
     // Build message content with files
-    let messageContent = input;
+    let messageContent = displayInput;
+    let requestContent = requestInput;
     const fileContents: UploadedFile[] = [];
     
-    if (uploadedFiles.length > 0) {
+    if (activeUploadedFiles.length > 0) {
       messageContent += '\n\n**Attached Files:**\n';
-      for (const [index, file] of uploadedFiles.entries()) {
+      requestContent += '\n\n**Attached Files:**\n';
+      for (const [index, file] of activeUploadedFiles.entries()) {
         if (file.type.startsWith('image/')) {
           messageContent += `\n${index + 1}. Image: ${file.name}`;
+          requestContent += `\n${index + 1}. Image: ${file.name}`;
           fileContents.push(await compressImageForAI(file));
         } else if (file.type.startsWith('audio/')) {
           messageContent += `\n${index + 1}. Audio: ${file.name}`;
+          requestContent += `\n${index + 1}. Audio: ${file.name}`;
           fileContents.push({ name: file.name, type: file.type, content: file.content });
         } else if (file.type.startsWith('text/') || file.type === 'application/json') {
           messageContent += `\n${index + 1}. ${file.name}:\n\`\`\`\n${file.content}\n\`\`\``;
+          requestContent += `\n${index + 1}. ${file.name}:\n\`\`\`\n${file.content}\n\`\`\``;
         } else if (file.type === 'application/pdf') {
           messageContent += `\n${index + 1}. PDF Document: ${file.name}`;
+          requestContent += `\n${index + 1}. PDF Document: ${file.name}`;
           if (file.extractedText) {
             messageContent += `\nExtracted text:\n\`\`\`\n${file.extractedText}\n\`\`\``;
+            requestContent += `\nExtracted text:\n\`\`\`\n${file.extractedText}\n\`\`\``;
           }
           fileContents.push(file);
         } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
           messageContent += `\n${index + 1}. Word Document: ${file.name}`;
+          requestContent += `\n${index + 1}. Word Document: ${file.name}`;
           fileContents.push({ name: file.name, type: file.type, content: file.content });
         } else {
           messageContent += `\n${index + 1}. File: ${file.name}`;
+          requestContent += `\n${index + 1}. File: ${file.name}`;
         }
       }
     }
@@ -1525,18 +1532,18 @@ export default function App() {
       role: 'user',
       content: messageContent,
       timestamp: new Date(),
-      aiProvider: CHAT_PROVIDER_LABELS[selectedProvider],
-      attachments: uploadedFiles.length > 0 ? uploadedFiles : undefined
+      aiProvider: CHAT_PROVIDER_LABELS[requestProvider],
+      attachments: activeUploadedFiles.length > 0 ? activeUploadedFiles : undefined
     };
 
-    const currentInput = messageContent;
+    const currentInput = requestContent;
     const currentFiles = fileContents;
     const conversationHistory = sanitizeConversationHistoryForChat(messages);
     const chatPayload = {
       message: currentInput,
       conversationHistory,
       files: currentFiles,
-      provider: selectedProvider,
+      provider: requestProvider,
     };
     const maxGatewayPayloadBytes = 9_000_000;
 
@@ -1581,7 +1588,7 @@ export default function App() {
       console.log('SERVER RESPONSE - conflict flag:', isConflicting);
       const providerUsed = data.providerUsed && data.providerUsed in CHAT_PROVIDER_LABELS
         ? CHAT_PROVIDER_LABELS[data.providerUsed as ChatProvider]
-        : CHAT_PROVIDER_LABELS[selectedProvider];
+        : CHAT_PROVIDER_LABELS[requestProvider];
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -1603,7 +1610,7 @@ export default function App() {
         role: 'assistant',
         content: `❌ **Error**: Sorry, there was an error processing your request.\n\n**Details**: ${errorMessage}`,
         timestamp: new Date(),
-        aiProvider: CHAT_PROVIDER_LABELS[selectedProvider]
+        aiProvider: CHAT_PROVIDER_LABELS[requestProvider]
       };
       setMessages(prev => [...prev, assistantMessage]);
       saveMessage(assistantMessage);
@@ -2337,6 +2344,40 @@ export default function App() {
   const canSendMessage = !needsReflection && !isRecordingAudio && (input.trim() || uploadedFiles.length > 0);
   const archiveEntries = buildArchiveEntries(archiveMessages);
   const archiveQueryCount = archiveEntries.length;
+  const prepareAiComparisonPrompt = (sourcePrompt: string, responseContent: string) => {
+    if (needsReflection) {
+      alert('Please complete the reflection questions before asking another AI to review this response.');
+      return;
+    }
+
+    const nextProvider: ChatProvider =
+      selectedProvider === 'openai'
+        ? 'google'
+        : selectedProvider === 'google'
+          ? 'claude'
+          : 'openai';
+    const promptSummary = sourcePrompt.replace(/\s+/g, ' ').trim();
+    const displayPrompt = `Ask another AI to review: ${
+      promptSummary.length > 160 ? `${promptSummary.slice(0, 160)}...` : promptSummary || 'the previous response'
+    }`;
+    const requestPrompt = [
+      'What does another AI say about this query?',
+      'Compare your answer with the previous response and point out any differences.',
+      '',
+      'Original query:',
+      sourcePrompt,
+      '',
+      'Previous AI response:',
+      responseContent,
+    ].join('\n');
+
+    setSelectedProvider(nextProvider);
+    void handleSend({
+      displayInput: displayPrompt,
+      requestInput: requestPrompt,
+      provider: nextProvider,
+    });
+  };
 
   return (
     <div className="h-screen bg-slate-50 flex">
@@ -2503,7 +2544,7 @@ export default function App() {
                       {isListening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
                     </Button>
                     <Button
-                      onClick={handleSend}
+                      onClick={() => handleSend()}
                       size="icon"
                       className="absolute right-1.5 top-1/2 z-10 size-8 -translate-y-1/2 rounded-lg"
                       disabled={!canSendMessage}
