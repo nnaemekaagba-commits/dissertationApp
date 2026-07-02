@@ -822,7 +822,7 @@ const MessageItem = memo(({
           {formatTimestamp(message.timestamp)}
         </div>
         
-        {message.role === 'assistant' && (
+        {false && message.role === 'assistant' && (
           <div className="mt-2">
             <div className="bg-gradient-to-r from-purple-100 to-pink-100 border border-purple-300 rounded-md p-2.5">
               <label className="block text-xs font-semibold text-purple-900 mb-1">
@@ -2359,10 +2359,8 @@ ${data.response}` : data.response,
     }
   };
 
-  // Check if the last assistant message has a reflection
-  const lastAssistantMessage = [...messages].reverse().find(msg => msg.role === 'assistant');
-  const needsReflection = lastAssistantMessage && !isReflectionComplete(lastAssistantMessage.feedback);
-  const canSendMessage = !needsReflection && !isRecordingAudio && (input.trim() || uploadedFiles.length > 0);
+  const needsReflection = false;
+  const canSendMessage = !isRecordingAudio && (input.trim() || uploadedFiles.length > 0);
   const archiveEntries = buildArchiveEntries(archiveMessages);
   const archiveQueryCount = archiveEntries.length;
   const prepareAiComparisonPrompt = (
