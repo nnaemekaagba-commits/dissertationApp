@@ -704,7 +704,7 @@ const MessageItem = memo(({
   sourcePrompt?: string;
   onFeedbackChange: (id: string, feedback: string) => void;
   onCopyLog: (id: string, source: CopyEvent['source'], copiedText: string) => void;
-  onCompareWithAnotherAI: (sourcePrompt: string, responseContent: string) => void;
+  onCompareWithAnotherAI: (sourcePrompt: string, responseContent: string, sourceProvider: string | undefined, sourceMessageId: string) => void;
   normalizeContent: boolean;
 }) => {
   const [copiedResponse, setCopiedResponse] = useState(false);
@@ -784,7 +784,7 @@ const MessageItem = memo(({
                 <button
                   type="button"
                   className="source-review-link source-review-ai"
-                  onClick={() => onCompareWithAnotherAI(sourcePrompt || '', displayContent)}
+                  onClick={() => onCompareWithAnotherAI(sourcePrompt || '', displayContent, message.aiProvider, message.id)}
                 >
                   <Bot className="size-4" />
                   <span>Ask another AI</span>
@@ -1463,6 +1463,9 @@ export default function App() {
     displayInput?: string;
     requestInput?: string;
     provider?: ChatProvider;
+    skipUserMessage?: boolean;
+    insertAfterMessageId?: string;
+    comparisonResponse?: boolean;
   }) => {
     const displayInput = options?.displayInput ?? input;
     const requestInput = options?.requestInput ?? displayInput;
@@ -1527,7 +1530,7 @@ export default function App() {
       }
     }
 
-    const userMessage: Message = {
+    const userMessage: Message | null = options?.skipUserMessage ? null : {
       id: Date.now().toString(),
       role: 'user',
       content: messageContent,
@@ -1552,10 +1555,28 @@ export default function App() {
       return;
     }
 
-    setMessages(prev => [...prev, userMessage]);
-    saveMessage(userMessage);
-    setInput('');
-    setUploadedFiles([]);
+    const insertAssistantMessage = (message: Message) => {
+      setMessages((prev) => {
+        if (!options?.insertAfterMessageId) return [...prev, message];
+
+        const sourceIndex = prev.findIndex((item) => item.id === options.insertAfterMessageId);
+        if (sourceIndex === -1) return [...prev, message];
+
+        return [
+          ...prev.slice(0, sourceIndex + 1),
+          message,
+          ...prev.slice(sourceIndex + 1),
+        ];
+      });
+      saveMessage(message);
+    };
+
+    if (userMessage) {
+      setMessages(prev => [...prev, userMessage]);
+      saveMessage(userMessage);
+      setInput('');
+      setUploadedFiles([]);
+    }
     setIsTyping(true);
 
     try {
@@ -1592,15 +1613,16 @@ export default function App() {
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: data.response,
+        content: options?.comparisonResponse ? `## ${providerUsed} response
+
+${data.response}` : data.response,
         timestamp: new Date(),
         aiProvider: providerUsed,
         isIncorrect: data.isIncorrect,
         isConflicting,
       };
       
-      setMessages(prev => [...prev, assistantMessage]);
-      saveMessage(assistantMessage);
+      insertAssistantMessage(assistantMessage);
     } catch (error) {
       console.error('Error during AI request:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -1612,8 +1634,7 @@ export default function App() {
         timestamp: new Date(),
         aiProvider: CHAT_PROVIDER_LABELS[requestProvider]
       };
-      setMessages(prev => [...prev, assistantMessage]);
-      saveMessage(assistantMessage);
+      insertAssistantMessage(assistantMessage);
     } finally {
       setIsTyping(false);
     }
@@ -2344,38 +2365,36 @@ export default function App() {
   const canSendMessage = !needsReflection && !isRecordingAudio && (input.trim() || uploadedFiles.length > 0);
   const archiveEntries = buildArchiveEntries(archiveMessages);
   const archiveQueryCount = archiveEntries.length;
-  const prepareAiComparisonPrompt = (sourcePrompt: string, responseContent: string) => {
-    if (needsReflection) {
-      alert('Please complete the reflection questions before asking another AI to review this response.');
-      return;
-    }
-
-    const nextProvider: ChatProvider =
-      selectedProvider === 'openai'
-        ? 'google'
-        : selectedProvider === 'google'
-          ? 'claude'
-          : 'openai';
-    const promptSummary = sourcePrompt.replace(/\s+/g, ' ').trim();
-    const displayPrompt = `Ask another AI to review: ${
-      promptSummary.length > 160 ? `${promptSummary.slice(0, 160)}...` : promptSummary || 'the previous response'
-    }`;
+  const prepareAiComparisonPrompt = (
+    sourcePrompt: string,
+    responseContent: string,
+    sourceProvider: string | undefined,
+    sourceMessageId: string
+  ) => {
+    const sourceProviderId = CHAT_PROVIDER_OPTIONS.find((option) =>
+      sourceProvider?.toLowerCase().includes(option.label.toLowerCase().split(' ')[0]) ||
+      sourceProvider === CHAT_PROVIDER_LABELS[option.id]
+    )?.id;
+    const nextProvider = (['claude', 'google', 'openai'] as ChatProvider[]).find((provider) => provider !== sourceProviderId) || 'openai';
     const requestPrompt = [
-      'What does another AI say about this query?',
-      'Compare your answer with the previous response and point out any differences.',
+      'Answer the original query as a second AI reviewer.',
+      'Give a complete, normal response to the query first. Then briefly mention any important differences from the previous AI response.',
       '',
       'Original query:',
       sourcePrompt,
       '',
-      'Previous AI response:',
+      'Previous AI response for context:',
       responseContent,
     ].join('\n');
 
     setSelectedProvider(nextProvider);
     void handleSend({
-      displayInput: displayPrompt,
+      displayInput: sourcePrompt || 'Ask another AI to review the previous response',
       requestInput: requestPrompt,
       provider: nextProvider,
+      skipUserMessage: true,
+      insertAfterMessageId: sourceMessageId,
+      comparisonResponse: true,
     });
   };
 
@@ -2845,3 +2864,4 @@ export default function App() {
     </div>
   );
 }
+
