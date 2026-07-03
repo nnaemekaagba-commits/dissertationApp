@@ -775,30 +775,24 @@ const MessageItem = memo(({
             onCopyContent={message.role === 'assistant' ? logMarkdownCopy : undefined}
           />
           {message.role === 'assistant' && hasSourcePrompt && (
-            <div className="source-review-card" aria-label="Review response sources">
-              <p className="source-review-title">Want to review this answer?</p>
-              <p className="source-review-question">
-                Do you want to know what another AI has to say, or view external web sources?
-              </p>
-              <div className="source-review-actions">
-                <button
-                  type="button"
-                  className="source-review-link source-review-ai"
-                  onClick={() => onCompareWithAnotherAI(sourcePrompt || '', displayContent, message.aiProvider, message.id)}
-                >
-                  <Bot className="size-4" />
-                  <span>Ask another AI</span>
-                </button>
-                <a
-                  className="source-review-link source-review-web"
-                  href={webSourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <Globe2 className="size-4" />
-                  <span>View external web sources</span>
-                </a>
-              </div>
+            <div className="source-review-actions" aria-label="Review response sources">
+              <button
+                type="button"
+                className="source-review-link source-review-ai"
+                onClick={() => onCompareWithAnotherAI(sourcePrompt || '', displayContent, message.aiProvider, message.id)}
+              >
+                <Bot className="size-4" />
+                <span>Ask another AI</span>
+              </button>
+              <a
+                className="source-review-link source-review-web"
+                href={webSourceUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Globe2 className="size-4" />
+                <span>View external web sources</span>
+              </a>
             </div>
           )}
           {message.attachments?.some((attachment) => attachment.type.startsWith('image/') && attachment.preview) && (
