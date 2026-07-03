@@ -86,6 +86,22 @@ interface ArchiveEntry {
 
 type ChatProvider = 'openai' | 'google' | 'claude';
 
+interface WebSearchResult {
+  title: string;
+  url: string;
+  snippet?: string;
+  source?: string;
+}
+
+interface WebSearchData {
+  query?: string;
+  provider?: string;
+  configured?: boolean;
+  results?: WebSearchResult[];
+  note?: string;
+  error?: string;
+}
+
 const reflectionQuestions = [
   'Are you satisfied with the response and why?',
   'How did you use this response in finding solution to the problem you want to solve?',
@@ -247,6 +263,36 @@ const CHAT_PROVIDER_LABELS: Record<ChatProvider, string> = {
   claude: 'Anthropic Claude',
 };
 const IMAGE_PROVIDER_LABEL = 'OpenAI Image';
+const WEB_SOURCE_PROVIDER_LABEL = 'External Web Sources';
+
+const escapeMarkdownText = (value = '') =>
+  value.replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]');
+
+const formatWebSearchResults = (data: WebSearchData, fallbackQuery: string) => {
+  const query = data.query || fallbackQuery;
+  const results = Array.isArray(data.results) ? data.results.filter((result) => result?.url) : [];
+  const intro =
+    data.configured === false
+      ? `## External web sources\n\nNo live search provider is configured yet. Use these direct web searches for: **${escapeMarkdownText(query)}**.`
+      : `## External web sources\n\nI found ${results.length} source${results.length === 1 ? '' : 's'} for: **${escapeMarkdownText(query)}**.`;
+
+  const resultText = results
+    .map((result, index) => {
+      const title = escapeMarkdownText(result.title || result.url);
+      const source = result.source ? ` _${escapeMarkdownText(result.source)}_` : '';
+      const snippet = result.snippet ? `\n   ${escapeMarkdownText(result.snippet)}` : '';
+      return `${index + 1}. [${title}](${result.url})${source}${snippet}`;
+    })
+    .join('\n\n');
+
+  return [
+    intro,
+    data.note ? `> ${escapeMarkdownText(data.note)}` : '',
+    resultText || 'No source results were returned.',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+};
 
 const formatTimestamp = (timestamp: Date) =>
   timestamp.toLocaleString([], {
@@ -698,6 +744,7 @@ const MessageItem = memo(({
   onFeedbackChange,
   onCopyLog,
   onCompareWithAnotherAI,
+  onViewExternalSources,
   normalizeContent
 }: { 
   message: Message;
@@ -705,15 +752,13 @@ const MessageItem = memo(({
   onFeedbackChange: (id: string, feedback: string) => void;
   onCopyLog: (id: string, source: CopyEvent['source'], copiedText: string) => void;
   onCompareWithAnotherAI: (sourcePrompt: string, responseContent: string, sourceProvider: string | undefined, sourceMessageId: string) => void;
+  onViewExternalSources: (sourcePrompt: string, responseContent: string, sourceMessageId: string) => void;
   normalizeContent: boolean;
 }) => {
   const [copiedResponse, setCopiedResponse] = useState(false);
   const [reflectionDrafts, setReflectionDrafts] = useState(() => parseReflectionAnswers(message.feedback || ''));
   const displayContent = stripArchiveIncorrectMarkers(message.content);
   const hasSourcePrompt = Boolean(sourcePrompt?.trim());
-  const webSourceUrl = hasSourcePrompt
-    ? `https://www.google.com/search?q=${encodeURIComponent(sourcePrompt || '')}`
-    : '';
 
   useEffect(() => {
     setReflectionDrafts(parseReflectionAnswers(message.feedback || ''));
@@ -784,15 +829,14 @@ const MessageItem = memo(({
                 <Bot className="size-4" />
                 <span>Ask another AI</span>
               </button>
-              <a
+              <button
+                type="button"
                 className="source-review-link source-review-web"
-                href={webSourceUrl}
-                target="_blank"
-                rel="noreferrer"
+                onClick={() => onViewExternalSources(sourcePrompt || '', displayContent, message.id)}
               >
                 <Globe2 className="size-4" />
                 <span>View external web sources</span>
-              </a>
+              </button>
             </div>
           )}
           {message.attachments?.some((attachment) => attachment.type.startsWith('image/') && attachment.preview) && (
@@ -2390,6 +2434,85 @@ ${data.response}` : data.response,
     });
   };
 
+  const insertLocalMessageAfter = (newMessage: Message, sourceMessageId: string) => {
+    setMessages((prev) => {
+      const sourceIndex = prev.findIndex((message) => message.id === sourceMessageId);
+      if (sourceIndex === -1) return [...prev, newMessage];
+      return [
+        ...prev.slice(0, sourceIndex + 1),
+        newMessage,
+        ...prev.slice(sourceIndex + 1),
+      ];
+    });
+  };
+
+  const handleViewExternalSources = async (
+    sourcePrompt: string,
+    _responseContent: string,
+    sourceMessageId: string
+  ) => {
+    const query = sourcePrompt.trim();
+    if (!query) return;
+
+    const pendingMessage: Message = {
+      id: `web-search-${Date.now()}`,
+      role: 'assistant',
+      content: `## External web sources\n\nSearching the web for: **${escapeMarkdownText(query)}**...`,
+      timestamp: new Date(),
+      aiProvider: WEB_SOURCE_PROVIDER_LABEL,
+    };
+
+    insertLocalMessageAfter(pendingMessage, sourceMessageId);
+
+    try {
+      const response = await fetch(`${CHAT_API_BASE_URL}/web-search`, {
+        method: 'POST',
+        headers: buildApiHeaders(true),
+        body: JSON.stringify({ query }),
+      });
+      const responseText = await response.text();
+      let data: WebSearchData = {};
+
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || responseText.slice(0, 240) || 'Failed to search web sources');
+      }
+
+      const updatedMessage: Message = {
+        ...pendingMessage,
+        content: formatWebSearchResults(data, query),
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) =>
+        prev.map((message) => (message.id === pendingMessage.id ? updatedMessage : message))
+      );
+      void saveMessage(updatedMessage);
+    } catch (error) {
+      const updatedMessage: Message = {
+        ...pendingMessage,
+        content: [
+          '## External web sources',
+          '',
+          'Sorry, I could not search external web sources right now.',
+          '',
+          `**Details**: ${error instanceof Error ? error.message : 'Failed to search web sources'}`,
+        ].join('\n'),
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) =>
+        prev.map((message) => (message.id === pendingMessage.id ? updatedMessage : message))
+      );
+      void saveMessage(updatedMessage);
+    }
+  };
+
   return (
     <div className="h-screen bg-slate-50 flex">
       <div className="w-full h-full bg-white flex flex-col">{/* Header */}
@@ -2443,6 +2566,7 @@ ${data.response}` : data.response,
                     onFeedbackChange={updateFeedback}
                     onCopyLog={recordCopyEvent}
                     onCompareWithAnotherAI={prepareAiComparisonPrompt}
+                    onViewExternalSources={handleViewExternalSources}
                     normalizeContent={normalizeRenderedContent}
                   />
                 ))}

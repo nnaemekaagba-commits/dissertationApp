@@ -272,7 +272,9 @@
   padding: 0.45rem 0.75rem;
   font-size: 0.82rem;
   font-weight: 800;
+  font-family: inherit;
   text-decoration: none;
+  cursor: pointer;
   transition: transform 0.15s ease, background-color 0.15s ease;
 }
 
