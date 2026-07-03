@@ -287,7 +287,6 @@ const formatWebSearchResults = (data: WebSearchData, fallbackQuery: string) => {
 
   return [
     intro,
-    data.note ? `> ${escapeMarkdownText(data.note)}` : '',
     resultText || 'No source results were returned.',
   ]
     .filter(Boolean)
@@ -788,6 +787,7 @@ const MessageItem = memo(({
   return (
     <div
       key={message.id}
+      id={`message-${message.id}`}
       className={`message-row flex gap-2 ${message.role === 'user' ? 'flex-row-reverse' : 'assistant-row'}`}
     >
       <div className={`size-7 rounded-full flex items-center justify-center flex-shrink-0 ${message.role === 'user' ? 'bg-blue-600' : 'bg-purple-600'}`}>
@@ -1852,6 +1852,15 @@ ${data.response}` : data.response,
     }
   };
 
+  const scrollToMessage = (messageId: string) => {
+    window.setTimeout(() => {
+      document.getElementById(`message-${messageId}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }, 100);
+  };
+
   const exportToPDF = () => {
     const printableUserName = userName || 'Guest User';
     const printableUserEmail = userEmail || 'Guest session';
@@ -2463,6 +2472,7 @@ ${data.response}` : data.response,
     };
 
     insertLocalMessageAfter(pendingMessage, sourceMessageId);
+    scrollToMessage(pendingMessage.id);
 
     try {
       const response = await fetch(`${CHAT_API_BASE_URL}/web-search`, {
@@ -2492,6 +2502,7 @@ ${data.response}` : data.response,
       setMessages((prev) =>
         prev.map((message) => (message.id === pendingMessage.id ? updatedMessage : message))
       );
+      scrollToMessage(pendingMessage.id);
       void saveMessage(updatedMessage);
     } catch (error) {
       const updatedMessage: Message = {
@@ -2509,6 +2520,7 @@ ${data.response}` : data.response,
       setMessages((prev) =>
         prev.map((message) => (message.id === pendingMessage.id ? updatedMessage : message))
       );
+      scrollToMessage(pendingMessage.id);
       void saveMessage(updatedMessage);
     }
   };
