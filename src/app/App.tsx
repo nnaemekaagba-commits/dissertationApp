@@ -46,7 +46,7 @@ declare global {
 
 interface CopyEvent {
   timestamp: Date;
-  source: 'response' | 'selection' | 'code';
+  source: 'response' | 'selection' | 'code' | 'link';
   text: string;
 }
 
@@ -334,6 +334,7 @@ const mergeCopyEvents = (...groups: Array<CopyEvent[] | undefined>) => {
 const formatCopySource = (source: CopyEvent['source']) => {
   if (source === 'response') return 'Full AI response copied';
   if (source === 'code') return 'Code block copied';
+  if (source === 'link') return 'Hyperlink clicked';
   return 'Selected AI response text copied';
 };
 
@@ -784,6 +785,11 @@ const MessageItem = memo(({
     onCopyLog(message.id, source, text);
   };
 
+  const logLinkClick = (label: string, href: string) => {
+    if (message.role !== 'assistant') return;
+    onCopyLog(message.id, 'link', `Hypertext: ${label || href}\nURL: ${href}`);
+  };
+
   return (
     <div
       key={message.id}
@@ -818,6 +824,7 @@ const MessageItem = memo(({
             content={displayContent}
             normalizeContent={normalizeContent}
             onCopyContent={message.role === 'assistant' ? logMarkdownCopy : undefined}
+            onLinkClick={message.role === 'assistant' ? logLinkClick : undefined}
           />
           {message.role === 'assistant' && hasSourcePrompt && (
             <div className="source-review-actions" aria-label="Review response sources">

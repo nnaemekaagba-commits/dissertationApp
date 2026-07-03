@@ -14,6 +14,7 @@ interface MarkdownRendererProps {
   className?: string;
   normalizeContent?: boolean;
   onCopyContent?: (text: string, source: 'code') => void;
+  onLinkClick?: (label: string, href: string) => void;
 }
 
 const normalizeRenderContent = (content: string) =>
@@ -76,7 +77,7 @@ function CodeBlock({ children, className, onCopyContent, ...props }: any) {
   );
 }
 
-export function MarkdownRenderer({ content, className = 'markdown', normalizeContent = false, onCopyContent }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className = 'markdown', normalizeContent = false, onCopyContent, onLinkClick }: MarkdownRendererProps) {
   const containsInlineImage = content.includes('data:image/');
   const renderedContent = normalizeContent && !containsInlineImage ? normalizeRenderContent(content) : content;
   const inlineDataImages = Array.from(renderedContent.matchAll(inlineDataImagePattern)).map((match, index) => ({
@@ -107,7 +108,16 @@ export function MarkdownRenderer({ content, className = 'markdown', normalizeCon
     em: ({ children }) => <em>{children}</em>,
     blockquote: ({ children }) => <blockquote>{children}</blockquote>,
     a: ({ children, href }) => (
-      <a href={href} target="_blank" rel="noopener noreferrer">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={() => {
+          if (href) {
+            onLinkClick?.(getTextContent(children), href);
+          }
+        }}
+      >
         {children}
       </a>
     ),
