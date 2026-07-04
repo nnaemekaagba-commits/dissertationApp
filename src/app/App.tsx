@@ -79,6 +79,7 @@ interface ArchiveEntry {
   aiProvider: string;
   aiProvidersUsed: string[];
   webSourcesUsed: boolean;
+  webSourcesUsedCount: number;
   aiResponse: string;
   reflection: string;
   attachments?: Message['attachments'];
@@ -660,6 +661,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         aiProvider: message.aiProvider || 'Provider not recorded',
         aiProvidersUsed: addUniqueProvider([], message.aiProvider),
         webSourcesUsed: false,
+        webSourcesUsedCount: 0,
         aiResponse: '',
         reflection: '',
         attachments: message.attachments,
@@ -677,6 +679,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         aiProvider: message.aiProvider || 'Provider not recorded',
         aiProvidersUsed: addUniqueProvider([], message.aiProvider),
         webSourcesUsed: message.aiProvider === WEB_SOURCE_PROVIDER_LABEL,
+        webSourcesUsedCount: message.aiProvider === WEB_SOURCE_PROVIDER_LABEL ? 1 : 0,
         aiResponse: message.content,
         reflection: message.feedback || '',
         attachments: message.attachments,
@@ -693,6 +696,7 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
       aiProvider: addUniqueProvider(pendingEntry.aiProvidersUsed, message.aiProvider).join(', ') || message.aiProvider || pendingEntry.aiProvider,
       aiProvidersUsed: addUniqueProvider(pendingEntry.aiProvidersUsed, message.aiProvider),
       webSourcesUsed: Boolean(pendingEntry.webSourcesUsed || message.aiProvider === WEB_SOURCE_PROVIDER_LABEL),
+      webSourcesUsedCount: pendingEntry.webSourcesUsedCount + (message.aiProvider === WEB_SOURCE_PROVIDER_LABEL ? 1 : 0),
       attachments: pendingEntry.attachments || message.attachments,
       aiResponse: pendingEntry.aiResponse
         ? `${pendingEntry.aiResponse}\n\n${message.content}`
@@ -1936,6 +1940,7 @@ ${data.response}` : data.response,
         ? escapeHtml(entry.aiProvidersUsed.join(', '))
         : 'None recorded';
       const webSourcesUsed = entry.webSourcesUsed ? 'Yes' : 'No';
+      const webSourceCount = entry.webSourcesUsedCount || 0;
       return `
         <section class="entry">
           <div class="entry-header">
@@ -1948,7 +1953,9 @@ ${data.response}` : data.response,
           <div class="field">
             <div class="label">Query Source Usage</div>
             <div class="value">
-              Different AI providers used: ${entry.aiProvidersUsed.length} (${aiProvidersUsed})<br />
+              AI provider count: ${entry.aiProvidersUsed.length}<br />
+              AI providers used: ${aiProvidersUsed}<br />
+              External web source count: ${webSourceCount}<br />
               External web sources used: ${webSourcesUsed}
             </div>
           </div>
@@ -2854,15 +2861,17 @@ ${data.response}` : data.response,
                     </div>
                     <div className="mb-3 grid gap-2 rounded-md border border-emerald-100 bg-emerald-50 p-2 text-xs text-emerald-950">
                       <div>
-                        <div className="font-semibold">AI providers used</div>
+                        <div className="font-semibold">AI provider count</div>
                         <div>
                           {entry.aiProvidersUsed.length} {entry.aiProvidersUsed.length === 1 ? 'provider' : 'providers'}
                           {entry.aiProvidersUsed.length > 0 ? `: ${entry.aiProvidersUsed.join(', ')}` : ''}
                         </div>
                       </div>
                       <div>
-                        <div className="font-semibold">External web sources used</div>
-                        <div>{entry.webSourcesUsed ? 'Yes' : 'No'}</div>
+                        <div className="font-semibold">External web source count</div>
+                        <div>
+                          {entry.webSourcesUsedCount || 0} {(entry.webSourcesUsedCount || 0) === 1 ? 'check' : 'checks'}
+                        </div>
                       </div>
                     </div>
                     <div className="mb-3">
