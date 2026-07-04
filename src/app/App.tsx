@@ -77,6 +77,8 @@ interface ArchiveEntry {
   timestamp: Date;
   userQuery: string;
   aiProvider: string;
+  aiProvidersUsed: string[];
+  webSourcesUsed: boolean;
   aiResponse: string;
   reflection: string;
   attachments?: Message['attachments'];
@@ -336,6 +338,14 @@ const formatCopySource = (source: CopyEvent['source']) => {
   if (source === 'code') return 'Code block copied';
   if (source === 'link') return 'Hyperlink clicked';
   return 'Selected AI response text copied';
+};
+
+const addUniqueProvider = (providers: string[] = [], provider?: string) => {
+  if (!provider || provider === WEB_SOURCE_PROVIDER_LABEL) {
+    return providers;
+  }
+
+  return providers.includes(provider) ? providers : [...providers, provider];
 };
 
 const blobToDataUrl = (blob: Blob) =>
@@ -648,6 +658,8 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         timestamp: message.timestamp,
         userQuery: message.content,
         aiProvider: message.aiProvider || 'Provider not recorded',
+        aiProvidersUsed: addUniqueProvider([], message.aiProvider),
+        webSourcesUsed: false,
         aiResponse: '',
         reflection: '',
         attachments: message.attachments,
@@ -663,6 +675,8 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         timestamp: message.timestamp,
         userQuery: '',
         aiProvider: message.aiProvider || 'Provider not recorded',
+        aiProvidersUsed: addUniqueProvider([], message.aiProvider),
+        webSourcesUsed: message.aiProvider === WEB_SOURCE_PROVIDER_LABEL,
         aiResponse: message.content,
         reflection: message.feedback || '',
         attachments: message.attachments,
@@ -676,7 +690,9 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
 
     pendingEntry = {
       ...pendingEntry,
-      aiProvider: message.aiProvider || pendingEntry.aiProvider,
+      aiProvider: addUniqueProvider(pendingEntry.aiProvidersUsed, message.aiProvider).join(', ') || message.aiProvider || pendingEntry.aiProvider,
+      aiProvidersUsed: addUniqueProvider(pendingEntry.aiProvidersUsed, message.aiProvider),
+      webSourcesUsed: Boolean(pendingEntry.webSourcesUsed || message.aiProvider === WEB_SOURCE_PROVIDER_LABEL),
       attachments: pendingEntry.attachments || message.attachments,
       aiResponse: pendingEntry.aiResponse
         ? `${pendingEntry.aiResponse}\n\n${message.content}`
@@ -685,8 +701,6 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
       isConflicting: Boolean(pendingEntry.isConflicting || hasConflictingResponse(message)),
       copyEvents: mergeCopyEvents(pendingEntry.copyEvents, message.copyEvents),
     };
-    entries.push(pendingEntry);
-    pendingEntry = null;
   });
 
   if (pendingEntry) {
@@ -1918,6 +1932,10 @@ ${data.response}` : data.response,
         : '<div class="empty-state">No copied AI response text recorded.</div>';
       const reflectionText = renderPrintableLines(normalizePrintableText(entry.reflection) || 'No reflection provided');
       const provider = escapeHtml(entry.aiProvider || 'Provider not recorded');
+      const aiProvidersUsed = entry.aiProvidersUsed.length > 0
+        ? escapeHtml(entry.aiProvidersUsed.join(', '))
+        : 'None recorded';
+      const webSourcesUsed = entry.webSourcesUsed ? 'Yes' : 'No';
       return `
         <section class="entry">
           <div class="entry-header">
@@ -1926,6 +1944,13 @@ ${data.response}` : data.response,
           </div>
           <div class="provider-row">
             <div class="provider">${provider}</div>
+          </div>
+          <div class="field">
+            <div class="label">Query Source Usage</div>
+            <div class="value">
+              Different AI providers used: ${entry.aiProvidersUsed.length} (${aiProvidersUsed})<br />
+              External web sources used: ${webSourcesUsed}
+            </div>
           </div>
           <div class="field">
             <div class="label">User Query</div>
@@ -2825,6 +2850,19 @@ ${data.response}` : data.response,
                     <div className="mb-3 flex flex-wrap items-center gap-2">
                       <div className="text-[11px] font-medium uppercase tracking-wide text-purple-700">
                         {entry.aiProvider || 'Provider not recorded'}
+                      </div>
+                    </div>
+                    <div className="mb-3 grid gap-2 rounded-md border border-emerald-100 bg-emerald-50 p-2 text-xs text-emerald-950">
+                      <div>
+                        <div className="font-semibold">AI providers used</div>
+                        <div>
+                          {entry.aiProvidersUsed.length} {entry.aiProvidersUsed.length === 1 ? 'provider' : 'providers'}
+                          {entry.aiProvidersUsed.length > 0 ? `: ${entry.aiProvidersUsed.join(', ')}` : ''}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-semibold">External web sources used</div>
+                        <div>{entry.webSourcesUsed ? 'Yes' : 'No'}</div>
                       </div>
                     </div>
                     <div className="mb-3">
