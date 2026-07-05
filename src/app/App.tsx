@@ -2848,9 +2848,19 @@ ${data.response}` : data.response,
                     key={entry.id}
                     className="p-3 mb-3 rounded-lg border bg-gray-50 border-gray-200"
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="font-semibold text-sm">
-                        Activity {index + 1}
+                    <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="font-semibold text-sm">
+                          Activity {index + 1}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                          <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-indigo-800">
+                            AI: {entry.aiProvidersUsed.length}
+                          </span>
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-800">
+                            Web: {entry.webSourcesUsedCount || 0}
+                          </span>
+                        </div>
                       </div>
                       <div className="text-xs text-gray-500">{formatTimestamp(entry.timestamp)}</div>
                     </div>
