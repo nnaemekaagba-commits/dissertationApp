@@ -1632,6 +1632,9 @@ export default function App() {
         ];
       });
       saveMessage(message);
+      if (options?.insertAfterMessageId) {
+        scrollToMessage(message.id);
+      }
     };
 
     if (userMessage) {
