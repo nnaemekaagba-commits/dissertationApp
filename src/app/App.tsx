@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect, memo, useCallback } from 'react';
+import { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Bot, Globe2, Search } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
@@ -507,7 +507,7 @@ const stripMarkdown = (content: string) =>
 const normalizePrintableText = (content: string) =>
   stripMarkdown(content)
     .replace(/\r/g, '')
-    .replace(/[â€¢â—¦â–ª]/g, 'â€¢')
+    .replace(/[•◦▪]/g, '•')
     .replace(/\t/g, ' ')
     .replace(/\\n/g, '\n')
     .replace(/\\t/g, ' ')
@@ -519,7 +519,7 @@ const normalizePrintableText = (content: string) =>
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \u00A0]{2,}/g, ' ')
     .replace(/[^\S\n]+([,.;:!?])/g, '$1')
-    .replace(/ï¿½/g, '')
+    .replace(/�/g, '')
     .trim();
 
 const removeAttachmentMetadataFromQuery = (content: string) => {
@@ -935,7 +935,7 @@ const MessageItem = memo(({
           )}
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          {message.aiProvider ? `${message.aiProvider} Â· ` : ''}
+          {message.aiProvider ? `${message.aiProvider} · ` : ''}
           {formatTimestamp(message.timestamp)}
         </div>
         
@@ -943,7 +943,7 @@ const MessageItem = memo(({
           <div className="mt-2">
             <div className="bg-gradient-to-r from-purple-100 to-pink-100 border border-purple-300 rounded-md p-2.5">
               <label className="block text-xs font-semibold text-purple-900 mb-1">
-                ðŸ’­ Reflection
+                💭 Reflection
               </label>
               <div className="reflection-questions">
                 {reflectionQuestions.map((question, index) => {
@@ -1279,7 +1279,7 @@ export default function App() {
               const nextMessages = mergeArchiveMessages(loadedMessages, localArchive);
               setMessages(filterMessagesForWorkspace(nextMessages, workspaceClearedAt));
               replaceArchiveMessages(currentUserId, nextMessages);
-              console.log(`âœ… Loaded ${loadedMessages.length} messages on session restore`);
+              console.log(`✅ Loaded ${loadedMessages.length} messages on session restore`);
             }
           }
         } catch (error) {
@@ -1330,7 +1330,7 @@ export default function App() {
             if (data.messages && Array.isArray(data.messages)) {
               const loadedMessages = normalizeMessages(data.messages);
               replaceArchiveMessages(userId, mergeArchiveMessages(loadedMessages, localArchive));
-              console.log(`âœ… Loaded ${loadedMessages.length} archive messages`);
+              console.log(`✅ Loaded ${loadedMessages.length} archive messages`);
             }
           }
         } catch (error) {
@@ -1467,7 +1467,7 @@ export default function App() {
           const nextMessages = mergeArchiveMessages(loadedMessages, localArchive);
           setMessages(filterMessagesForWorkspace(nextMessages, workspaceClearedAt));
           replaceArchiveMessages(newUserId, nextMessages);
-          console.log(`âœ… Loaded ${loadedMessages.length} messages for user ${newUserId}`);
+          console.log(`✅ Loaded ${loadedMessages.length} messages for user ${newUserId}`);
         }
       }
     } catch (error) {
@@ -1599,6 +1599,8 @@ export default function App() {
       /\b(generate|create|make|draw|produce|design)\b.{0,50}\b(images?|pictures?|photos?|illustrations?|diagrams?|visuals?)\b/,
       /\b(images?|pictures?|photos?|illustrations?|diagrams?|visuals?)\b.{0,30}\b(generate|create|make|draw|produce|design)\b/,
       /\b(ai[-\s]?generated|generate an?|create an?|make an?|draw an?)\b.{0,40}\b(image|picture|photo|illustration|diagram|visual)\b/,
+      /^(an?\s+)?(image|picture|photo|illustration|diagram|visual)\s+(of|showing|with)\b/,
+      /\b(i\s+need|i\s+want|show\s+me|give\s+me|can\s+you\s+make|can\s+you\s+create)\b.{0,35}\b(an?\s+)?(image|picture|photo|illustration|diagram|visual)\s+(of|showing|with)\b/,
     ];
 
     return generatedImagePatterns.some((pattern) => pattern.test(normalized)) ? 'generate' : null;
@@ -1791,7 +1793,7 @@ ${data.response}` : data.response,
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `âŒ **Error**: Sorry, there was an error processing your request.\n\n**Details**: ${errorMessage}`,
+        content: `❌ **Error**: Sorry, there was an error processing your request.\n\n**Details**: ${errorMessage}`,
         timestamp: new Date(),
         aiProvider: CHAT_PROVIDER_LABELS[requestProvider]
       };
@@ -2435,7 +2437,7 @@ ${data.response}` : data.response,
 
       if (response.ok) {
         clearLocalArchiveState(userId);
-        console.log('âœ… All messages cleared successfully');
+        console.log('✅ All messages cleared successfully');
       } else {
         const errorData = await response.json().catch(() => null);
         console.error('Failed to clear messages remotely:', errorData?.error || response.statusText);
@@ -2458,7 +2460,7 @@ ${data.response}` : data.response,
 
     // Clear only the current workspace view while preserving archive history.
     setMessages([]);
-    console.log('âœ… Workspace cleared (archive preserved)');
+    console.log('✅ Workspace cleared (archive preserved)');
   };
 
   const runImageGeneration = async (promptText: string, displayContent?: string) => {
