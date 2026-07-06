@@ -255,9 +255,9 @@ const compressImageForAI = async (file: UploadedFile): Promise<UploadedFile> => 
 };
 
 const CHAT_PROVIDER_OPTIONS: Array<{ id: ChatProvider; label: string }> = [
-  { id: 'openai', label: 'OpenAI' },
-  { id: 'google', label: 'Google AI' },
-  { id: 'claude', label: 'Claude' },
+  { id: 'openai', label: 'AI x' },
+  { id: 'google', label: 'AI y' },
+  { id: 'claude', label: 'AI z' },
 ];
 
 const CHAT_PROVIDER_LABELS: Record<ChatProvider, string> = {
