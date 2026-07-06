@@ -2887,72 +2887,6 @@ ${data.response}` : data.response,
                 </div>
               )}
 
-              <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  onChange={handleFileUpload}
-                  accept="audio/*,image/*,.pdf,.docx,.txt,.md,.csv,.py,.js,.java,.cpp,.c,.html,.css,.json"
-                  className="hidden"
-                  disabled={needsReflection || isRecordingAudio}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="size-7 rounded-lg border-gray-300 bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700"
-                  disabled={needsReflection || isRecordingAudio}
-                  title="Attach files"
-                >
-                  <Paperclip className="size-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant={isRecordingAudio ? 'default' : 'outline'}
-                  size="icon"
-                  onClick={toggleAudioRecording}
-                  className={`size-7 rounded-lg ${
-                    isRecordingAudio
-                      ? 'bg-red-600 text-white hover:bg-red-700'
-                      : 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
-                  }`}
-                  disabled={needsReflection}
-                  title={isRecordingAudio ? 'Stop recording and attach audio' : 'Record audio to attach to the prompt'}
-                >
-                  {isRecordingAudio ? <Square className="size-3.5" /> : <AudioLines className="size-3.5" />}
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => setNormalizeRenderedContent(prev => !prev)}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition flex items-center gap-1.5 ${
-                    normalizeRenderedContent
-                      ? 'border-purple-600 bg-purple-600 text-white shadow-sm'
-                      : 'border-gray-300 bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700'
-                  }`}
-                  title="Render text and formulas more cleanly"
-                >
-                  <Wand2 className="size-4" />
-                  <span>{normalizeRenderedContent ? 'Rendered' : 'Render Text + Formula'}</span>
-                </button>
-                {CHAT_PROVIDER_OPTIONS.map((providerOption) => (
-                  <button
-                    key={providerOption.id}
-                    type="button"
-                    onClick={() => setSelectedProvider(providerOption.id)}
-                    disabled={isTyping}
-                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-                      selectedProvider === providerOption.id
-                        ? 'border-purple-600 bg-purple-600 text-white shadow-sm'
-                        : 'border-gray-300 bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700'
-                    } ${isTyping ? 'cursor-not-allowed opacity-70' : ''}`}
-                  >
-                    {providerOption.label}
-                  </button>
-                ))}
-              </div>
-              
               <div className="flex gap-1.5">
                 <div className="flex-1 flex flex-col gap-1.5">
                   <div className="relative">
@@ -2999,6 +2933,72 @@ ${data.response}` : data.response,
                       </span>
                     </div>
                   )}
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    onChange={handleFileUpload}
+                    accept="audio/*,image/*,.pdf,.docx,.txt,.md,.csv,.py,.js,.java,.cpp,.c,.html,.css,.json"
+                    className="hidden"
+                    disabled={needsReflection || isRecordingAudio}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="size-7 rounded-lg border-gray-300 bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700"
+                    disabled={needsReflection || isRecordingAudio}
+                    title="Attach files"
+                  >
+                    <Paperclip className="size-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={isRecordingAudio ? 'default' : 'outline'}
+                    size="icon"
+                    onClick={toggleAudioRecording}
+                    className={`size-7 rounded-lg ${
+                      isRecordingAudio
+                        ? 'bg-red-600 text-white hover:bg-red-700'
+                        : 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
+                    }`}
+                    disabled={needsReflection}
+                    title={isRecordingAudio ? 'Stop recording and attach audio' : 'Record audio to attach to the prompt'}
+                  >
+                    {isRecordingAudio ? <Square className="size-3.5" /> : <AudioLines className="size-3.5" />}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setNormalizeRenderedContent(prev => !prev)}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition flex items-center gap-1.5 ${
+                      normalizeRenderedContent
+                        ? 'border-purple-600 bg-purple-600 text-white shadow-sm'
+                        : 'border-gray-300 bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700'
+                    }`}
+                    title="Render text and formulas more cleanly"
+                  >
+                    <Wand2 className="size-4" />
+                    <span>{normalizeRenderedContent ? 'Rendered' : 'Render Text + Formula'}</span>
+                  </button>
+                  {CHAT_PROVIDER_OPTIONS.map((providerOption) => (
+                    <button
+                      key={providerOption.id}
+                      type="button"
+                      onClick={() => setSelectedProvider(providerOption.id)}
+                      disabled={isTyping}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                        selectedProvider === providerOption.id
+                          ? 'border-purple-600 bg-purple-600 text-white shadow-sm'
+                          : 'border-gray-300 bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700'
+                      } ${isTyping ? 'cursor-not-allowed opacity-70' : ''}`}
+                    >
+                      {providerOption.label}
+                    </button>
+                  ))}
+                </div>
                 </div>
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
