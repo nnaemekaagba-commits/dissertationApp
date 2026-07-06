@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Bot, Globe2 } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Bot, Globe2, Search } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -101,6 +101,25 @@ interface WebSearchData {
   provider?: string;
   configured?: boolean;
   results?: WebSearchResult[];
+  note?: string;
+  error?: string;
+}
+
+interface ImageSearchResult {
+  title: string;
+  imageUrl: string;
+  thumbnailUrl?: string;
+  sourceUrl?: string;
+  source?: string;
+  width?: number;
+  height?: number;
+}
+
+interface ImageSearchData {
+  query?: string;
+  provider?: string;
+  configured?: boolean;
+  images?: ImageSearchResult[];
   note?: string;
   error?: string;
 }
@@ -267,6 +286,7 @@ const CHAT_PROVIDER_LABELS: Record<ChatProvider, string> = {
 };
 const IMAGE_PROVIDER_LABEL = 'OpenAI Image';
 const WEB_SOURCE_PROVIDER_LABEL = 'External Web Sources';
+const IMAGE_SEARCH_PROVIDER_LABEL = 'Internet Images';
 
 const escapeMarkdownText = (value = '') =>
   value.replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]');
@@ -291,6 +311,32 @@ const formatWebSearchResults = (data: WebSearchData, fallbackQuery: string) => {
   return [
     intro,
     resultText || 'No source results were returned.',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+};
+
+const formatImageSearchResults = (data: ImageSearchData, fallbackQuery: string) => {
+  const query = data.query || fallbackQuery;
+  const images = Array.isArray(data.images) ? data.images.filter((image) => image?.imageUrl) : [];
+  const intro =
+    data.configured === false
+      ? `## Internet image results\n\nNo live image search provider is configured yet for: **${escapeMarkdownText(query)}**.`
+      : `## Internet image results\n\nI found ${images.length} image${images.length === 1 ? '' : 's'} for: **${escapeMarkdownText(query)}**.`;
+
+  const resultText = images
+    .map((image, index) => {
+      const title = escapeMarkdownText(image.title || `Image result ${index + 1}`);
+      const source = image.source ? ` _${escapeMarkdownText(image.source)}_` : '';
+      const sourceLink = image.sourceUrl ? ` [Open source](${image.sourceUrl})` : '';
+      return `${index + 1}. **${title}**${source}${sourceLink}`;
+    })
+    .join('\n\n');
+
+  return [
+    intro,
+    data.note ? escapeMarkdownText(data.note) : '',
+    resultText || 'No image results were returned.',
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -1030,6 +1076,9 @@ export default function App() {
   const [showImageDialog, setShowImageDialog] = useState(false);
   const [imagePrompt, setImagePrompt] = useState('');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [showImageSearchDialog, setShowImageSearchDialog] = useState(false);
+  const [imageSearchQuery, setImageSearchQuery] = useState('');
+  const [isSearchingImages, setIsSearchingImages] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<ChatProvider>('openai');
   const [normalizeRenderedContent, setNormalizeRenderedContent] = useState(false);
   const [showClearLogDialog, setShowClearLogDialog] = useState(false);
@@ -2448,6 +2497,103 @@ ${data.response}` : data.response,
     }
   };
 
+  const handleSearchInternetImages = async () => {
+    const query = imageSearchQuery.trim();
+
+    if (!query) {
+      alert('Please enter what image you want to pull from the internet.');
+      return;
+    }
+
+    setIsSearchingImages(true);
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: `**Pull Images from Internet**: ${query}`,
+      timestamp: new Date(),
+      aiProvider: IMAGE_SEARCH_PROVIDER_LABEL,
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    void saveMessage(userMessage);
+    setImageSearchQuery('');
+    setShowImageSearchDialog(false);
+
+    const pendingMessage: Message = {
+      id: `image-search-${Date.now() + 1}`,
+      role: 'assistant',
+      content: `## Internet image results\n\nSearching the internet for images of: **${escapeMarkdownText(query)}**...`,
+      timestamp: new Date(),
+      aiProvider: IMAGE_SEARCH_PROVIDER_LABEL,
+    };
+
+    setMessages((prev) => [...prev, pendingMessage]);
+    scrollToMessage(pendingMessage.id);
+
+    try {
+      const response = await fetch(`${CHAT_API_BASE_URL}/image-search`, {
+        method: 'POST',
+        headers: buildApiHeaders(true),
+        body: JSON.stringify({ query }),
+      });
+      const responseText = await response.text();
+      let data: ImageSearchData = {};
+
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || responseText.slice(0, 240) || 'Failed to pull images from the internet');
+      }
+
+      const images = Array.isArray(data.images) ? data.images.filter((image) => image?.imageUrl) : [];
+      const attachments = images.map((image, index) => ({
+        name: image.title || `internet-image-${index + 1}`,
+        type: 'image/jpeg',
+        content: image.imageUrl,
+        preview: image.thumbnailUrl || image.imageUrl,
+        generated: false,
+      }));
+
+      const updatedMessage: Message = {
+        ...pendingMessage,
+        content: formatImageSearchResults(data, query),
+        attachments: attachments.length ? attachments : undefined,
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) =>
+        prev.map((message) => (message.id === pendingMessage.id ? updatedMessage : message))
+      );
+      scrollToMessage(pendingMessage.id);
+      void saveMessage(updatedMessage);
+    } catch (error) {
+      const updatedMessage: Message = {
+        ...pendingMessage,
+        content: [
+          '## Internet image results',
+          '',
+          'Sorry, I could not pull images from the internet right now.',
+          '',
+          `**Details**: ${error instanceof Error ? error.message : 'Failed to pull images from the internet'}`,
+        ].join('\n'),
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) =>
+        prev.map((message) => (message.id === pendingMessage.id ? updatedMessage : message))
+      );
+      scrollToMessage(pendingMessage.id);
+      void saveMessage(updatedMessage);
+    } finally {
+      setIsSearchingImages(false);
+    }
+  };
+
   const needsReflection = false;
   const canSendMessage = !isRecordingAudio && (input.trim() || uploadedFiles.length > 0);
   const archiveEntries = buildArchiveEntries(archiveMessages);
@@ -2796,6 +2942,17 @@ ${data.response}` : data.response,
                     >
                       <Wand2 className="size-3.5 text-purple-600" />
                     </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setShowImageSearchDialog(true)}
+                      className="size-7 rounded-lg border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100"
+                      disabled={needsReflection || isRecordingAudio}
+                      title="Pull images from the internet"
+                    >
+                      <Search className="size-3.5" />
+                    </Button>
                     <span className="text-[11px] text-gray-500 min-w-0 flex-1 truncate">
                       {isRecordingAudio
                         ? 'Recording audio... tap Stop Recording to attach it.'
@@ -3000,6 +3157,64 @@ ${data.response}` : data.response,
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Internet Image Search Dialog */}
+      <Dialog open={showImageSearchDialog} onOpenChange={setShowImageSearchDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="size-5 text-teal-600" />
+              Pull Images from Internet
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-900">
+                What image should the app find online?
+              </label>
+              <p className="text-xs text-gray-600">
+                Search the internet for relevant image results and add the returned images to the chat.
+              </p>
+              <Textarea
+                value={imageSearchQuery}
+                onChange={(e) => setImageSearchQuery(e.target.value)}
+                placeholder="e.g., oil rig engineer working onsite"
+                className="min-h-[96px]"
+                disabled={isSearchingImages}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowImageSearchDialog(false);
+                  setImageSearchQuery('');
+                }}
+                disabled={isSearchingImages}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSearchInternetImages}
+                disabled={!imageSearchQuery.trim() || isSearchingImages}
+                className="bg-teal-600 hover:bg-teal-700"
+              >
+                {isSearchingImages ? (
+                  <>
+                    <span className="size-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Searching...
+                  </>
+                ) : (
+                  <>
+                    <Search className="size-4 mr-2" />
+                    Pull Images
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       
       {/* Clear Workspace Confirmation Dialog */}
       <Dialog open={showClearWorkspaceDialog} onOpenChange={setShowClearWorkspaceDialog}>
@@ -3059,4 +3274,5 @@ ${data.response}` : data.response,
     </div>
   );
 }
+
 
