@@ -2988,15 +2988,17 @@ ${data.response}` : data.response,
                       disabled={needsReflection}
                     />
                   </div>
-                  <div className="flex flex-wrap items-center gap-1">
-                    <span className="text-[11px] text-gray-500 min-w-0 flex-1 truncate">
-                      {isRecordingAudio
-                        ? 'Recording audio... tap Stop Recording to attach it.'
-                        : audioRecordingError || (isListening
-                          ? 'Listening... speak clearly, then tap the mic to stop.'
-                          : speechError || 'Supports voice, audio recordings, images, PDFs, Word documents, and text files')}
-                    </span>
-                  </div>
+                  {(isRecordingAudio || audioRecordingError || isListening || speechError) && (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className="text-[11px] text-gray-500 min-w-0 flex-1 truncate">
+                        {isRecordingAudio
+                          ? 'Recording audio... tap Stop Recording to attach it.'
+                          : audioRecordingError || (isListening
+                            ? 'Listening... speak clearly, then tap the mic to stop.'
+                            : speechError)}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
