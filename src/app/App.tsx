@@ -2888,9 +2888,41 @@ ${data.response}` : data.response,
               )}
 
               <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
-                  AI Provider
-                </span>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleFileUpload}
+                  accept="audio/*,image/*,.pdf,.docx,.txt,.md,.csv,.py,.js,.java,.cpp,.c,.html,.css,.json"
+                  className="hidden"
+                  disabled={needsReflection || isRecordingAudio}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="size-7 rounded-lg border-gray-300 bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700"
+                  disabled={needsReflection || isRecordingAudio}
+                  title="Attach files"
+                >
+                  <Paperclip className="size-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant={isRecordingAudio ? 'default' : 'outline'}
+                  size="icon"
+                  onClick={toggleAudioRecording}
+                  className={`size-7 rounded-lg ${
+                    isRecordingAudio
+                      ? 'bg-red-600 text-white hover:bg-red-700'
+                      : 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
+                  }`}
+                  disabled={needsReflection}
+                  title={isRecordingAudio ? 'Stop recording and attach audio' : 'Record audio to attach to the prompt'}
+                >
+                  {isRecordingAudio ? <Square className="size-3.5" /> : <AudioLines className="size-3.5" />}
+                </Button>
                 <button
                   type="button"
                   onClick={() => setNormalizeRenderedContent(prev => !prev)}
@@ -2957,42 +2989,6 @@ ${data.response}` : data.response,
                     />
                   </div>
                   <div className="flex flex-wrap items-center gap-1">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      onChange={handleFileUpload}
-                      accept="audio/*,image/*,.pdf,.docx,.txt,.md,.csv,.py,.js,.java,.cpp,.c,.html,.css,.json"
-                      className="hidden"
-                      disabled={needsReflection || isRecordingAudio}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="size-7 rounded-lg"
-                      disabled={needsReflection || isRecordingAudio}
-                      title="Attach files"
-                    >
-                      <Paperclip className="size-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={isRecordingAudio ? 'default' : 'outline'}
-                      size="icon"
-                      onClick={toggleAudioRecording}
-                      className={`size-7 rounded-lg ${
-                        isRecordingAudio
-                          ? 'bg-red-600 text-white hover:bg-red-700'
-                          : 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
-                      }`}
-                      disabled={needsReflection}
-                      title={isRecordingAudio ? 'Stop recording and attach audio' : 'Record audio to attach to the prompt'}
-                    >
-                      {isRecordingAudio ? <Square className="size-3.5" /> : <AudioLines className="size-3.5" />}
-                    </Button>
-
                     <span className="text-[11px] text-gray-500 min-w-0 flex-1 truncate">
                       {isRecordingAudio
                         ? 'Recording audio... tap Stop Recording to attach it.'
