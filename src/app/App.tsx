@@ -1600,6 +1600,7 @@ export default function App() {
       /\b(images?|pictures?|photos?|illustrations?|diagrams?|visuals?)\b.{0,30}\b(generate|create|make|draw|produce|design)\b/,
       /\b(ai[-\s]?generated|generate an?|create an?|make an?|draw an?)\b.{0,40}\b(image|picture|photo|illustration|diagram|visual)\b/,
       /^(an?\s+)?(image|picture|photo|illustration|diagram|visual)\s+(of|showing|with)\b/,
+      /^([a-z0-9][\w'’-]*\s+){0,8}(image|picture|photo|illustration|diagram|visual)s?$/,
       /\b(i\s+need|i\s+want|show\s+me|give\s+me|can\s+you\s+make|can\s+you\s+create)\b.{0,35}\b(an?\s+)?(image|picture|photo|illustration|diagram|visual)\s+(of|showing|with)\b/,
     ];
 
