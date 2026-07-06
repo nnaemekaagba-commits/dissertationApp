@@ -287,6 +287,14 @@ const CHAT_PROVIDER_LABELS: Record<ChatProvider, string> = {
 const IMAGE_PROVIDER_LABEL = 'OpenAI Image';
 const WEB_SOURCE_PROVIDER_LABEL = 'External Web Sources';
 const IMAGE_SEARCH_PROVIDER_LABEL = 'Internet Images';
+const buildImageSearchLinks = (query: string) => {
+  const encodedQuery = encodeURIComponent(query);
+  return [
+    `[Google Images](https://www.google.com/search?tbm=isch&q=${encodedQuery})`,
+    `[Bing Images](https://www.bing.com/images/search?q=${encodedQuery})`,
+    `[Wikimedia Commons](https://commons.wikimedia.org/w/index.php?search=${encodedQuery}&title=Special:MediaSearch&type=image)`,
+  ].join(' | ');
+};
 
 const escapeMarkdownText = (value = '') =>
   value.replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]');
@@ -321,7 +329,7 @@ const formatImageSearchResults = (data: ImageSearchData, fallbackQuery: string) 
   const images = Array.isArray(data.images) ? data.images.filter((image) => image?.imageUrl) : [];
   const intro =
     data.configured === false
-      ? `## Internet image results\n\nNo live image search provider is configured yet for: **${escapeMarkdownText(query)}**.`
+      ? `## Internet image results\n\nI could not pull hosted image thumbnails automatically yet for: **${escapeMarkdownText(query)}**.`
       : `## Internet image results\n\nI found ${images.length} image${images.length === 1 ? '' : 's'} for: **${escapeMarkdownText(query)}**.`;
 
   const resultText = images
@@ -336,7 +344,7 @@ const formatImageSearchResults = (data: ImageSearchData, fallbackQuery: string) 
   return [
     intro,
     data.note ? escapeMarkdownText(data.note) : '',
-    resultText || 'No image results were returned.',
+    resultText || `No image thumbnails were returned. Open direct image searches: ${buildImageSearchLinks(query)}`,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -2532,7 +2540,7 @@ ${data.response}` : data.response,
     scrollToMessage(pendingMessage.id);
 
     try {
-      const response = await fetch(`${CHAT_API_BASE_URL}/image-search`, {
+      const response = await fetch(`${API_BASE_URL}/image-search`, {
         method: 'POST',
         headers: buildApiHeaders(true),
         body: JSON.stringify({ query }),
@@ -3173,7 +3181,7 @@ ${data.response}` : data.response,
                 What image should the app find online?
               </label>
               <p className="text-xs text-gray-600">
-                Search the internet for relevant image results and add the returned images to the chat.
+                Pull existing images from internet sources and add returned image results to the chat. This is separate from generating a new image.
               </p>
               <Textarea
                 value={imageSearchQuery}
@@ -3274,5 +3282,6 @@ ${data.response}` : data.response,
     </div>
   );
 }
+
 
 
