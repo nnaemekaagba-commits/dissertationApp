@@ -56,6 +56,7 @@ interface Message {
   content: string;
   timestamp: Date;
   aiProvider?: string;
+  provider?: ChatProvider;
   feedback?: string;
   attachments?: UploadedFile[];
   isIncorrect?: boolean;
@@ -280,10 +281,42 @@ const CHAT_PROVIDER_OPTIONS: Array<{ id: ChatProvider; label: string }> = [
 ];
 
 const CHAT_PROVIDER_LABELS: Record<ChatProvider, string> = {
-  openai: 'OpenAI GPT-4o',
-  google: 'Google Gemini',
-  claude: 'Anthropic Claude',
+  openai: 'Ax',
+  google: 'Ay',
+  claude: 'Az',
 };
+const normalizeChatProvider = (provider?: string | null): ChatProvider | undefined => {
+  const value = provider?.trim().toLowerCase();
+  if (!value) return undefined;
+
+  const directMatch = CHAT_PROVIDER_OPTIONS.find((option) =>
+    option.id === value || option.label.toLowerCase() === value
+  );
+  if (directMatch) return directMatch.id;
+
+  const providerLabelMatch = CHAT_PROVIDER_OPTIONS.find((option) =>
+    CHAT_PROVIDER_LABELS[option.id].toLowerCase() === value
+  );
+  if (providerLabelMatch) return providerLabelMatch.id;
+
+  if (value.includes('openai') || value.includes('gpt')) return 'openai';
+  if (value.includes('google') || value.includes('gemini')) return 'google';
+  if (value.includes('claude') || value.includes('anthropic')) return 'claude';
+
+  return undefined;
+};
+
+const getChatProviderDisplayLabel = (provider?: string | null): string | undefined => {
+  const providerId = normalizeChatProvider(provider);
+  return providerId ? CHAT_PROVIDER_LABELS[providerId] : provider || undefined;
+};
+
+const getAlternateChatProvider = (sourceProvider?: string | null): ChatProvider => {
+  const sourceProviderId = normalizeChatProvider(sourceProvider);
+  const providerOrder: ChatProvider[] = ['claude', 'google', 'openai'];
+  return providerOrder.find((provider) => provider !== sourceProviderId) || 'openai';
+};
+
 const IMAGE_PROVIDER_LABEL = 'OpenAI Image';
 const WEB_SOURCE_PROVIDER_LABEL = 'External Web Sources';
 const IMAGE_SEARCH_PROVIDER_LABEL = 'Internet Images';
@@ -903,7 +936,7 @@ const MessageItem = memo(({
               <button
                 type="button"
                 className="source-review-link source-review-ai"
-                onClick={() => onCompareWithAnotherAI(sourcePrompt || '', displayContent, message.aiProvider, message.id)}
+                onClick={() => onCompareWithAnotherAI(sourcePrompt || '', displayContent, message.provider || message.aiProvider, message.id)}
               >
                 <Bot className="size-4" />
                 <span>Ask another AI</span>
@@ -1697,7 +1730,8 @@ export default function App() {
       content: messageContent,
       timestamp: new Date(),
       aiProvider: CHAT_PROVIDER_LABELS[requestProvider],
-      attachments: activeUploadedFiles.length > 0 ? activeUploadedFiles : undefined
+      attachments: activeUploadedFiles.length > 0 ? activeUploadedFiles : undefined,
+      provider: requestProvider
     };
 
     const currentInput = requestContent;
@@ -1782,6 +1816,7 @@ export default function App() {
 ${data.response}` : data.response,
         timestamp: new Date(),
         aiProvider: providerUsed,
+        provider: requestProvider,
         isIncorrect: data.isIncorrect,
         isConflicting,
       };
@@ -1796,7 +1831,8 @@ ${data.response}` : data.response,
         role: 'assistant',
         content: `❌ **Error**: Sorry, there was an error processing your request.\n\n**Details**: ${errorMessage}`,
         timestamp: new Date(),
-        aiProvider: CHAT_PROVIDER_LABELS[requestProvider]
+        aiProvider: CHAT_PROVIDER_LABELS[requestProvider],
+        provider: requestProvider
       };
       insertAssistantMessage(assistantMessage);
     } finally {
@@ -2681,7 +2717,6 @@ ${data.response}` : data.response,
       responseContent,
     ].join('\n');
 
-    setSelectedProvider(nextProvider);
     void handleSend({
       displayInput: sourcePrompt || 'Ask another AI to review the previous response',
       requestInput: requestPrompt,
