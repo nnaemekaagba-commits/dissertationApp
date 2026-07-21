@@ -2027,6 +2027,102 @@ ${data.response}` : data.response,
     }, 100);
   };
 
+  const exportToSpreadsheet = () => {
+    const escapeCsvCell = (value: unknown) => {
+      const text = value === null || value === undefined ? '' : String(value);
+      return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+
+    const toFiniteNumber = (value: unknown) => {
+      const numericValue = Number(value);
+      return Number.isFinite(numericValue) ? numericValue : 0;
+    };
+
+    const getArrayLength = (value: unknown) => (Array.isArray(value) ? value.length : 0);
+
+    const getTimestampMs = (value: Date | string | number | undefined) => {
+      if (!value) return 0;
+      if (value instanceof Date) return value.getTime();
+      const parsed = new Date(value).getTime();
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const getRecordedDurationMinutes = (entry: ArchiveEntry) => {
+      const record = entry as ArchiveEntry & Record<string, unknown>;
+      const minuteValue =
+        toFiniteNumber(record.timeSpentMinutes) ||
+        toFiniteNumber(record.engagementMinutes) ||
+        toFiniteNumber(record.durationMinutes);
+
+      if (minuteValue > 0) {
+        return Number(minuteValue.toFixed(2));
+      }
+
+      const millisecondValue =
+        toFiniteNumber(record.timeSpentMs) ||
+        toFiniteNumber(record.engagementDurationMs) ||
+        toFiniteNumber(record.viewDurationMs) ||
+        toFiniteNumber(record.responseViewedMs);
+
+      return millisecondValue > 0 ? Number((millisecondValue / 60000).toFixed(2)) : 0;
+    };
+
+    const getActivityDurationMinutes = (entry: ArchiveEntry, index: number) => {
+      const recordedDuration = getRecordedDurationMinutes(entry);
+      if (recordedDuration > 0) return recordedDuration;
+
+      const nextEntry = archiveEntries[index + 1];
+      if (!nextEntry) return 0;
+
+      const startTime = getTimestampMs(entry.timestamp);
+      const endTime = getTimestampMs(nextEntry.timestamp);
+      if (!startTime || !endTime || endTime <= startTime) return 0;
+
+      return Number(((endTime - startTime) / 60000).toFixed(2));
+    };
+
+    const hasEditRecord = (entry: ArchiveEntry) => {
+      const record = entry as ArchiveEntry & Record<string, unknown>;
+      return getArrayLength(record.editEvents) > 0 ||
+        getArrayLength(record.responseEditEvents) > 0 ||
+        Boolean(record.responseEdited || record.aiResponseEdited || record.editedResponse)
+        ? 1
+        : 0;
+    };
+
+    const header = [
+      'activity',
+      'timespent on activity (minutes)',
+      'web visits',
+      'number of AI used',
+      'copying (1 or 0)',
+      'editing of ai response (1 or 0)',
+    ];
+
+    const rows = archiveEntries.map((entry, index) => [
+      index + 1,
+      getActivityDurationMinutes(entry, index),
+      entry.webSourcesUsedCount || 0,
+      entry.aiProvidersUsed.length,
+      entry.copyEvents && entry.copyEvents.length > 0 ? 1 : 0,
+      hasEditRecord(entry),
+    ]);
+
+    const csvContent = [header, ...rows]
+      .map((row) => row.map(escapeCsvCell).join(','))
+      .join('\r\n');
+
+    const blob = new Blob([`\ufeff${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const date = new Date().toISOString().split('T')[0];
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `solvepistemic-archive-activity-${date}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
   const exportToPDF = () => {
     const printableUserName = userName || 'Guest User';
     const printableUserEmail = userEmail || 'Guest session';
@@ -3065,6 +3161,10 @@ ${data.response}` : data.response,
                 <div className="flex gap-1">
                   <button onClick={() => setShowClearLogDialog(true)} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Clear All Messages">
                     <Trash2 className="size-4" />
+                  </button>
+                  <button onClick={exportToSpreadsheet} className="h-8 px-2 rounded hover:bg-white/20 flex items-center justify-center gap-1 text-[11px] font-semibold" title="Export activity spreadsheet">
+                    <FileDown className="size-4" />
+                    <span>CSV</span>
                   </button>
                   <button onClick={exportToPDF} className="h-8 px-2 rounded hover:bg-white/20 flex items-center justify-center gap-1 text-[11px] font-semibold" title="Export to PDF">
                     <FileDown className="size-4" />
