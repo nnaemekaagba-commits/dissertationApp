@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Bot, Globe2, Search } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Bot, Globe2, Search, Table } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
