@@ -1649,7 +1649,7 @@ export default function App() {
   }) => {
     const displayInput = options?.displayInput ?? input;
     const requestInput = options?.requestInput ?? displayInput;
-    const requestProvider = options?.provider ?? selectedProvider;
+    const requestProvider = normalizeChatProvider(options?.provider ?? selectedProvider) ?? 'openai';
     const activeUploadedFiles = options?.requestInput ? [] : uploadedFiles;
 
     if (!displayInput.trim() && activeUploadedFiles.length === 0) return;
@@ -1805,9 +1805,8 @@ export default function App() {
         isIncorrect: data.isIncorrect,
       });
       console.log('SERVER RESPONSE - conflict flag:', isConflicting);
-      const providerUsed = data.providerUsed && data.providerUsed in CHAT_PROVIDER_LABELS
-        ? CHAT_PROVIDER_LABELS[data.providerUsed as ChatProvider]
-        : CHAT_PROVIDER_LABELS[requestProvider];
+      const providerUsedId = normalizeChatProvider(data.providerUsed) ?? requestProvider;
+      const providerUsed = CHAT_PROVIDER_LABELS[providerUsedId];
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -1816,7 +1815,7 @@ export default function App() {
 ${data.response}` : data.response,
         timestamp: new Date(),
         aiProvider: providerUsed,
-        provider: requestProvider,
+        provider: providerUsedId,
         isIncorrect: data.isIncorrect,
         isConflicting,
       };
@@ -2701,11 +2700,7 @@ ${data.response}` : data.response,
     sourceProvider: string | undefined,
     sourceMessageId: string
   ) => {
-    const sourceProviderId = CHAT_PROVIDER_OPTIONS.find((option) =>
-      sourceProvider?.toLowerCase().includes(option.label.toLowerCase().split(' ')[0]) ||
-      sourceProvider === CHAT_PROVIDER_LABELS[option.id]
-    )?.id;
-    const nextProvider = (['claude', 'google', 'openai'] as ChatProvider[]).find((provider) => provider !== sourceProviderId) || 'openai';
+    const nextProvider = getAlternateChatProvider(sourceProvider);
     const requestPrompt = [
       'Answer the original query as a second AI reviewer.',
       'Give a complete, normal response to the query first. Then briefly mention any important differences from the previous AI response.',
