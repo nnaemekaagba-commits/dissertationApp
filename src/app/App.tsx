@@ -1121,6 +1121,11 @@ export default function App() {
   const [imageSearchQuery, setImageSearchQuery] = useState('');
   const [isSearchingImages, setIsSearchingImages] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<ChatProvider>('openai');
+  const selectedProviderRef = useRef<ChatProvider>('openai');
+  const selectChatProvider = (provider: ChatProvider) => {
+    selectedProviderRef.current = provider;
+    setSelectedProvider(provider);
+  };
   const [normalizeRenderedContent, setNormalizeRenderedContent] = useState(false);
   const [showClearLogDialog, setShowClearLogDialog] = useState(false);
   const [showClearWorkspaceDialog, setShowClearWorkspaceDialog] = useState(false);
@@ -1649,7 +1654,7 @@ export default function App() {
   }) => {
     const displayInput = options?.displayInput ?? input;
     const requestInput = options?.requestInput ?? displayInput;
-    const requestProvider = normalizeChatProvider(options?.provider ?? selectedProvider) ?? 'openai';
+    const requestProvider = normalizeChatProvider(options?.provider) ?? selectedProviderRef.current;
     const activeUploadedFiles = options?.requestInput ? [] : uploadedFiles;
 
     if (!displayInput.trim() && activeUploadedFiles.length === 0) return;
@@ -2712,6 +2717,7 @@ ${data.response}` : data.response,
       responseContent,
     ].join('\n');
 
+    selectChatProvider(nextProvider);
     void handleSend({
       displayInput: sourcePrompt || 'Ask another AI to review the previous response',
       requestInput: requestPrompt,
@@ -3017,7 +3023,7 @@ ${data.response}` : data.response,
                     <button
                       key={providerOption.id}
                       type="button"
-                      onClick={() => setSelectedProvider(providerOption.id)}
+                      onClick={() => selectChatProvider(providerOption.id)}
                       disabled={isTyping}
                       className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
                         selectedProvider === providerOption.id
@@ -3342,6 +3348,8 @@ ${data.response}` : data.response,
     </div>
   );
 }
+
+
 
 
 
