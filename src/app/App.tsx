@@ -559,6 +559,13 @@ const normalizeMessages = (rawMessages: any[] | undefined): Message[] => {
   return rawMessages.map((msg) => ({
     ...msg,
     timestamp: new Date(msg.timestamp),
+    editedAt: msg.editedAt ? new Date(msg.editedAt) : undefined,
+    responseEditEvents: Array.isArray(msg.responseEditEvents)
+      ? msg.responseEditEvents.map((event: ResponseEditEvent) => ({
+          ...event,
+          timestamp: new Date(event.timestamp),
+        }))
+      : undefined,
     copyEvents: Array.isArray(msg.copyEvents)
       ? msg.copyEvents.map((event: CopyEvent) => ({
           ...event,
@@ -806,6 +813,10 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         attachments: message.attachments,
         isConflicting: hasConflictingResponse(message),
         copyEvents: message.copyEvents || [],
+        originalResponse: message.originalResponse,
+        responseEdited: message.responseEdited,
+        editedAt: message.editedAt,
+        responseEditEvents: message.responseEditEvents,
       };
       return;
     }
@@ -824,6 +835,10 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         attachments: message.attachments,
         isConflicting: hasConflictingResponse(message),
         copyEvents: message.copyEvents || [],
+        originalResponse: message.originalResponse,
+        responseEdited: message.responseEdited,
+        editedAt: message.editedAt,
+        responseEditEvents: message.responseEditEvents,
       };
       entries.push(pendingEntry);
       pendingEntry = null;
@@ -843,6 +858,10 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
       reflection: message.feedback || pendingEntry.reflection,
       isConflicting: Boolean(pendingEntry.isConflicting || hasConflictingResponse(message)),
       copyEvents: mergeCopyEvents(pendingEntry.copyEvents, message.copyEvents),
+      originalResponse: pendingEntry.originalResponse || message.originalResponse,
+      responseEdited: Boolean(pendingEntry.responseEdited || message.responseEdited),
+      editedAt: message.editedAt || pendingEntry.editedAt,
+      responseEditEvents: mergeResponseEditEvents(pendingEntry.responseEditEvents, message.responseEditEvents),
     };
   });
 
@@ -877,6 +896,10 @@ const mergeArchiveMessages = (primaryMessages: Message[], fallbackMessages: Mess
       isIncorrect: message.isIncorrect ?? existing.isIncorrect,
       isConflicting: message.isConflicting ?? existing.isConflicting,
       copyEvents: mergeCopyEvents(existing.copyEvents, message.copyEvents),
+      originalResponse: message.originalResponse || existing.originalResponse,
+      responseEdited: Boolean(message.responseEdited || existing.responseEdited),
+      editedAt: message.editedAt || existing.editedAt,
+      responseEditEvents: mergeResponseEditEvents(existing.responseEditEvents, message.responseEditEvents),
       timestamp: message.timestamp || existing.timestamp,
     });
   });
@@ -900,6 +923,7 @@ const MessageItem = memo(({
   sourcePrompt,
   onFeedbackChange,
   onCopyLog,
+  onEditResponse,
   onCompareWithAnotherAI,
   onViewExternalSources,
   normalizeContent
@@ -908,11 +932,14 @@ const MessageItem = memo(({
   sourcePrompt?: string;
   onFeedbackChange: (id: string, feedback: string) => void;
   onCopyLog: (id: string, source: CopyEvent['source'], copiedText: string) => void;
+  onEditResponse: (id: string, updatedText: string) => void;
   onCompareWithAnotherAI: (sourcePrompt: string, responseContent: string, sourceProvider: string | undefined, sourceMessageId: string) => void;
   onViewExternalSources: (sourcePrompt: string, responseContent: string, sourceMessageId: string) => void;
   normalizeContent: boolean;
 }) => {
   const [copiedResponse, setCopiedResponse] = useState(false);
+  const [isEditingResponse, setIsEditingResponse] = useState(false);
+  const [responseDraft, setResponseDraft] = useState(() => stripArchiveIncorrectMarkers(message.content));
   const [reflectionDrafts, setReflectionDrafts] = useState(() => parseReflectionAnswers(message.feedback || ''));
   const displayContent = stripArchiveIncorrectMarkers(message.content);
   const hasSourcePrompt = Boolean(sourcePrompt?.trim());
@@ -920,6 +947,12 @@ const MessageItem = memo(({
   useEffect(() => {
     setReflectionDrafts(parseReflectionAnswers(message.feedback || ''));
   }, [message.id, message.feedback]);
+
+  useEffect(() => {
+    if (!isEditingResponse) {
+      setResponseDraft(displayContent);
+    }
+  }, [displayContent, isEditingResponse, message.id]);
 
   const copyResponse = async () => {
     try {
@@ -966,23 +999,75 @@ const MessageItem = memo(({
               <div className="assistant-response-heading">
                 <span className="assistant-response-label">AI response</span>
               </div>
-              <button
-                type="button"
-                className="assistant-copy-button"
-                onClick={copyResponse}
-                title="Copy response"
-                aria-label="Copy response"
-              >
-                {copiedResponse ? <Check className="size-4" /> : <Copy className="size-4" />}
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="assistant-edit-button"
+                  onClick={() => {
+                    setResponseDraft(displayContent);
+                    setIsEditingResponse(true);
+                  }}
+                  title="Edit response"
+                  aria-label="Edit response"
+                >
+                  <Pencil className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  className="assistant-copy-button"
+                  onClick={copyResponse}
+                  title="Copy response"
+                  aria-label="Copy response"
+                >
+                  {copiedResponse ? <Check className="size-4" /> : <Copy className="size-4" />}
+                </button>
+              </div>
             </div>
           )}
-          <MarkdownRenderer
-            content={displayContent}
-            normalizeContent={normalizeContent}
-            onCopyContent={message.role === 'assistant' ? logMarkdownCopy : undefined}
-            onLinkClick={message.role === 'assistant' ? logLinkClick : undefined}
-          />
+          {message.role === 'assistant' && isEditingResponse ? (
+            <div className="assistant-response-edit-panel">
+              <Textarea
+                value={responseDraft}
+                onChange={(event) => setResponseDraft(event.target.value)}
+                onKeyDown={(event) => event.stopPropagation()}
+                onKeyUp={(event) => event.stopPropagation()}
+                placeholder=""
+                className="assistant-response-editor"
+                aria-label="Edit AI response"
+              />
+              <div className="assistant-response-edit-actions">
+                <button
+                  type="button"
+                  className="assistant-edit-button"
+                  onClick={() => {
+                    setResponseDraft(displayContent);
+                    setIsEditingResponse(false);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="assistant-save-button"
+                  disabled={!responseDraft.trim() || responseDraft === displayContent}
+                  onClick={() => {
+                    onEditResponse(message.id, responseDraft);
+                    setIsEditingResponse(false);
+                  }}
+                >
+                  <Save className="size-4" />
+                  Save
+                </button>
+              </div>
+            </div>
+          ) : (
+            <MarkdownRenderer
+              content={displayContent}
+              normalizeContent={normalizeContent}
+              onCopyContent={message.role === 'assistant' ? logMarkdownCopy : undefined}
+              onLinkClick={message.role === 'assistant' ? logLinkClick : undefined}
+            />
+          )}
           {message.role === 'assistant' && hasSourcePrompt && (
             <div className="source-review-actions" aria-label="Review response sources">
               <button
@@ -1520,6 +1605,71 @@ export default function App() {
     window.setTimeout(() => {
       if (updatedMessage) {
         void saveMessage(updatedMessage);
+      }
+    }, 0);
+  }, [persistArchive, saveMessage, userId]);
+
+  const handleResponseEdit = useCallback((messageId: string, updatedText: string) => {
+    const normalizedText = updatedText.replace(/\r\n/g, '\n').trim();
+    if (!normalizedText) return;
+
+    let updatedMessage: Message | null = null;
+
+    setMessages((prev) =>
+      prev.map((message) => {
+        if (message.id !== messageId || message.role !== 'assistant') return message;
+
+        const currentText = stripArchiveIncorrectMarkers(message.content);
+        if (normalizedText === currentText) return message;
+
+        const editedAt = new Date();
+        updatedMessage = {
+          ...message,
+          content: normalizedText,
+          originalResponse: message.originalResponse || message.content,
+          responseEdited: true,
+          editedAt,
+          responseEditEvents: mergeResponseEditEvents(message.responseEditEvents, [{
+            timestamp: editedAt,
+            previousText: message.content,
+            updatedText: normalizedText,
+          }]),
+        };
+
+        return updatedMessage;
+      })
+    );
+
+    if (userId) {
+      setArchiveMessages((prev) => {
+        const nextMessages = prev.map((message) => {
+          if (message.id !== messageId || message.role !== 'assistant') return message;
+          if (updatedMessage) return updatedMessage;
+
+          const editedAt = new Date();
+          return {
+            ...message,
+            content: normalizedText,
+            originalResponse: message.originalResponse || message.content,
+            responseEdited: true,
+            editedAt,
+            responseEditEvents: mergeResponseEditEvents(message.responseEditEvents, [{
+              timestamp: editedAt,
+              previousText: message.content,
+              updatedText: normalizedText,
+            }]),
+          };
+        });
+
+        persistArchive(userId, nextMessages);
+        return nextMessages;
+      });
+    }
+
+    window.setTimeout(() => {
+      const messageToSave = updatedMessage;
+      if (messageToSave) {
+        void saveMessage(messageToSave);
       }
     }, 0);
   }, [persistArchive, saveMessage, userId]);
@@ -3010,6 +3160,7 @@ ${data.response}` : data.response,
                     sourcePrompt={message.role === 'assistant' ? findPreviousUserPrompt(messages, index) : ''}
                     onFeedbackChange={updateFeedback}
                     onCopyLog={recordCopyEvent}
+                    onEditResponse={handleResponseEdit}
                     onCompareWithAnotherAI={prepareAiComparisonPrompt}
                     onViewExternalSources={handleViewExternalSources}
                     normalizeContent={normalizeRenderedContent}
