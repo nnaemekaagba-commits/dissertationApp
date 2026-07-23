@@ -1,4 +1,4 @@
-/* Tailwind imports */
+﻿/* Tailwind imports */
 @import 'tailwindcss' source(none);
 @source '../**/*.{js,ts,jsx,tsx}';
 
@@ -824,4 +824,88 @@
 
 .markdown-user .katex-display {
   color: white;
+}
+
+.assistant-response-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.assistant-edited-badge {
+  border: 1px solid rgba(124, 58, 237, 0.28);
+  border-radius: 999px;
+  color: #5b21b6;
+  background: #f3e8ff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.45rem;
+  text-transform: uppercase;
+}
+
+.assistant-edit-button,
+.assistant-text-button {
+  border: 1px solid rgba(124, 58, 237, 0.28);
+  background: #ffffff;
+  color: #4c1d95;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  min-height: 2rem;
+  padding: 0.35rem 0.7rem;
+}
+
+.assistant-save-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #7c3aed;
+  color: #ffffff;
+  border-color: #7c3aed;
+}
+
+.assistant-save-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.assistant-edit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  padding: 0.35rem;
+}
+
+.assistant-response-edit-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.assistant-response-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.assistant-response-editor {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  border: 1px solid rgba(124, 58, 237, 0.35);
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: #14213d;
+  font: inherit;
+  line-height: 1.7;
+  padding: 1rem;
+  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.08);
+}
+
+.assistant-response-editor:focus {
+  outline: 2px solid rgba(124, 58, 237, 0.28);
+  outline-offset: 2px;
 }

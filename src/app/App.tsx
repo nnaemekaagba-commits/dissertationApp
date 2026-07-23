@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Bot, Globe2, Search, Table } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Bot, Globe2, Search, Table, Pencil, Save } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -50,6 +50,12 @@ interface CopyEvent {
   text: string;
 }
 
+interface ResponseEditEvent {
+  timestamp: Date;
+  previousText: string;
+  updatedText: string;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -62,6 +68,10 @@ interface Message {
   isIncorrect?: boolean;
   isConflicting?: boolean;
   copyEvents?: CopyEvent[];
+  originalResponse?: string;
+  responseEdited?: boolean;
+  editedAt?: Date;
+  responseEditEvents?: ResponseEditEvent[];
 }
 
 interface UploadedFile {
@@ -86,6 +96,10 @@ interface ArchiveEntry {
   attachments?: Message['attachments'];
   isConflicting?: boolean;
   copyEvents?: CopyEvent[];
+  originalResponse?: string;
+  responseEdited?: boolean;
+  editedAt?: Date;
+  responseEditEvents?: ResponseEditEvent[];
 }
 
 type ChatProvider = 'openai' | 'google' | 'claude';
@@ -174,6 +188,16 @@ const stripArchiveIncorrectMarkers = (content = '') =>
 
 const sanitizeMessageForRemoteSave = (message: Message): Message => ({
   ...message,
+  timestamp: message.timestamp instanceof Date ? message.timestamp : new Date(message.timestamp),
+  editedAt: message.editedAt ? (message.editedAt instanceof Date ? message.editedAt : new Date(message.editedAt)) : undefined,
+  copyEvents: message.copyEvents?.map((event) => ({
+    ...event,
+    timestamp: event.timestamp instanceof Date ? event.timestamp : new Date(event.timestamp),
+  })),
+  responseEditEvents: message.responseEditEvents?.map((event) => ({
+    ...event,
+    timestamp: event.timestamp instanceof Date ? event.timestamp : new Date(event.timestamp),
+  })),
   attachments: message.attachments?.map((attachment) => ({
     name: attachment.name,
     type: attachment.type,
@@ -187,6 +211,16 @@ const dataImageMarkdownPattern = /!\[([^\]]*)\]\((data:image\/[a-zA-Z0-9.+-]+;ba
 
 const sanitizeMessageForLocalArchive = (message: Message): Message => ({
   ...message,
+  timestamp: message.timestamp instanceof Date ? message.timestamp : new Date(message.timestamp),
+  editedAt: message.editedAt ? (message.editedAt instanceof Date ? message.editedAt : new Date(message.editedAt)) : undefined,
+  copyEvents: message.copyEvents?.map((event) => ({
+    ...event,
+    timestamp: event.timestamp instanceof Date ? event.timestamp : new Date(event.timestamp),
+  })),
+  responseEditEvents: message.responseEditEvents?.map((event) => ({
+    ...event,
+    timestamp: event.timestamp instanceof Date ? event.timestamp : new Date(event.timestamp),
+  })),
   content: message.content
     .replace(dataImageMarkdownPattern, '$1')
     .replace(/\n{3,}/g, '\n\n')
@@ -419,6 +453,24 @@ const mergeCopyEvents = (...groups: Array<CopyEvent[] | undefined>) => {
     seen.add(key);
     return true;
   });
+};
+
+const mergeResponseEditEvents = (...groups: Array<ResponseEditEvent[] | undefined>) => {
+  const seen = new Set<string>();
+
+  return groups
+    .flatMap((group) => group || [])
+    .map((event) => ({
+      ...event,
+      timestamp: event.timestamp instanceof Date ? event.timestamp : new Date(event.timestamp),
+    }))
+    .filter((event) => {
+      const key = `${event.timestamp.getTime()}|${event.previousText}|${event.updatedText}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 };
 
 const formatCopySource = (source: CopyEvent['source']) => {
@@ -1638,7 +1690,7 @@ export default function App() {
       /\b(images?|pictures?|photos?|illustrations?|diagrams?|visuals?)\b.{0,30}\b(generate|create|make|draw|produce|design)\b/,
       /\b(ai[-\s]?generated|generate an?|create an?|make an?|draw an?)\b.{0,40}\b(image|picture|photo|illustration|diagram|visual)\b/,
       /^(an?\s+)?(image|picture|photo|illustration|diagram|visual)\s+(of|showing|with)\b/,
-      /^([a-z0-9][\w'’-]*\s+){0,8}(image|picture|photo|illustration|diagram|visual)s?$/,
+      /^([a-z0-9][\w'ï¿½-]*\s+){0,8}(image|picture|photo|illustration|diagram|visual)s?$/,
       /\b(i\s+need|i\s+want|show\s+me|give\s+me|can\s+you\s+make|can\s+you\s+create)\b.{0,35}\b(an?\s+)?(image|picture|photo|illustration|diagram|visual)\s+(of|showing|with)\b/,
     ];
 
@@ -3448,9 +3500,3 @@ ${data.response}` : data.response,
     </div>
   );
 }
-
-
-
-
-
-
