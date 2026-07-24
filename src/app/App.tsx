@@ -72,6 +72,7 @@ interface Message {
   responseEdited?: boolean;
   editedAt?: Date;
   responseEditEvents?: ResponseEditEvent[];
+  webSourcesUsedCount?: number;
 }
 
 interface UploadedFile {
@@ -365,31 +366,6 @@ const buildImageSearchLinks = (query: string) => {
 
 const escapeMarkdownText = (value = '') =>
   value.replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]');
-
-const formatWebSearchResults = (data: WebSearchData, fallbackQuery: string) => {
-  const query = data.query || fallbackQuery;
-  const results = Array.isArray(data.results) ? data.results.filter((result) => result?.url) : [];
-  const intro =
-    data.configured === false
-      ? `## External web sources\n\nNo live search provider is configured yet. Use these direct web searches for: **${escapeMarkdownText(query)}**.`
-      : `## External web sources\n\nI found ${results.length} source${results.length === 1 ? '' : 's'} for: **${escapeMarkdownText(query)}**.`;
-
-  const resultText = results
-    .map((result, index) => {
-      const title = escapeMarkdownText(result.title || result.url);
-      const source = result.source ? ` _${escapeMarkdownText(result.source)}_` : '';
-      const snippet = result.snippet ? `\n   ${escapeMarkdownText(result.snippet)}` : '';
-      return `${index + 1}. [${title}](${result.url})${source}${snippet}`;
-    })
-    .join('\n\n');
-
-  return [
-    intro,
-    resultText || 'No source results were returned.',
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-};
 
 const formatImageSearchResults = (data: ImageSearchData, fallbackQuery: string) => {
   const query = data.query || fallbackQuery;
@@ -790,6 +766,10 @@ const ArchiveResponseRenderer = ({
   );
 };
 
+const getMessageWebSourceCount = (message: Message) =>
+  Math.max(0, message.webSourcesUsedCount || 0) +
+  (message.aiProvider === WEB_SOURCE_PROVIDER_LABEL ? 1 : 0);
+
 const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
   const entries: ArchiveEntry[] = [];
   let pendingEntry: ArchiveEntry | null = null;
@@ -828,8 +808,8 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
         userQuery: '',
         aiProvider: message.aiProvider || 'Provider not recorded',
         aiProvidersUsed: addUniqueProvider([], message.aiProvider),
-        webSourcesUsed: message.aiProvider === WEB_SOURCE_PROVIDER_LABEL,
-        webSourcesUsedCount: message.aiProvider === WEB_SOURCE_PROVIDER_LABEL ? 1 : 0,
+        webSourcesUsed: getMessageWebSourceCount(message) > 0,
+        webSourcesUsedCount: getMessageWebSourceCount(message),
         aiResponse: message.content,
         reflection: message.feedback || '',
         attachments: message.attachments,
@@ -849,8 +829,8 @@ const buildArchiveEntries = (messages: Message[]): ArchiveEntry[] => {
       ...pendingEntry,
       aiProvider: addUniqueProvider(pendingEntry.aiProvidersUsed, message.aiProvider).join(', ') || message.aiProvider || pendingEntry.aiProvider,
       aiProvidersUsed: addUniqueProvider(pendingEntry.aiProvidersUsed, message.aiProvider),
-      webSourcesUsed: Boolean(pendingEntry.webSourcesUsed || message.aiProvider === WEB_SOURCE_PROVIDER_LABEL),
-      webSourcesUsedCount: pendingEntry.webSourcesUsedCount + (message.aiProvider === WEB_SOURCE_PROVIDER_LABEL ? 1 : 0),
+      webSourcesUsed: Boolean(pendingEntry.webSourcesUsed || getMessageWebSourceCount(message) > 0),
+      webSourcesUsedCount: pendingEntry.webSourcesUsedCount + getMessageWebSourceCount(message),
       attachments: pendingEntry.attachments || message.attachments,
       aiResponse: pendingEntry.aiResponse
         ? `${pendingEntry.aiResponse}\n\n${message.content}`
@@ -900,6 +880,10 @@ const mergeArchiveMessages = (primaryMessages: Message[], fallbackMessages: Mess
       responseEdited: Boolean(message.responseEdited || existing.responseEdited),
       editedAt: message.editedAt || existing.editedAt,
       responseEditEvents: mergeResponseEditEvents(existing.responseEditEvents, message.responseEditEvents),
+      webSourcesUsedCount: Math.max(
+        existing.webSourcesUsedCount || 0,
+        message.webSourcesUsedCount || 0
+      ),
       timestamp: message.timestamp || existing.timestamp,
     });
   });
@@ -3046,16 +3030,32 @@ ${data.response}` : data.response,
     const query = sourcePrompt.trim();
     if (!query) return;
 
-    const pendingMessage: Message = {
-      id: `web-search-${Date.now()}`,
-      role: 'assistant',
-      content: `## External web sources\n\nSearching the web for: **${escapeMarkdownText(query)}**...`,
-      timestamp: new Date(),
-      aiProvider: WEB_SOURCE_PROVIDER_LABEL,
-    };
+    const fallbackUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    const sourceWindow = window.open('about:blank', '_blank');
+    if (sourceWindow) {
+      sourceWindow.opener = null;
+    }
 
-    insertLocalMessageAfter(pendingMessage, sourceMessageId);
-    scrollToMessage(pendingMessage.id);
+    const openSourceAndLog = (url: string) => {
+      if (sourceWindow && !sourceWindow.closed) {
+        sourceWindow.location.replace(url);
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+
+      const sourceMessage = messages.find((message) => message.id === sourceMessageId);
+      if (!sourceMessage) return;
+
+      const updatedMessage: Message = {
+        ...sourceMessage,
+        webSourcesUsedCount: (sourceMessage.webSourcesUsedCount || 0) + 1,
+      };
+
+      setMessages((prev) =>
+        prev.map((message) => (message.id === sourceMessageId ? updatedMessage : message))
+      );
+      void saveMessage(updatedMessage);
+    };
 
     try {
       const response = await fetch(`${CHAT_API_BASE_URL}/web-search`, {
@@ -3076,35 +3076,12 @@ ${data.response}` : data.response,
         throw new Error(data.error || responseText.slice(0, 240) || 'Failed to search web sources');
       }
 
-      const updatedMessage: Message = {
-        ...pendingMessage,
-        content: formatWebSearchResults(data, query),
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) =>
-        prev.map((message) => (message.id === pendingMessage.id ? updatedMessage : message))
-      );
-      scrollToMessage(pendingMessage.id);
-      void saveMessage(updatedMessage);
-    } catch (error) {
-      const updatedMessage: Message = {
-        ...pendingMessage,
-        content: [
-          '## External web sources',
-          '',
-          'Sorry, I could not search external web sources right now.',
-          '',
-          `**Details**: ${error instanceof Error ? error.message : 'Failed to search web sources'}`,
-        ].join('\n'),
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) =>
-        prev.map((message) => (message.id === pendingMessage.id ? updatedMessage : message))
-      );
-      scrollToMessage(pendingMessage.id);
-      void saveMessage(updatedMessage);
+      const sourceUrl =
+        data.results?.find((result) => /^https?:\/\//i.test(result.url || ''))?.url ||
+        fallbackUrl;
+      openSourceAndLog(sourceUrl);
+    } catch {
+      openSourceAndLog(fallbackUrl);
     }
   };
 
@@ -3153,19 +3130,23 @@ ${data.response}` : data.response,
           <div className="flex-1 flex flex-col min-w-0 relative">
             <div className="flex-1 overflow-y-auto p-2 sm:p-3 min-h-0">
               <div ref={scrollRef} className="space-y-2">
-                {messages.map((message, index) => (
-                  <MessageItem
-                    key={message.id}
-                    message={message}
-                    sourcePrompt={message.role === 'assistant' ? findPreviousUserPrompt(messages, index) : ''}
-                    onFeedbackChange={updateFeedback}
-                    onCopyLog={recordCopyEvent}
-                    onEditResponse={handleResponseEdit}
-                    onCompareWithAnotherAI={prepareAiComparisonPrompt}
-                    onViewExternalSources={handleViewExternalSources}
-                    normalizeContent={normalizeRenderedContent}
-                  />
-                ))}
+                {messages.map((message, index) => {
+                  if (message.aiProvider === WEB_SOURCE_PROVIDER_LABEL) return null;
+
+                  return (
+                    <MessageItem
+                      key={message.id}
+                      message={message}
+                      sourcePrompt={message.role === 'assistant' ? findPreviousUserPrompt(messages, index) : ''}
+                      onFeedbackChange={updateFeedback}
+                      onCopyLog={recordCopyEvent}
+                      onEditResponse={handleResponseEdit}
+                      onCompareWithAnotherAI={prepareAiComparisonPrompt}
+                      onViewExternalSources={handleViewExternalSources}
+                      normalizeContent={normalizeRenderedContent}
+                    />
+                  );
+                })}
                 
                 {isTyping && (
                   <div className="flex gap-2">
