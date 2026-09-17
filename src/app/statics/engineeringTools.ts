@@ -4,7 +4,8 @@ import { parseStaticsWorkspace, type StaticsSupport, type StaticsWorkspace } fro
 
 export const ENGINEERING_TOOL_NAMES = [
   'get_current_structure', 'change_load_magnitude', 'move_load', 'change_support',
-  'change_dimension', 'show_view', 'show_fbd', 'calculate_reactions',
+  'change_member_dimension', 'add_load', 'remove_load', 'change_dimension',
+  'show_view', 'show_fbd', 'calculate_reactions',
 ] as const;
 export type EngineeringToolName = typeof ENGINEERING_TOOL_NAMES[number];
 export type EngineeringView = 'front' | 'top' | 'right' | 'isometric' | 'free' | 'reset';
@@ -28,6 +29,9 @@ export interface EngineeringToolResult {
 export interface EngineeringToolBatch {
   workspace: StaticsWorkspace;
   results: EngineeringToolResult[];
+  interactions: Array<{ call: EngineeringToolCall; result: EngineeringToolResult;
+    before: StaticsWorkspace; after: StaticsWorkspace;
+    calculation?: BeamReactionResult; calculationError?: string }>;
   uiActions: EngineeringUiAction[];
   structureChanged: boolean;
   /** Always derived from the final, validated workspace after all edits. */
@@ -35,15 +39,18 @@ export interface EngineeringToolBatch {
 }
 
 const STRUCTURE_MUTATIONS = new Set<EngineeringToolName>([
-  'change_load_magnitude', 'move_load', 'change_support', 'change_dimension',
+  'change_load_magnitude', 'move_load', 'change_support', 'change_member_dimension',
+  'change_dimension', 'add_load', 'remove_load',
 ]);
 
-export function executeEngineeringToolBatch(workspace: StaticsWorkspace, calls: EngineeringToolCall[]): EngineeringToolBatch {
+export function executeEngineeringToolBatch(workspace: StaticsWorkspace, calls: EngineeringToolCall[],
+  onWorkspaceChange?: (next: StaticsWorkspace) => void): EngineeringToolBatch {
   if (!Array.isArray(calls) || calls.length < 1 || calls.length > 8) {
     throw new Error('The chatbot returned an invalid number of engineering tool calls.');
   }
   const seenIds = new Set<string>();
   const results: EngineeringToolResult[] = [];
+  const interactions: EngineeringToolBatch['interactions'] = [];
   const uiActions: EngineeringUiAction[] = [];
   let current = workspace;
   let structureChanged = false;
@@ -53,25 +60,39 @@ export function executeEngineeringToolBatch(workspace: StaticsWorkspace, calls: 
       throw new Error('The chatbot returned an invalid engineering tool call.');
     }
     seenIds.add(call.id);
+    const before = current;
     try {
       const execution = executeEngineeringTool(current, call);
+      if (STRUCTURE_MUTATIONS.has(call.name as EngineeringToolName) && execution.workspace !== current) {
+        onWorkspaceChange?.(execution.workspace);
+      }
       current = execution.workspace;
       if (execution.uiAction) uiActions.push(execution.uiAction);
       if (STRUCTURE_MUTATIONS.has(call.name as EngineeringToolName)) structureChanged = true;
-      results.push({ id: call.id, name: call.name, success: true, result: execution.result });
+      const result = { id: call.id, name: call.name, success: true, result: execution.result };
+      results.push(result);
+      const interaction: EngineeringToolBatch['interactions'][number] = { call, result, before, after: current };
+      if (STRUCTURE_MUTATIONS.has(call.name as EngineeringToolName)) {
+        try { interaction.calculation = calculatePlanarBeamReactions(current); }
+        catch (error) { interaction.calculationError = error instanceof Error ? error.message : 'The solver could not calculate reactions.'; }
+      } else if (call.name === 'calculate_reactions') {
+        interaction.calculation = execution.result.calculation as BeamReactionResult;
+      }
+      interactions.push(interaction);
     } catch (error) {
-      results.push({ id: call.id, name: call.name, success: false,
-        error: error instanceof Error ? error.message : 'Tool execution failed.' });
+      const result = { id: call.id, name: call.name, success: false,
+        error: error instanceof Error ? error.message : 'Tool execution failed.' };
+      results.push(result);
+      interactions.push({ call, result, before, after: current });
     }
   }
-  if (!structureChanged) return { workspace: current, results, uiActions, structureChanged };
+  if (!structureChanged) return { workspace: current, results, interactions, uiActions, structureChanged };
   const outcome: NonNullable<EngineeringToolBatch['outcome']> = { structure: current };
-  try {
-    outcome.calculation = calculatePlanarBeamReactions(current);
-  } catch (error) {
-    outcome.calculationError = error instanceof Error ? error.message : 'The solver could not calculate reactions.';
-  }
-  return { workspace: current, results, uiActions, structureChanged, outcome };
+  const finalSolver = [...interactions].reverse().find((interaction) =>
+    interaction.result.success && STRUCTURE_MUTATIONS.has(interaction.call.name as EngineeringToolName));
+  outcome.calculation = finalSolver?.calculation;
+  outcome.calculationError = finalSolver?.calculationError;
+  return { workspace: current, results, interactions, uiActions, structureChanged, outcome };
 }
 
 /** Build the post-edit reply entirely from executed tools and the deterministic solver. */
@@ -83,6 +104,13 @@ export function formatEngineeringToolBatch(batch: EngineeringToolBatch): string 
       continue;
     }
     const result = item.result || {};
+    if (item.name === 'get_current_structure') {
+      const structure = result.structure as StaticsWorkspace;
+      const count = (value: number, label: string) => `${value} ${label}${value === 1 ? '' : 's'}`;
+      lines.push(`- Current structure: ${count(structure.nodes.length, 'node')}, ${count(structure.members.length, 'member')}, ` +
+        `${count(structure.supports.length, 'support')}, ${count(structure.loads.length, 'load')}; units: ` +
+        `${structure.units.length} and ${structure.units.force}.`);
+    }
     if (item.name === 'change_load_magnitude') {
       const load = batch.workspace.loads.find((candidate) => candidate.id === result.loadId);
       const unit = load?.kind === 'moment' ? (batch.workspace.units.moment || `${batch.workspace.units.force}*${batch.workspace.units.length}`)
@@ -93,6 +121,9 @@ export function formatEngineeringToolBatch(batch: EngineeringToolBatch): string 
     if (item.name === 'move_load') lines.push(`- Moved load ${result.loadId} to ${result.position} ${result.lengthUnit} from the left end.`);
     if (item.name === 'change_support') lines.push(`- Changed support at ${result.nodeId} to ${result.kind}.`);
     if (item.name === 'change_dimension') lines.push(`- Changed dimension ${result.dimensionId} to ${result.value} ${result.lengthUnit}.`);
+    if (item.name === 'change_member_dimension') lines.push(`- Changed member ${result.memberId} length to ${result.value} ${result.lengthUnit}.`);
+    if (item.name === 'add_load') lines.push(`- Added ${result.kind} load ${result.loadId}.`);
+    if (item.name === 'remove_load') lines.push(`- Removed load ${result.loadId}.`);
     if (item.name === 'show_view') lines.push(`- Showing the ${result.view} view.`);
     if (item.name === 'show_fbd') lines.push(`- Free-body diagram ${result.fbdVisible ? 'shown' : 'hidden'}.`);
   }
@@ -228,6 +259,83 @@ export function executeEngineeringTool(workspace: StaticsWorkspace, call: Engine
           ...(kind === 'roller' ? { reactionAngle: angle } : {}) }];
     const next = parseStaticsWorkspace({ ...workspace, supports });
     return { workspace: next, result: { nodeId, kind, ...(kind === 'roller' ? { reactionAngle: angle } : {}) } };
+  }
+  if (name === 'change_member_dimension') {
+    const args = object(raw, ['memberId', 'value']);
+    const memberId = text(args.memberId, 'memberId');
+    const value = finite(args.value, 'value');
+    if (value <= 0) throw new Error('Member length must be positive.');
+    const beam = readBeamControls(workspace);
+    if (!beam || workspace.members.length !== 1 || workspace.members[0].id !== memberId) {
+      throw new Error('Member is not the editable horizontal beam.');
+    }
+    const next = updateBeamWorkspace(workspace, { field: 'length', value });
+    if (next === workspace) throw new Error('Member length is outside the valid range.');
+    const validated = parseStaticsWorkspace(next);
+    const { left, right } = findBeam(validated);
+    for (const load of validated.loads) {
+      if (load.kind === 'distributed') continue;
+      const point = validated.nodes.find((node) => node.id === load.nodeId)!;
+      if (point.x < left.x || point.x > right.x) {
+        throw new Error(`Load ${load.id} would lie outside the resized beam.`);
+      }
+    }
+    for (const support of validated.supports) {
+      const point = validated.nodes.find((node) => node.id === support.nodeId)!;
+      if (point.x < left.x || point.x > right.x) {
+        throw new Error(`Support ${support.id} would lie outside the resized beam.`);
+      }
+    }
+    return { workspace: validated, result: { memberId, value, lengthUnit: workspace.units.length } };
+  }
+  if (name === 'add_load') {
+    const args = object(raw, ['loadId', 'kind', 'magnitude'], ['position', 'angle']);
+    const loadId = text(args.loadId, 'loadId');
+    const kind = choice(args.kind, ['force', 'moment', 'distributed'] as const, 'kind');
+    const magnitude = finite(args.magnitude, 'magnitude');
+    if (kind !== 'moment' && magnitude < 0) throw new Error('Force magnitude must be nonnegative.');
+    if (workspace.loads.some((load) => load.id === loadId)) throw new Error(`Load ${loadId} already exists.`);
+    const beam = findBeam(workspace);
+    if (kind === 'distributed') {
+      if (args.position !== undefined) throw new Error('Distributed loads cannot have a point position.');
+      const angle = args.angle === undefined ? (workspace.units.angle === 'rad' ? -Math.PI / 2 : -90)
+        : finite(args.angle, 'angle');
+      const next = parseStaticsWorkspace({ ...workspace, loads: [...workspace.loads,
+        { id: loadId, kind, memberId: beam.member.id, startMagnitude: magnitude, endMagnitude: magnitude, angle }] });
+      return { workspace: next, result: { loadId, kind, magnitude } };
+    }
+    if (args.position === undefined) throw new Error('Point load position is required.');
+    const position = finite(args.position, 'position');
+    if (position <= 0 || position >= beam.right.x - beam.left.x) {
+      throw new Error('position must be strictly inside the beam.');
+    }
+    if (kind === 'moment' && args.angle !== undefined) throw new Error('Applied moments cannot have a force angle.');
+    const nodeId = `load-node-${loadId}`;
+    if (workspace.nodes.some((node) => node.id === nodeId)) throw new Error(`Node ${nodeId} already exists.`);
+    const node = { id: nodeId, x: beam.left.x + position, y: beam.left.y };
+    const load = kind === 'force'
+      ? { id: loadId, kind, nodeId, magnitude, angle: args.angle === undefined
+        ? (workspace.units.angle === 'rad' ? -Math.PI / 2 : -90) : finite(args.angle, 'angle') }
+      : { id: loadId, kind, nodeId, magnitude };
+    const next = parseStaticsWorkspace({ ...workspace, nodes: [...workspace.nodes, node],
+      loads: [...workspace.loads, load] });
+    return { workspace: next, result: { loadId, kind, magnitude, position, lengthUnit: workspace.units.length } };
+  }
+  if (name === 'remove_load') {
+    const args = object(raw, ['loadId']);
+    const loadId = text(args.loadId, 'loadId');
+    const load = workspace.loads.find((item) => item.id === loadId);
+    if (!load) throw new Error(`Load ${loadId} does not exist.`);
+    const loads = workspace.loads.filter((item) => item.id !== loadId);
+    const orphanNodeId = load.kind === 'distributed' ? null : load.nodeId;
+    const keepNode = orphanNodeId && (workspace.members.some((member) =>
+      member.startNodeId === orphanNodeId || member.endNodeId === orphanNodeId) ||
+      workspace.supports.some((support) => support.nodeId === orphanNodeId) ||
+      loads.some((other) => other.kind !== 'distributed' && other.nodeId === orphanNodeId) ||
+      workspace.dimensions.some((dimension) => dimension.startNodeId === orphanNodeId || dimension.endNodeId === orphanNodeId) ||
+      workspace.angles?.some((angle) => [angle.vertexNodeId, angle.fromNodeId, angle.toNodeId].includes(orphanNodeId)));
+    const nodes = orphanNodeId && !keepNode ? workspace.nodes.filter((node) => node.id !== orphanNodeId) : workspace.nodes;
+    return { workspace: parseStaticsWorkspace({ ...workspace, loads, nodes }), result: { loadId, kind: load.kind } };
   }
   if (name === 'change_dimension') {
     const args = object(raw, ['dimensionId', 'value']);

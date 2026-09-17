@@ -43,6 +43,7 @@ export function updateBeamWorkspace(workspace: StaticsWorkspace, change: BeamCha
     if (change.value === 'none') {
       return { ...workspace, supports: workspace.supports.filter((support) => support.nodeId !== nodeId) };
     }
+    const nextKind: StaticsSupport['kind'] = change.value;
     const existing = workspace.supports.find((support) => support.nodeId === nodeId);
     const reactionAngle = workspace.units.angle === 'rad' ? Math.PI / 2 : 90;
     return {
@@ -52,11 +53,11 @@ export function updateBeamWorkspace(workspace: StaticsWorkspace, change: BeamCha
           if (support.nodeId !== nodeId) return support;
           const next = { ...support };
           delete next.reactionAngle;
-          return { ...next, kind: change.value,
-            ...(change.value === 'roller' ? { reactionAngle } : {}) };
+          return { ...next, kind: nextKind,
+            ...(nextKind === 'roller' ? { reactionAngle } : {}) };
         })
-        : [...workspace.supports, { id: `support-${nodeId}`, nodeId, kind: change.value,
-          ...(change.value === 'roller' ? { reactionAngle } : {}) }],
+        : [...workspace.supports, { id: `support-${nodeId}`, nodeId, kind: nextKind,
+          ...(nextKind === 'roller' ? { reactionAngle } : {}) }],
     };
   }
   if (!Number.isFinite(change.value)) return workspace;

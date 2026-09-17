@@ -13,7 +13,9 @@ import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { AuthPage } from './components/AuthPage';
 import { StaticsWorkspaceProvider, type StaticsWorkspaceController } from './statics/StaticsWorkspaceProvider';
 import { executeEngineeringToolBatch, formatEngineeringToolBatch,
-  type EngineeringToolCall, type EngineeringView } from './statics/engineeringTools';
+  type EngineeringToolBatch, type EngineeringToolCall, type EngineeringView } from './statics/engineeringTools';
+import { createToolResearchEvents, createVisualizationResearchEvent, getEngineeringSessionId,
+  type EngineeringResearchEvent, type VisualizationAction } from './statics/researchLog';
 
 const EngineeringVisualizationPanel = lazy(() =>
   import('./statics/EngineeringVisualizationPanel').then(({ EngineeringVisualizationPanel }) => ({ default: EngineeringVisualizationPanel }))
@@ -1298,6 +1300,19 @@ export default function App() {
     [accessToken]
   );
 
+  const recordEngineeringEvent = useCallback(async (event: EngineeringResearchEvent) => {
+    const response = await fetch(`${API_BASE_URL}/engineering-events`, {
+      method: 'POST', headers: buildApiHeaders(true), body: JSON.stringify(event),
+    });
+    if (!response.ok) throw new Error(`Research event was not saved (${response.status}).`);
+  }, [buildApiHeaders]);
+
+  const recordVisualizationInteraction = useCallback((action: VisualizationAction) => {
+    if (!userId) return;
+    const event = createVisualizationResearchEvent(getEngineeringSessionId(sessionStorage, userId), action);
+    void recordEngineeringEvent(event).catch((error) => console.warn('Visualization event logging failed.', error));
+  }, [recordEngineeringEvent, userId]);
+
   const loadLocalArchive = useCallback((currentUserId: string) => {
     try {
       const stored = localStorage.getItem(getArchiveStorageKey(currentUserId));
@@ -1979,6 +1994,7 @@ export default function App() {
       setUploadedFiles([]);
     }
     setIsTyping(true);
+    let engineeringBatch: EngineeringToolBatch | null = null;
 
     try {
       const response = await fetch(`${CHAT_API_BASE_URL}/chat`, {
@@ -2003,8 +2019,10 @@ export default function App() {
       if (data.toolCalls !== undefined) {
         const controller = staticsControllerRef.current;
         if (!controller) throw new Error('Engineering workspace is not available.');
-        const batch = executeEngineeringToolBatch(controller.getWorkspace(), data.toolCalls as EngineeringToolCall[]);
-        if (batch.structureChanged) controller.setWorkspace(batch.workspace);
+        const batch = executeEngineeringToolBatch(controller.getWorkspace(),
+          data.toolCalls as EngineeringToolCall[], controller.setWorkspace);
+        engineeringBatch = batch;
+        if (batch.structureChanged) setShowEngineeringPanel(true);
         for (const action of batch.uiActions) {
           if (action.kind === 'view') {
             const view = action.view;
@@ -2015,22 +2033,8 @@ export default function App() {
             if (action.visible) setShowEngineeringPanel(true);
           }
         }
-        const requestedEngineeringResult = batch.results.some((item) =>
-          ['change_load_magnitude', 'move_load', 'change_support', 'change_dimension', 'calculate_reactions'].includes(item.name));
-        if (requestedEngineeringResult) {
-          // The reply's engineering numbers come only from the validated final model and solver.
-          data = { ...data, response: formatEngineeringToolBatch(batch) };
-        } else {
-          const followupResponse = await fetch(`${CHAT_API_BASE_URL}/chat`, {
-            method: 'POST', headers: buildApiHeaders(true),
-            body: JSON.stringify({ ...chatPayload, engineeringState: controller.getWorkspace(), toolResults: batch.results }),
-          });
-          if (!followupResponse.ok) {
-            const details = await followupResponse.text();
-            throw new Error(`Tool follow-up failed (${followupResponse.status}): ${details.slice(0, 240)}`);
-          }
-          data = await followupResponse.json();
-        }
+        // Every tool reply is generated from executed results; the model cannot replace solver values.
+        data = { ...data, response: formatEngineeringToolBatch(batch) };
       }
       const isConflicting = Boolean(data.isConflicting ?? data.isIncorrect);
       console.log('Received from API:', {
@@ -2054,6 +2058,17 @@ ${data.response}` : data.response,
         isIncorrect: data.isIncorrect,
         isConflicting,
       };
+
+      if (engineeringBatch && userId) {
+        try {
+          const sessionId = getEngineeringSessionId(sessionStorage, userId);
+          const events = createToolResearchEvents(sessionId, currentInput, engineeringBatch, assistantMessage.content);
+          const outcomes = await Promise.allSettled(events.map(recordEngineeringEvent));
+          outcomes.forEach((outcome) => {
+            if (outcome.status === 'rejected') console.warn('Engineering event logging failed.', outcome.reason);
+          });
+        } catch (error) { console.warn('Engineering event logging failed.', error); }
+      }
       
       insertAssistantMessage(assistantMessage);
     } catch (error) {
@@ -2068,6 +2083,13 @@ ${data.response}` : data.response,
         aiProvider: CHAT_PROVIDER_LABELS[requestProvider],
         provider: requestProvider
       };
+      if (engineeringBatch && userId) {
+        try {
+          const events = createToolResearchEvents(
+            getEngineeringSessionId(sessionStorage, userId), currentInput, engineeringBatch, assistantMessage.content);
+          await Promise.allSettled(events.map(recordEngineeringEvent));
+        } catch (loggingError) { console.warn('Engineering event logging failed.', loggingError); }
+      }
       insertAssistantMessage(assistantMessage);
     } finally {
       setIsTyping(false);
@@ -3391,7 +3413,8 @@ ${data.response}` : data.response,
           {showEngineeringPanel && (
             <Suspense fallback={<div className="w-[min(40vw,480px)] border-l bg-slate-50 p-4 text-sm text-slate-500">Loading 3D view...</div>}>
               <EngineeringVisualizationPanel onClose={() => setShowEngineeringPanel(false)}
-                viewCommand={viewCommand} showFbd={showFbd} onFbdChange={setShowFbd} />
+                viewCommand={viewCommand} showFbd={showFbd} onFbdChange={setShowFbd}
+                onVisualizationInteraction={recordVisualizationInteraction} />
             </Suspense>
           )}
 

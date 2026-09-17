@@ -3,8 +3,8 @@ import { Box, RotateCcw, X } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useStaticsWorkspace } from './StaticsWorkspaceProvider';
-import { readBeamControls, readEditableBeamLoad, updateBeamLoadKind, updateBeamLoadValue, updateBeamWorkspace,
-  updateRollerAngle, type BeamLoadField } from './beamControls';
+import { selectSceneData } from './sceneData';
+import type { VisualizationAction } from './researchLog';
 import { calculatePlanarBeamReactions, type BeamReactionResult } from './calculations';
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
@@ -55,8 +55,9 @@ function addLine(group: THREE.Group, start: THREE.Vector3, end: THREE.Vector3, c
 
 function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult | null, showFbd: boolean) {
   const group = new THREE.Group();
-  const nodes = new Map(workspace.nodes.map((node) => [node.id, node]));
-  const points = workspace.nodes.map((node) => new THREE.Vector3(node.x, node.y, 0));
+  const sceneData = selectSceneData(workspace);
+  const nodes = new Map(sceneData.nodes.map((node) => [node.id, node]));
+  const points = sceneData.nodes.map((node) => new THREE.Vector3(node.x, node.y, 0));
   const box = new THREE.Box3().setFromPoints(points);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
@@ -75,7 +76,7 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
     group.add(grid);
   }
 
-  workspace.members.forEach((member) => {
+  sceneData.members.forEach((member) => {
     const start = at(member.startNodeId);
     const end = at(member.endNodeId);
     if (!start || !end) return;
@@ -91,7 +92,7 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
     group.add(beam);
   });
 
-  workspace.nodes.forEach((node) => {
+  sceneData.nodes.forEach((node) => {
     const marker = new THREE.Mesh(
       new THREE.SphereGeometry(radius * 1.65, 16, 12),
       new THREE.MeshStandardMaterial({ color: 0x0f172a }),
@@ -105,7 +106,7 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
     }
   });
 
-  if (!showFbd) workspace.supports.forEach((support) => {
+  if (!showFbd) sceneData.supports.forEach((support) => {
     const point = at(support.nodeId);
     if (!point) return;
     const width = Math.max(radius * 3, span * 0.07);
@@ -202,21 +203,21 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
     }
   });
 
-  const angleToRadians = (angle: number) => workspace.units.angle === 'rad' ? angle : THREE.MathUtils.degToRad(angle);
+  const angleToRadians = (angle: number) => sceneData.units.angle === 'rad' ? angle : THREE.MathUtils.degToRad(angle);
   const addForceArrow = (point: THREE.Vector3, angle: number, length: number) => {
     const radians = angleToRadians(angle);
     const direction = new THREE.Vector3(Math.cos(radians), Math.sin(radians), 0).normalize();
     const origin = point.clone().addScaledVector(direction, -length);
     group.add(new THREE.ArrowHelper(direction, origin, length, 0xef4444, length * 0.28, length * 0.18));
   };
-  workspace.loads.forEach((load) => {
+  sceneData.loads.forEach((load) => {
     if (load.kind === 'force') {
       const point = at(load.nodeId);
       if (point) {
         const arrowLength = Math.max(0.55, span * 0.26);
         addForceArrow(point, load.angle, arrowLength);
         const radians = angleToRadians(load.angle);
-        const label = textSprite(`${load.magnitude} ${workspace.units.force}`, '#b91c1c', 0.62);
+        const label = textSprite(`${load.magnitude} ${sceneData.units.force}`, '#b91c1c', 0.62);
         if (label) {
           label.position.set(point.x - Math.cos(radians) * (arrowLength + 0.2),
             point.y - Math.sin(radians) * (arrowLength + 0.2), 0.12);
@@ -224,7 +225,7 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
         }
       }
     } else if (load.kind === 'distributed') {
-      const member = workspace.members.find((item) => item.id === load.memberId);
+      const member = sceneData.members.find((item) => item.id === load.memberId);
       const start = member && at(member.startNodeId);
       const end = member && at(member.endNodeId);
       if (!start || !end) return;
@@ -233,10 +234,10 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
         const point = start.clone().lerp(end, t);
         const intensity = load.startMagnitude + (load.endMagnitude - load.startMagnitude) * t;
         if (Math.abs(intensity) < 1e-10) return;
-        const directionAngle = intensity < 0 ? load.angle + (workspace.units.angle === 'rad' ? Math.PI : 180) : load.angle;
+        const directionAngle = intensity < 0 ? load.angle + (sceneData.units.angle === 'rad' ? Math.PI : 180) : load.angle;
         addForceArrow(point, directionAngle, Math.max(0.35, span * 0.1 + span * 0.13 * Math.abs(intensity) / maximum));
       });
-      const label = textSprite(`q: ${load.startMagnitude}→${load.endMagnitude} ${workspace.units.force}/${workspace.units.length}`, '#b91c1c', 0.62);
+      const label = textSprite(`q: ${load.startMagnitude}→${load.endMagnitude} ${sceneData.units.force}/${sceneData.units.length}`, '#b91c1c', 0.62);
       if (label) {
         label.position.copy(start.clone().add(end).multiplyScalar(0.5)).add(new THREE.Vector3(0, Math.max(0.55, span * 0.36), 0.12));
         group.add(label);
@@ -259,7 +260,7 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
       const tangent = new THREE.Vector3(-Math.sin(endAngle) * sign, Math.cos(endAngle) * sign, 0);
       group.add(new THREE.ArrowHelper(tangent, arc[24].clone().addScaledVector(tangent, -arcRadius * 0.4),
         arcRadius * 0.4, 0xef4444, arcRadius * 0.27, arcRadius * 0.2));
-      const label = textSprite(`M = ${load.magnitude} ${workspace.units.moment ?? `${workspace.units.force}*${workspace.units.length}`}`, '#b91c1c', 0.62);
+      const label = textSprite(`M = ${load.magnitude} ${sceneData.units.moment ?? `${sceneData.units.force}*${sceneData.units.length}`}`, '#b91c1c', 0.62);
       if (label) {
         label.position.set(point.x, centerY + arcRadius + Math.max(0.16, span * 0.04), 0.18);
         group.add(label);
@@ -267,13 +268,13 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
     }
   });
 
-  if (!showFbd) workspace.dimensions.forEach((dimension) => {
+  if (!showFbd) sceneData.dimensions.forEach((dimension) => {
     const start = at(dimension.startNodeId);
     const end = at(dimension.endNodeId);
     if (!start || !end) return;
     const direction = end.clone().sub(start).normalize();
-    const isOverall = workspace.dimensions.length > 1 &&
-      dimension.value === Math.max(...workspace.dimensions.map((item) => item.value));
+    const isOverall = sceneData.dimensions.length > 1 &&
+      dimension.value === Math.max(...sceneData.dimensions.map((item) => item.value));
     const offsetDistance = Math.max(0.4, span * (isOverall ? 0.28 : 0.18));
     const offset = new THREE.Vector3(direction.y, -direction.x, 0).multiplyScalar(offsetDistance);
     const from = start.clone().add(offset);
@@ -283,7 +284,7 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
     [from, to].forEach((endPoint) => addLine(group,
       endPoint.clone().add(new THREE.Vector3(-direction.y, direction.x, 0).multiplyScalar(tick)),
       endPoint.clone().add(new THREE.Vector3(direction.y, -direction.x, 0).multiplyScalar(tick)), 0x7c3aed));
-    const label = textSprite(dimension.label || `${dimension.value} ${workspace.units.length}`, '#6d28d9', 0.62);
+    const label = textSprite(dimension.label || `${dimension.value} ${sceneData.units.length}`, '#6d28d9', 0.62);
     if (label) {
       label.position.copy(from.clone().add(to).multiplyScalar(0.5))
         .add(new THREE.Vector3(0, -Math.max(0.13, span * 0.035), 0.05));
@@ -291,7 +292,7 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
     }
   });
 
-  workspace.angles?.forEach((angle) => {
+  sceneData.angles?.forEach((angle) => {
     const vertex = at(angle.vertexNodeId);
     const from = at(angle.fromNodeId);
     const to = at(angle.toNodeId);
@@ -305,7 +306,7 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
         vertex.y + Math.sin(start + sweep * i / 24) * arcRadius, 0.06));
     group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(arcPoints),
       new THREE.LineBasicMaterial({ color: 0x9333ea })));
-    const label = textSprite(angle.label || `${angle.value}${workspace.units.angle === 'rad' ? ' rad' : '°'}`, '#7e22ce', 0.42);
+    const label = textSprite(angle.label || `${angle.value}${sceneData.units.angle === 'rad' ? ' rad' : '°'}`, '#7e22ce', 0.42);
     if (label) {
       label.position.set(vertex.x + Math.cos(start + sweep / 2) * arcRadius * 1.7,
         vertex.y + Math.sin(start + sweep / 2) * arcRadius * 1.7, 0.08);
@@ -316,15 +317,15 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
   return { group, center, span };
 }
 
-export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, onFbdChange }: {
+export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, onFbdChange,
+  onVisualizationInteraction }: {
   onClose: () => void;
   viewCommand?: { view: EngineeringView; sequence: number };
   showFbd: boolean;
   onFbdChange: (visible: boolean) => void;
+  onVisualizationInteraction: (action: VisualizationAction) => void;
 }) {
-  const { workspace, setWorkspace } = useStaticsWorkspace();
-  const beamControls = readBeamControls(workspace);
-  const editableLoad = readEditableBeamLoad(workspace);
+  const { workspace } = useStaticsWorkspace();
   const reactionState = useMemo(() => {
     try {
       return { result: calculatePlanarBeamReactions(workspace), error: '' };
@@ -337,6 +338,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const onInteractionRef = useRef(onVisualizationInteraction);
+  onInteractionRef.current = onVisualizationInteraction;
   const modelRef = useRef<THREE.Group | null>(null);
   const viewBoundsRef = useRef<{ center: THREE.Vector3; span: number } | null>(null);
   const framedRef = useRef(false);
@@ -387,6 +390,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     scene.add(light);
     const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
     const controls = new OrbitControls(camera, renderer.domElement);
+    const recordOrbit = () => onInteractionRef.current('orbit');
+    controls.addEventListener('end', recordOrbit);
     controls.enableDamping = true;
     controls.screenSpacePanning = true;
     controls.minDistance = 0.4;
@@ -417,6 +422,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       cancelAnimationFrame(frame);
       observer.disconnect();
       controls.dispose();
+      controls.removeEventListener('end', recordOrbit);
       if (modelRef.current) {
         scene.remove(modelRef.current);
         disposeGroup(modelRef.current);
@@ -456,6 +462,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     const bounds = viewBoundsRef.current;
     if (bounds) frameModel(bounds.center, bounds.span, 'reset');
     setViewMode('free');
+    onVisualizationInteraction('reset');
   };
 
   const selectView = (mode: ViewMode) => {
@@ -464,6 +471,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       if (controlsRef.current) controlsRef.current.enableRotate = true;
     } else if (bounds) frameModel(bounds.center, bounds.span, mode);
     setViewMode(mode);
+    onVisualizationInteraction(mode);
   };
 
   useEffect(() => {
@@ -471,32 +479,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     if (viewCommand.view === 'reset') resetView();
     else selectView(viewCommand.view);
   }, [ready, viewCommand?.sequence]);
-
-  const updateNumber = (field: 'length' | 'loadMagnitude' | 'loadPosition', raw: string) => {
-    if (!raw.trim()) return;
-    const value = Number(raw);
-    if (Number.isFinite(value)) setWorkspace((current) => updateBeamWorkspace(current, { field, value }));
-  };
-
-  const updateSupport = (field: 'supportA' | 'supportB', value: 'pin' | 'roller' | 'fixed' | 'none') => {
-    setWorkspace((current) => updateBeamWorkspace(current, { field, value }));
-  };
-
-  const updateLoadNumber = (field: BeamLoadField, raw: string) => {
-    if (!raw.trim()) return;
-    const value = Number(raw);
-    if (Number.isFinite(value)) setWorkspace((current) => updateBeamLoadValue(current, field, value));
-  };
-
-  const updateLoadKind = (kind: 'force' | 'distributed' | 'moment') => {
-    setWorkspace((current) => updateBeamLoadKind(current, kind));
-  };
-
-  const updateSupportAngle = (nodeId: 'A' | 'B', raw: string) => {
-    if (!raw.trim()) return;
-    const value = Number(raw);
-    if (Number.isFinite(value)) setWorkspace((current) => updateRollerAngle(current, nodeId, value));
-  };
 
   return (
     <aside className="absolute inset-0 z-20 flex flex-col border-l border-slate-200 bg-white md:relative md:inset-auto md:z-auto md:w-[min(40vw,480px)] md:flex-shrink-0" aria-label="Engineering visualization">
@@ -526,7 +508,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
           className={`shrink-0 rounded px-2 py-1 text-xs ${viewMode === 'free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
           Free Orbit
         </button>
-        <button type="button" onClick={() => onFbdChange(!showFbd)} aria-pressed={showFbd}
+        <button type="button" onClick={() => { onFbdChange(!showFbd); onVisualizationInteraction('fbd'); }} aria-pressed={showFbd}
           className={`shrink-0 rounded px-2 py-1 text-xs ${showFbd ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
           FBD
         </button>
@@ -539,101 +521,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
           Reactions unavailable: {reactionState.error}
         </p>
       )}
-      {beamControls && (
-        <div className="max-h-[45%] overflow-y-auto border-t border-slate-200 px-3 py-3">
-          <h3 className="mb-2 text-xs font-semibold text-slate-700">Beam controls</h3>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-slate-600">
-            <label className="flex flex-col gap-1">Beam length ({workspace.units.length})
-              <input aria-label="Beam length" type="number" min="0.1" step="0.1" value={beamControls.length}
-                onChange={(event) => updateNumber('length', event.currentTarget.value)}
-                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
-            </label>
-            {editableLoad && (
-              <label className="flex flex-col gap-1">Load type
-                <select aria-label="Load type" value={editableLoad.kind}
-                  onChange={(event) => updateLoadKind(event.currentTarget.value as 'force' | 'distributed' | 'moment')}
-                  className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900">
-                  <option value="force">Point force</option><option value="distributed">Distributed load</option><option value="moment">Applied moment</option>
-                </select>
-              </label>
-            )}
-            {editableLoad?.kind === 'force' && (
-              <>
-                <label className="flex flex-col gap-1">Point force ({workspace.units.force})
-                  <input aria-label="Point-force magnitude" type="number" min="0" step="0.1" value={editableLoad.magnitude}
-                    onChange={(event) => updateLoadNumber('magnitude', event.currentTarget.value)}
-                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
-                </label>
-                <label className="flex flex-col gap-1">Force angle ({workspace.units.angle ?? 'deg'})
-                  <input aria-label="Point-force angle" type="number" step="any" value={editableLoad.angle}
-                    onChange={(event) => updateLoadNumber('angle', event.currentTarget.value)}
-                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
-                </label>
-              </>
-            )}
-            {editableLoad?.kind === 'distributed' && (
-              <>
-                <label className="flex flex-col gap-1">Start intensity ({workspace.units.force}/{workspace.units.length})
-                  <input aria-label="Distributed load start intensity" type="number" step="any" value={editableLoad.startMagnitude}
-                    onChange={(event) => updateLoadNumber('startMagnitude', event.currentTarget.value)}
-                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
-                </label>
-                <label className="flex flex-col gap-1">End intensity ({workspace.units.force}/{workspace.units.length})
-                  <input aria-label="Distributed load end intensity" type="number" step="any" value={editableLoad.endMagnitude}
-                    onChange={(event) => updateLoadNumber('endMagnitude', event.currentTarget.value)}
-                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
-                </label>
-                <label className="flex flex-col gap-1">Load angle ({workspace.units.angle ?? 'deg'})
-                  <input aria-label="Distributed load angle" type="number" step="any" value={editableLoad.angle}
-                    onChange={(event) => updateLoadNumber('angle', event.currentTarget.value)}
-                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
-                </label>
-              </>
-            )}
-            {editableLoad?.kind === 'moment' && (
-              <label className="flex flex-col gap-1">Applied moment ({workspace.units.moment ?? `${workspace.units.force}*${workspace.units.length}`})
-                <input aria-label="Applied moment" type="number" step="any" value={editableLoad.magnitude}
-                  onChange={(event) => updateLoadNumber('magnitude', event.currentTarget.value)}
-                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
-              </label>
-            )}
-            {editableLoad && editableLoad.kind !== 'distributed' && (
-              <label className="flex flex-col gap-1">Load position from A ({workspace.units.length})
-                <input aria-label="Load position from A" type="number" min="0.01" max={beamControls.length - 0.01} step="0.1"
-                  value={beamControls.loadPosition} onChange={(event) => updateNumber('loadPosition', event.currentTarget.value)}
-                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
-              </label>
-            )}
-            <label className="flex flex-col gap-1">Support at A
-              <select aria-label="Support type at A" value={beamControls.supportA}
-                onChange={(event) => updateSupport('supportA', event.currentTarget.value as 'pin' | 'roller' | 'fixed' | 'none')}
-                className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900">
-                <option value="none">None</option><option value="pin">Pin</option><option value="roller">Roller</option><option value="fixed">Fixed</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">Support at B
-              <select aria-label="Support type at B" value={beamControls.supportB}
-                onChange={(event) => updateSupport('supportB', event.currentTarget.value as 'pin' | 'roller' | 'fixed' | 'none')}
-                className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900">
-                <option value="none">None</option><option value="pin">Pin</option><option value="roller">Roller</option><option value="fixed">Fixed</option>
-              </select>
-            </label>
-            {(['A', 'B'] as const).map((nodeId) => {
-              const support = workspace.supports.find((item) => item.nodeId === nodeId);
-              return support?.kind === 'roller' && (
-                <label key={nodeId} className="flex flex-col gap-1">Roller angle at {nodeId} ({workspace.units.angle ?? 'deg'})
-                  <input aria-label={`Roller angle at ${nodeId}`} type="number" step="any"
-                    value={support.reactionAngle ?? (workspace.units.angle === 'rad' ? Math.PI / 2 : 90)}
-                    onChange={(event) => updateSupportAngle(nodeId, event.currentTarget.value)}
-                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      )}
       <div className="border-t border-slate-200 px-3 py-2 text-[11px] text-slate-500">
-        {viewMode === 'free' ? 'Drag to rotate' : 'Free Orbit enables rotation'} · Scroll to zoom · Right drag to pan · Length: {workspace.units.length} · Force: {workspace.units.force}
+        <p>Ask the chat to move or add loads, change supports, or resize the beam.</p>
+        <p>{viewMode === 'free' ? 'Drag to rotate' : 'Free Orbit enables rotation'} · Scroll to zoom · Right drag to pan · Length: {workspace.units.length} · Force: {workspace.units.force}</p>
       </div>
     </aside>
   );
