@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createSimplySupportedBeamWorkspace, createStaticsWorkspace, parseStaticsWorkspace } from './model.ts';
 import { loadStaticsWorkspace, saveStaticsWorkspace, staticsStorageKey } from './storage.ts';
-import { readBeamControls, updateBeamWorkspace } from './beamControls.ts';
+import { readBeamControls, readEditableBeamLoad, updateBeamLoadKind, updateBeamLoadValue, updateBeamWorkspace, updateRollerAngle } from './beamControls.ts';
 
 const example = () => ({
   ...createStaticsWorkspace(),
@@ -58,6 +58,26 @@ test('beam controls update the single workspace and its dimensions', () => {
   assert.equal(fixed.supports.find(({ nodeId }) => nodeId === 'B').reactionAngle, undefined);
   assert.deepEqual(parseStaticsWorkspace(fixed), fixed);
   assert.equal(updateBeamWorkspace(fixed, { field: 'loadPosition', value: 6 }), fixed);
+});
+
+test('beam load editor switches load kinds without duplicating engineering data', () => {
+  const original = createSimplySupportedBeamWorkspace();
+  const horizontal = updateBeamLoadValue(original, 'angle', 0);
+  assert.equal(readEditableBeamLoad(horizontal).angle, 0);
+  const distributed = updateBeamLoadKind(horizontal, 'distributed');
+  assert.equal(distributed.loads.length, 1);
+  assert.equal(readEditableBeamLoad(distributed).kind, 'distributed');
+  const triangular = updateBeamLoadValue(distributed, 'startMagnitude', 0);
+  assert.equal(triangular.loads[0].startMagnitude, 0);
+  const couple = updateBeamLoadKind(triangular, 'moment');
+  assert.equal(readBeamControls(couple).loadMagnitude, null);
+  assert.equal(updateBeamLoadValue(couple, 'magnitude', -8).loads[0].magnitude, -8);
+  const cantilever = updateBeamWorkspace(couple, { field: 'supportB', value: 'none' });
+  const fixed = updateBeamWorkspace(cantilever, { field: 'supportA', value: 'fixed' });
+  assert.equal(readBeamControls(fixed).supportB, 'none');
+  assert.deepEqual(parseStaticsWorkspace(fixed), fixed);
+  const angled = updateRollerAngle(original, 'B', 45);
+  assert.equal(angled.supports.find(({ nodeId }) => nodeId === 'B').reactionAngle, 45);
 });
 
 test('reads the earlier stored format without losing angle annotations or units', () => {

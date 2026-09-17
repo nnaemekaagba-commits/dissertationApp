@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import { parseStaticsWorkspace, type StaticsWorkspace } from './model';
 import { loadStaticsWorkspace, saveStaticsWorkspace } from './storage';
 
@@ -9,9 +9,24 @@ interface StaticsWorkspaceContextValue {
 
 const StaticsWorkspaceContext = createContext<StaticsWorkspaceContextValue | null>(null);
 
+export interface StaticsWorkspaceController {
+  getWorkspace: () => StaticsWorkspace;
+  setWorkspace: StaticsWorkspaceContextValue['setWorkspace'];
+}
+
 /** Mount with key={userId} so a different account never inherits the prior account's state. */
-export function StaticsWorkspaceProvider({ userId, children }: { userId: string; children: ReactNode }) {
+export const StaticsWorkspaceProvider = forwardRef<StaticsWorkspaceController, { userId: string; children: ReactNode }>(
+function StaticsWorkspaceProvider({ userId, children }, controllerRef) {
   const [workspace, setState] = useState(() => loadStaticsWorkspace(localStorage, userId));
+  const workspaceRef = useRef(workspace);
+  const setWorkspace: StaticsWorkspaceContextValue['setWorkspace'] = (next) => {
+    const parsed = parseStaticsWorkspace(typeof next === 'function' ? next(workspaceRef.current) : next);
+    workspaceRef.current = parsed;
+    setState(parsed);
+  };
+
+  // Chat runs in the parent App; this controller points at the same provider state.
+  useImperativeHandle(controllerRef, () => ({ getWorkspace: () => workspaceRef.current, setWorkspace }));
 
   useEffect(() => {
     try {
@@ -23,12 +38,11 @@ export function StaticsWorkspaceProvider({ userId, children }: { userId: string;
 
   const value = useMemo<StaticsWorkspaceContextValue>(() => ({
     workspace,
-    setWorkspace: (next) => setState((current) =>
-      parseStaticsWorkspace(typeof next === 'function' ? next(current) : next)),
+    setWorkspace,
   }), [workspace]);
 
   return <StaticsWorkspaceContext.Provider value={value}>{children}</StaticsWorkspaceContext.Provider>;
-}
+});
 
 export function useStaticsWorkspace(): StaticsWorkspaceContextValue {
   const context = useContext(StaticsWorkspaceContext);

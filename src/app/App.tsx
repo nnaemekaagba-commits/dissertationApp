@@ -11,7 +11,8 @@ import { API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } from '/utils/api';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { AuthPage } from './components/AuthPage';
-import { StaticsWorkspaceProvider } from './statics/StaticsWorkspaceProvider';
+import { StaticsWorkspaceProvider, type StaticsWorkspaceController } from './statics/StaticsWorkspaceProvider';
+import { executeEngineeringTool, type EngineeringToolCall, type EngineeringView } from './statics/engineeringTools';
 
 const EngineeringVisualizationPanel = lazy(() =>
   import('./statics/EngineeringVisualizationPanel').then(({ EngineeringVisualizationPanel }) => ({ default: EngineeringVisualizationPanel }))
@@ -1239,6 +1240,9 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [showEngineeringPanel, setShowEngineeringPanel] = useState(() => window.innerWidth >= 768);
+  const [showFbd, setShowFbd] = useState(false);
+  const [viewCommand, setViewCommand] = useState<{ view: EngineeringView; sequence: number }>();
+  const staticsControllerRef = useRef<StaticsWorkspaceController | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ name: string; type: string; content: string; preview?: string }>>([]);
   const [showImageDialog, setShowImageDialog] = useState(false);
@@ -1939,6 +1943,7 @@ export default function App() {
       conversationHistory,
       files: currentFiles,
       provider: requestProvider,
+      engineeringState: staticsControllerRef.current?.getWorkspace(),
     };
     const maxGatewayPayloadBytes = 9_000_000;
 
@@ -1993,7 +1998,49 @@ export default function App() {
         throw new Error(`HTTP ${response.status}: ${responseDetail}`);
       }
 
-      const data = await response.json();
+      let data = await response.json();
+      if (data.toolCalls !== undefined) {
+        if (!Array.isArray(data.toolCalls) || data.toolCalls.length < 1 || data.toolCalls.length > 8) {
+          throw new Error('The chatbot returned an invalid number of engineering tool calls.');
+        }
+        const seenIds = new Set<string>();
+        const toolResults: Array<{ id: string; name: string; success: boolean; result?: Record<string, unknown>; error?: string }> = [];
+        for (const rawCall of data.toolCalls as EngineeringToolCall[]) {
+          if (!rawCall || typeof rawCall.id !== 'string' || !rawCall.id || seenIds.has(rawCall.id) ||
+            typeof rawCall.name !== 'string') {
+            throw new Error('The chatbot returned an invalid engineering tool call.');
+          }
+          seenIds.add(rawCall.id);
+          try {
+            const controller = staticsControllerRef.current;
+            if (!controller) throw new Error('Engineering workspace is not available.');
+            const current = controller.getWorkspace();
+            const execution = executeEngineeringTool(current, rawCall);
+            if (execution.workspace !== current) controller.setWorkspace(execution.workspace);
+            if (execution.uiAction?.kind === 'view') {
+              const view = execution.uiAction.view;
+              setShowEngineeringPanel(true);
+              setViewCommand((previous) => ({ view, sequence: (previous?.sequence ?? 0) + 1 }));
+            } else if (execution.uiAction?.kind === 'fbd') {
+              setShowFbd(execution.uiAction.visible);
+              if (execution.uiAction.visible) setShowEngineeringPanel(true);
+            }
+            toolResults.push({ id: rawCall.id, name: rawCall.name, success: true, result: execution.result });
+          } catch (toolError) {
+            toolResults.push({ id: rawCall.id, name: rawCall.name, success: false,
+              error: toolError instanceof Error ? toolError.message : 'Tool execution failed.' });
+          }
+        }
+        const followupResponse = await fetch(`${CHAT_API_BASE_URL}/chat`, {
+          method: 'POST', headers: buildApiHeaders(true),
+          body: JSON.stringify({ ...chatPayload, engineeringState: staticsControllerRef.current?.getWorkspace(), toolResults }),
+        });
+        if (!followupResponse.ok) {
+          const details = await followupResponse.text();
+          throw new Error(`Tool follow-up failed (${followupResponse.status}): ${details.slice(0, 240)}`);
+        }
+        data = await followupResponse.json();
+      }
       const isConflicting = Boolean(data.isConflicting ?? data.isIncorrect);
       console.log('Received from API:', {
         hasIsConflicting: 'isConflicting' in data,
@@ -3092,7 +3139,7 @@ ${data.response}` : data.response,
   };
 
   return (
-    <StaticsWorkspaceProvider key={userId} userId={userId}>
+    <StaticsWorkspaceProvider key={userId} userId={userId} ref={staticsControllerRef}>
     <div className="h-screen bg-slate-50 flex">
       <div className="w-full h-full bg-white flex flex-col">{/* Header */}
         <div className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white flex-shrink-0">
@@ -3352,7 +3399,8 @@ ${data.response}` : data.response,
 
           {showEngineeringPanel && (
             <Suspense fallback={<div className="w-[min(40vw,480px)] border-l bg-slate-50 p-4 text-sm text-slate-500">Loading 3D view...</div>}>
-              <EngineeringVisualizationPanel onClose={() => setShowEngineeringPanel(false)} />
+              <EngineeringVisualizationPanel onClose={() => setShowEngineeringPanel(false)}
+                viewCommand={viewCommand} showFbd={showFbd} onFbdChange={setShowFbd} />
             </Suspense>
           )}
 
