@@ -1,4 +1,4 @@
-import { calculatePlanarBeamReactions } from './calculations.ts';
+import { calculatePlanarBeamReactions, type BeamReactionResult } from './calculations.ts';
 import { readBeamControls, updateBeamWorkspace } from './beamControls.ts';
 import { parseStaticsWorkspace, type StaticsSupport, type StaticsWorkspace } from './model.ts';
 
@@ -15,6 +15,102 @@ export interface EngineeringToolExecution {
   workspace: StaticsWorkspace;
   result: Record<string, unknown>;
   uiAction?: EngineeringUiAction;
+}
+
+export interface EngineeringToolResult {
+  id: string;
+  name: string;
+  success: boolean;
+  result?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface EngineeringToolBatch {
+  workspace: StaticsWorkspace;
+  results: EngineeringToolResult[];
+  uiActions: EngineeringUiAction[];
+  structureChanged: boolean;
+  /** Always derived from the final, validated workspace after all edits. */
+  outcome?: { structure: StaticsWorkspace; calculation?: BeamReactionResult; calculationError?: string };
+}
+
+const STRUCTURE_MUTATIONS = new Set<EngineeringToolName>([
+  'change_load_magnitude', 'move_load', 'change_support', 'change_dimension',
+]);
+
+export function executeEngineeringToolBatch(workspace: StaticsWorkspace, calls: EngineeringToolCall[]): EngineeringToolBatch {
+  if (!Array.isArray(calls) || calls.length < 1 || calls.length > 8) {
+    throw new Error('The chatbot returned an invalid number of engineering tool calls.');
+  }
+  const seenIds = new Set<string>();
+  const results: EngineeringToolResult[] = [];
+  const uiActions: EngineeringUiAction[] = [];
+  let current = workspace;
+  let structureChanged = false;
+  for (const call of calls) {
+    if (!call || typeof call.id !== 'string' || !call.id || call.id.length > 128 || seenIds.has(call.id) ||
+      typeof call.name !== 'string') {
+      throw new Error('The chatbot returned an invalid engineering tool call.');
+    }
+    seenIds.add(call.id);
+    try {
+      const execution = executeEngineeringTool(current, call);
+      current = execution.workspace;
+      if (execution.uiAction) uiActions.push(execution.uiAction);
+      if (STRUCTURE_MUTATIONS.has(call.name as EngineeringToolName)) structureChanged = true;
+      results.push({ id: call.id, name: call.name, success: true, result: execution.result });
+    } catch (error) {
+      results.push({ id: call.id, name: call.name, success: false,
+        error: error instanceof Error ? error.message : 'Tool execution failed.' });
+    }
+  }
+  if (!structureChanged) return { workspace: current, results, uiActions, structureChanged };
+  const outcome: NonNullable<EngineeringToolBatch['outcome']> = { structure: current };
+  try {
+    outcome.calculation = calculatePlanarBeamReactions(current);
+  } catch (error) {
+    outcome.calculationError = error instanceof Error ? error.message : 'The solver could not calculate reactions.';
+  }
+  return { workspace: current, results, uiActions, structureChanged, outcome };
+}
+
+/** Build the post-edit reply entirely from executed tools and the deterministic solver. */
+export function formatEngineeringToolBatch(batch: EngineeringToolBatch): string {
+  const lines: string[] = [];
+  for (const item of batch.results) {
+    if (!item.success) {
+      lines.push(`- ${item.name}: ${item.error}`);
+      continue;
+    }
+    const result = item.result || {};
+    if (item.name === 'change_load_magnitude') {
+      const load = batch.workspace.loads.find((candidate) => candidate.id === result.loadId);
+      const unit = load?.kind === 'moment' ? (batch.workspace.units.moment || `${batch.workspace.units.force}*${batch.workspace.units.length}`)
+        : load?.kind === 'distributed' ? `${batch.workspace.units.force}/${batch.workspace.units.length}`
+          : batch.workspace.units.force;
+      lines.push(`- Changed load ${result.loadId} magnitude to ${result.magnitude} ${unit}.`);
+    }
+    if (item.name === 'move_load') lines.push(`- Moved load ${result.loadId} to ${result.position} ${result.lengthUnit} from the left end.`);
+    if (item.name === 'change_support') lines.push(`- Changed support at ${result.nodeId} to ${result.kind}.`);
+    if (item.name === 'change_dimension') lines.push(`- Changed dimension ${result.dimensionId} to ${result.value} ${result.lengthUnit}.`);
+    if (item.name === 'show_view') lines.push(`- Showing the ${result.view} view.`);
+    if (item.name === 'show_fbd') lines.push(`- Free-body diagram ${result.fbdVisible ? 'shown' : 'hidden'}.`);
+  }
+  const calculation = batch.outcome?.calculation || (batch.results.find((item) =>
+    item.success && item.name === 'calculate_reactions')?.result?.calculation as BeamReactionResult | undefined);
+  if (calculation) {
+    const number = (value: number) => Number(value.toPrecision(8)).toString();
+    lines.push('', 'Support reactions (equilibrium solver):');
+    for (const reaction of calculation.reactions) {
+      const components = [`Fx = ${number(reaction.horizontal)} ${calculation.forceUnit}`,
+        `Fy = ${number(reaction.vertical)} ${calculation.forceUnit}`];
+      if (reaction.kind === 'fixed') components.push(`M = ${number(reaction.moment)} ${calculation.momentUnit}`);
+      lines.push(`- ${reaction.nodeId}: ${components.join(', ')}.`);
+    }
+  } else if (batch.outcome?.calculationError) {
+    lines.push('', `Reactions could not be calculated: ${batch.outcome.calculationError}`);
+  }
+  return lines.join('\n') || 'No engineering change was made.';
 }
 
 const object = (value: unknown, required: string[], optional: string[] = []): Record<string, unknown> => {

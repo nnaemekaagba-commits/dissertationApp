@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
-import { executeEngineeringTool } from './engineeringTools.ts';
+import { executeEngineeringTool, executeEngineeringToolBatch, formatEngineeringToolBatch } from './engineeringTools.ts';
 
 const initial = () => createSimplySupportedBeamWorkspace();
 const call = (workspace, name, args = {}) => executeEngineeringTool(workspace, { id: 'test', name, arguments: args });
@@ -50,4 +50,56 @@ test('tool arguments reject unknown fields, wrong types, missing entities, and u
   assert.throws(() => call(workspace, 'calculate_reactions', { bogus: true }), /only/);
   assert.throws(() => call(workspace, 'delete_everything', {}), /must be one of/);
   assert.throws(() => call(workspace, 'move_load', '{bad'), /valid JSON/);
+});
+
+test('multiple edits use the final model for one deterministic solver result', () => {
+  const before = initial();
+  const batch = executeEngineeringToolBatch(before, [
+    { id: 'magnitude', name: 'change_load_magnitude', arguments: { loadId: 'load-C', magnitude: 12 } },
+    { id: 'position', name: 'move_load', arguments: { loadId: 'load-C', position: 3 } },
+  ]);
+  assert.equal(batch.structureChanged, true);
+  assert.equal(batch.outcome.structure, batch.workspace);
+  assert.equal(batch.outcome.structure.loads[0].magnitude, 12);
+  assert.equal(batch.outcome.structure.nodes.find(({ id }) => id === 'C').x, 3);
+  assert.deepEqual(batch.outcome.calculation.reactions.map(({ vertical }) => vertical), [3, 9]);
+  assert.match(formatEngineeringToolBatch(batch), /A: Fx = 0 kN, Fy = 3 kN/);
+  assert.match(formatEngineeringToolBatch(batch), /B: Fx = 0 kN, Fy = 9 kN/);
+  assert.match(formatEngineeringToolBatch(batch), /load-C magnitude to 12 kN/);
+  assert.equal(before.loads[0].magnitude, 10);
+});
+
+test('reaction requests display the solver output without a model-generated calculation', () => {
+  const batch = executeEngineeringToolBatch(initial(), [
+    { id: 'solve', name: 'calculate_reactions', arguments: {} },
+  ]);
+  assert.equal(batch.structureChanged, false);
+  assert.match(formatEngineeringToolBatch(batch), /A: Fx = 0 kN, Fy = 5 kN/);
+  assert.match(formatEngineeringToolBatch(batch), /B: Fx = 0 kN, Fy = 5 kN/);
+});
+
+test('unsupported edited structure reports solver failure without made-up reactions', () => {
+  const batch = executeEngineeringToolBatch(initial(), [
+    { id: 'remove', name: 'change_support', arguments: { nodeId: 'B', kind: 'none' } },
+  ]);
+  assert.equal(batch.structureChanged, true);
+  assert.ok(batch.outcome.calculationError);
+  assert.match(formatEngineeringToolBatch(batch), /Reactions could not be calculated/);
+  assert.doesNotMatch(formatEngineeringToolBatch(batch), /Fy =/);
+});
+
+test('invalid edit does not mutate the structure or report a solver result', () => {
+  const before = initial();
+  const batch = executeEngineeringToolBatch(before, [
+    { id: 'bad', name: 'change_load_magnitude', arguments: { loadId: 'missing', magnitude: 12 } },
+  ]);
+  assert.equal(batch.workspace, before);
+  assert.equal(batch.structureChanged, false);
+  assert.equal(batch.outcome, undefined);
+  assert.match(formatEngineeringToolBatch(batch), /does not exist/);
+  assert.doesNotMatch(formatEngineeringToolBatch(batch), /Fy =/);
+  assert.throws(() => executeEngineeringToolBatch(before, [
+    { id: 'same', name: 'show_view', arguments: { view: 'front' } },
+    { id: 'same', name: 'show_fbd', arguments: { visible: true } },
+  ]), /invalid engineering tool call/);
 });

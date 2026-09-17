@@ -12,7 +12,8 @@ import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { AuthPage } from './components/AuthPage';
 import { StaticsWorkspaceProvider, type StaticsWorkspaceController } from './statics/StaticsWorkspaceProvider';
-import { executeEngineeringTool, type EngineeringToolCall, type EngineeringView } from './statics/engineeringTools';
+import { executeEngineeringToolBatch, formatEngineeringToolBatch,
+  type EngineeringToolCall, type EngineeringView } from './statics/engineeringTools';
 
 const EngineeringVisualizationPanel = lazy(() =>
   import('./statics/EngineeringVisualizationPanel').then(({ EngineeringVisualizationPanel }) => ({ default: EngineeringVisualizationPanel }))
@@ -2000,46 +2001,36 @@ export default function App() {
 
       let data = await response.json();
       if (data.toolCalls !== undefined) {
-        if (!Array.isArray(data.toolCalls) || data.toolCalls.length < 1 || data.toolCalls.length > 8) {
-          throw new Error('The chatbot returned an invalid number of engineering tool calls.');
-        }
-        const seenIds = new Set<string>();
-        const toolResults: Array<{ id: string; name: string; success: boolean; result?: Record<string, unknown>; error?: string }> = [];
-        for (const rawCall of data.toolCalls as EngineeringToolCall[]) {
-          if (!rawCall || typeof rawCall.id !== 'string' || !rawCall.id || seenIds.has(rawCall.id) ||
-            typeof rawCall.name !== 'string') {
-            throw new Error('The chatbot returned an invalid engineering tool call.');
-          }
-          seenIds.add(rawCall.id);
-          try {
-            const controller = staticsControllerRef.current;
-            if (!controller) throw new Error('Engineering workspace is not available.');
-            const current = controller.getWorkspace();
-            const execution = executeEngineeringTool(current, rawCall);
-            if (execution.workspace !== current) controller.setWorkspace(execution.workspace);
-            if (execution.uiAction?.kind === 'view') {
-              const view = execution.uiAction.view;
-              setShowEngineeringPanel(true);
-              setViewCommand((previous) => ({ view, sequence: (previous?.sequence ?? 0) + 1 }));
-            } else if (execution.uiAction?.kind === 'fbd') {
-              setShowFbd(execution.uiAction.visible);
-              if (execution.uiAction.visible) setShowEngineeringPanel(true);
-            }
-            toolResults.push({ id: rawCall.id, name: rawCall.name, success: true, result: execution.result });
-          } catch (toolError) {
-            toolResults.push({ id: rawCall.id, name: rawCall.name, success: false,
-              error: toolError instanceof Error ? toolError.message : 'Tool execution failed.' });
+        const controller = staticsControllerRef.current;
+        if (!controller) throw new Error('Engineering workspace is not available.');
+        const batch = executeEngineeringToolBatch(controller.getWorkspace(), data.toolCalls as EngineeringToolCall[]);
+        if (batch.structureChanged) controller.setWorkspace(batch.workspace);
+        for (const action of batch.uiActions) {
+          if (action.kind === 'view') {
+            const view = action.view;
+            setShowEngineeringPanel(true);
+            setViewCommand((previous) => ({ view, sequence: (previous?.sequence ?? 0) + 1 }));
+          } else {
+            setShowFbd(action.visible);
+            if (action.visible) setShowEngineeringPanel(true);
           }
         }
-        const followupResponse = await fetch(`${CHAT_API_BASE_URL}/chat`, {
-          method: 'POST', headers: buildApiHeaders(true),
-          body: JSON.stringify({ ...chatPayload, engineeringState: staticsControllerRef.current?.getWorkspace(), toolResults }),
-        });
-        if (!followupResponse.ok) {
-          const details = await followupResponse.text();
-          throw new Error(`Tool follow-up failed (${followupResponse.status}): ${details.slice(0, 240)}`);
+        const requestedEngineeringResult = batch.results.some((item) =>
+          ['change_load_magnitude', 'move_load', 'change_support', 'change_dimension', 'calculate_reactions'].includes(item.name));
+        if (requestedEngineeringResult) {
+          // The reply's engineering numbers come only from the validated final model and solver.
+          data = { ...data, response: formatEngineeringToolBatch(batch) };
+        } else {
+          const followupResponse = await fetch(`${CHAT_API_BASE_URL}/chat`, {
+            method: 'POST', headers: buildApiHeaders(true),
+            body: JSON.stringify({ ...chatPayload, engineeringState: controller.getWorkspace(), toolResults: batch.results }),
+          });
+          if (!followupResponse.ok) {
+            const details = await followupResponse.text();
+            throw new Error(`Tool follow-up failed (${followupResponse.status}): ${details.slice(0, 240)}`);
+          }
+          data = await followupResponse.json();
         }
-        data = await followupResponse.json();
       }
       const isConflicting = Boolean(data.isConflicting ?? data.isIncorrect);
       console.log('Received from API:', {
