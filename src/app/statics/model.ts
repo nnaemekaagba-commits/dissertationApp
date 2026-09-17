@@ -7,8 +7,10 @@ export type AngleUnit = 'deg' | 'rad';
 export interface StaticsUnits {
   length: LengthUnit;
   force: ForceUnit;
-  moment: MomentUnit;
-  angle: AngleUnit;
+  /** Optional for older saved problems; otherwise moment uses force × length. */
+  moment?: MomentUnit;
+  /** Optional; angles are in degrees when omitted. */
+  angle?: AngleUnit;
 }
 
 export interface StaticsNode { id: string; x: number; y: number; label?: string }
@@ -40,26 +42,24 @@ export interface StaticsAngle {
   label?: string;
 }
 export interface StaticsWorkspace {
-  schemaVersion: 1;
-  id: string;
-  units: StaticsUnits;
   nodes: StaticsNode[];
   members: StaticsMember[];
   supports: StaticsSupport[];
   loads: StaticsLoad[];
   dimensions: StaticsDimension[];
-  angles: StaticsAngle[];
+  units: StaticsUnits;
+  /** Optional angle annotations; load directions also carry angles. */
+  angles?: StaticsAngle[];
 }
 
 export const DEFAULT_STATICS_UNITS: StaticsUnits = {
-  length: 'm', force: 'N', moment: 'N*m', angle: 'deg',
+  length: 'm', force: 'kN',
 };
 
-export function createStaticsWorkspace(id: string): StaticsWorkspace {
-  if (!id.trim()) throw new Error('Workspace id is required');
+export function createStaticsWorkspace(): StaticsWorkspace {
   return {
-    schemaVersion: 1, id, units: { ...DEFAULT_STATICS_UNITS },
-    nodes: [], members: [], supports: [], loads: [], dimensions: [], angles: [],
+    nodes: [], members: [], supports: [], loads: [], dimensions: [],
+    units: { ...DEFAULT_STATICS_UNITS },
   };
 }
 
@@ -84,7 +84,8 @@ export function parseStaticsWorkspace(input: unknown): StaticsWorkspace {
   };
 
   const root = object(input, 'root');
-  if (root.schemaVersion !== 1) fail('schemaVersion');
+  // Read the previous stored format, but emit the requested top-level shape.
+  if (root.schemaVersion !== undefined && root.schemaVersion !== 1) fail('schemaVersion');
   const units = object(root.units, 'units');
   const nodes = items(root.nodes, 'nodes', (row, path): StaticsNode => ({
     id: id(row.id, `${path}.id`), x: number(row.x, `${path}.x`), y: number(row.y, `${path}.y`),
@@ -112,7 +113,7 @@ export function parseStaticsWorkspace(input: unknown): StaticsWorkspace {
     endNodeId: id(row.endNodeId, `${path}.endNodeId`), value: number(row.value, `${path}.value`),
     ...(row.label === undefined ? {} : { label: label(row.label, `${path}.label`) }),
   }));
-  const angles = items(root.angles, 'angles', (row, path): StaticsAngle => ({
+  const angles = items(root.angles ?? [], 'angles', (row, path): StaticsAngle => ({
     id: id(row.id, `${path}.id`), vertexNodeId: id(row.vertexNodeId, `${path}.vertexNodeId`),
     fromNodeId: id(row.fromNodeId, `${path}.fromNodeId`), toNodeId: id(row.toNodeId, `${path}.toNodeId`),
     value: number(row.value, `${path}.value`),
@@ -148,13 +149,13 @@ export function parseStaticsWorkspace(input: unknown): StaticsWorkspace {
     if (new Set([angle.vertexNodeId, angle.fromNodeId, angle.toNodeId]).size !== 3) fail(`angles[${i}] nodes`);
   });
   return {
-    schemaVersion: 1, id: id(root.id, 'id'),
+    nodes, members, supports, loads, dimensions,
     units: {
       length: choice(units.length, ['m', 'cm', 'mm', 'ft', 'in'], 'units.length'),
       force: choice(units.force, ['N', 'kN', 'lbf', 'kip'], 'units.force'),
-      moment: choice(units.moment, ['N*m', 'kN*m', 'lbf*ft', 'kip*ft'], 'units.moment'),
-      angle: choice(units.angle, ['deg', 'rad'], 'units.angle'),
+      ...(units.moment === undefined ? {} : { moment: choice(units.moment, ['N*m', 'kN*m', 'lbf*ft', 'kip*ft'], 'units.moment') }),
+      ...(units.angle === undefined ? {} : { angle: choice(units.angle, ['deg', 'rad'], 'units.angle') }),
     },
-    nodes, members, supports, loads, dimensions, angles,
+    ...(root.angles === undefined ? {} : { angles }),
   };
 }

@@ -11,10 +11,10 @@ export function loadStaticsWorkspace(storage: StaticsStorage, userId: string): S
   if (!userId.trim()) throw new Error('User id is required');
   try {
     const saved = storage.getItem(staticsStorageKey(userId));
-    return saved ? parseStaticsWorkspace(JSON.parse(saved)) : createStaticsWorkspace('default');
+    return saved ? parseStaticsWorkspace(JSON.parse(saved)) : createStaticsWorkspace();
   } catch (error) {
     console.warn('Could not restore statics workspace; starting with an empty workspace.', error);
-    return createStaticsWorkspace('default');
+    return createStaticsWorkspace();
   }
 }
 
