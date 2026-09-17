@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "test:statics": "node --test src/app/statics/model.test.mjs"
+    "test:statics": "node --test src/app/statics/model.test.mjs src/app/statics/calculations.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
