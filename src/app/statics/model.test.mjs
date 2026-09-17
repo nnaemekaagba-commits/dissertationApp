@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createSimplySupportedBeamWorkspace, createStaticsWorkspace, parseStaticsWorkspace } from './model.ts';
 import { loadStaticsWorkspace, saveStaticsWorkspace, staticsStorageKey } from './storage.ts';
+import { readBeamControls, updateBeamWorkspace } from './beamControls.ts';
 
 const example = () => ({
   ...createStaticsWorkspace(),
@@ -39,6 +40,24 @@ test('starting beam is valid data with a central downward load and two support k
     [['A', 'pin'], ['B', 'roller']]);
   assert.deepEqual(beam.loads, [{ id: 'load-C', kind: 'force', nodeId: 'C', magnitude: 10, angle: -90 }]);
   assert.deepEqual(beam.dimensions.map(({ value }) => value), [2, 2, 4]);
+});
+
+test('beam controls update the single workspace and its dimensions', () => {
+  const initial = createSimplySupportedBeamWorkspace();
+  const longer = updateBeamWorkspace(initial, { field: 'length', value: 6 });
+  assert.equal(readBeamControls(initial).length, 4);
+  assert.equal(readBeamControls(longer).length, 6);
+  assert.deepEqual(longer.dimensions.map(({ value }) => value), [2, 4, 6]);
+  const moved = updateBeamWorkspace(longer, { field: 'loadPosition', value: 3 });
+  assert.equal(readBeamControls(moved).loadPosition, 3);
+  assert.deepEqual(moved.dimensions.map(({ value }) => value), [3, 3, 6]);
+  const loaded = updateBeamWorkspace(moved, { field: 'loadMagnitude', value: 18 });
+  assert.equal(readBeamControls(loaded).loadMagnitude, 18);
+  const fixed = updateBeamWorkspace(loaded, { field: 'supportB', value: 'fixed' });
+  assert.equal(readBeamControls(fixed).supportB, 'fixed');
+  assert.equal(fixed.supports.find(({ nodeId }) => nodeId === 'B').reactionAngle, undefined);
+  assert.deepEqual(parseStaticsWorkspace(fixed), fixed);
+  assert.equal(updateBeamWorkspace(fixed, { field: 'loadPosition', value: 6 }), fixed);
 });
 
 test('reads the earlier stored format without losing angle annotations or units', () => {

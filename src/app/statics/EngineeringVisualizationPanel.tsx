@@ -3,7 +3,16 @@ import { Box, RotateCcw, X } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useStaticsWorkspace } from './StaticsWorkspaceProvider';
+import { readBeamControls, updateBeamWorkspace } from './beamControls';
 import type { StaticsWorkspace } from './model';
+
+type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
+const VIEW_BUTTONS: { label: string; mode: Exclude<ViewMode, 'free'> }[] = [
+  { label: 'Front', mode: 'front' },
+  { label: 'Top', mode: 'top' },
+  { label: 'Right', mode: 'right' },
+  { label: 'Isometric', mode: 'isometric' },
+];
 
 function textSprite(text: string, color = '#0f172a', scale = 0.64) {
   const canvas = document.createElement('canvas');
@@ -176,7 +185,8 @@ function buildModel(workspace: StaticsWorkspace) {
     const end = at(dimension.endNodeId);
     if (!start || !end) return;
     const direction = end.clone().sub(start).normalize();
-    const isOverall = workspace.dimensions.some((other) => other.id !== dimension.id && other.value < dimension.value);
+    const isOverall = workspace.dimensions.length > 1 &&
+      dimension.value === Math.max(...workspace.dimensions.map((item) => item.value));
     const offsetDistance = Math.max(0.4, span * (isOverall ? 0.28 : 0.18));
     const offset = new THREE.Vector3(direction.y, -direction.x, 0).multiplyScalar(offsetDistance);
     const from = start.clone().add(offset);
@@ -220,23 +230,37 @@ function buildModel(workspace: StaticsWorkspace) {
 }
 
 export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void }) {
-  const { workspace } = useStaticsWorkspace();
+  const { workspace, setWorkspace } = useStaticsWorkspace();
+  const beamControls = readBeamControls(workspace);
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const modelRef = useRef<THREE.Group | null>(null);
+  const viewBoundsRef = useRef<{ center: THREE.Vector3; span: number } | null>(null);
   const framedRef = useRef(false);
+  const framedSpanRef = useRef<number | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('free');
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
 
-  const frameModel = (center: THREE.Vector3, span: number) => {
+  const frameModel = (center: THREE.Vector3, span: number, mode: ViewMode | 'reset') => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera || !controls) return;
+    const distance = Math.max(7, span * 3.2);
+    const orbitDirection = camera.position.clone().sub(controls.target);
+    const direction = mode === 'front' ? new THREE.Vector3(0, 0, 1)
+      : mode === 'top' ? new THREE.Vector3(0, 1, 0)
+      : mode === 'right' ? new THREE.Vector3(1, 0, 0)
+      : mode === 'isometric' ? new THREE.Vector3(1, 1, 1)
+      : mode === 'free' && orbitDirection.lengthSq() > 0 ? orbitDirection
+      : new THREE.Vector3(0.12, 0.16, 3.2);
+    if (mode !== 'free') camera.up.set(0, mode === 'top' ? 0 : 1, mode === 'top' ? -1 : 0);
     controls.target.copy(center);
-    camera.position.set(center.x + span * 0.12, center.y + span * 0.16, Math.max(7, span * 3.2));
+    camera.position.copy(center).add(direction.normalize().multiplyScalar(distance));
+    controls.enableRotate = mode === 'free' || mode === 'reset';
     camera.near = 0.01;
     camera.far = Math.max(1000, span * 100);
     camera.updateProjectionMatrix();
@@ -298,6 +322,7 @@ export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void
         disposeGroup(modelRef.current);
         modelRef.current = null;
       }
+      viewBoundsRef.current = null;
       renderer.dispose();
       renderer.domElement.remove();
       sceneRef.current = null;
@@ -305,6 +330,7 @@ export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void
       cameraRef.current = null;
       controlsRef.current = null;
       framedRef.current = false;
+      framedSpanRef.current = null;
     };
   }, []);
 
@@ -317,17 +343,37 @@ export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void
     }
     const model = buildModel(workspace);
     modelRef.current = model.group;
+    viewBoundsRef.current = { center: model.center, span: model.span };
     scene.add(model.group);
-    if (!framedRef.current) {
-      frameModel(model.center, model.span);
+    if (!framedRef.current || framedSpanRef.current !== model.span) {
+      frameModel(model.center, model.span, viewMode);
       framedRef.current = true;
+      framedSpanRef.current = model.span;
     }
   }, [ready, workspace]);
 
   const resetView = () => {
-    const model = buildModel(workspace);
-    frameModel(model.center, model.span);
-    disposeGroup(model.group);
+    const bounds = viewBoundsRef.current;
+    if (bounds) frameModel(bounds.center, bounds.span, 'reset');
+    setViewMode('free');
+  };
+
+  const selectView = (mode: ViewMode) => {
+    const bounds = viewBoundsRef.current;
+    if (mode === 'free') {
+      if (controlsRef.current) controlsRef.current.enableRotate = true;
+    } else if (bounds) frameModel(bounds.center, bounds.span, mode);
+    setViewMode(mode);
+  };
+
+  const updateNumber = (field: 'length' | 'loadMagnitude' | 'loadPosition', raw: string) => {
+    if (!raw.trim()) return;
+    const value = Number(raw);
+    if (Number.isFinite(value)) setWorkspace((current) => updateBeamWorkspace(current, { field, value }));
+  };
+
+  const updateSupport = (field: 'supportA' | 'supportB', value: 'pin' | 'roller' | 'fixed') => {
+    setWorkspace((current) => updateBeamWorkspace(current, { field, value }));
   };
 
   return (
@@ -341,15 +387,66 @@ export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={resetView} className="rounded p-1.5 text-slate-600 hover:bg-slate-100" title="Reset view" aria-label="Reset view"><RotateCcw className="size-4" /></button>
           <button type="button" onClick={onClose} className="rounded p-1.5 text-slate-600 hover:bg-slate-100" title="Close visualization" aria-label="Close visualization"><X className="size-4" /></button>
         </div>
+      </div>
+      <div className="flex gap-1 overflow-x-auto border-b border-slate-200 px-2 py-2" aria-label="Camera views">
+        {VIEW_BUTTONS.map(({ label, mode }) => (
+          <button key={mode} type="button" onClick={() => selectView(mode)} aria-pressed={viewMode === mode}
+            className={`shrink-0 rounded px-2 py-1 text-xs ${viewMode === mode ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+            {label}
+          </button>
+        ))}
+        <button type="button" onClick={resetView} className="flex shrink-0 items-center gap-1 rounded bg-slate-100 px-2 py-1 text-xs text-slate-700 hover:bg-slate-200">
+          <RotateCcw className="size-3" /> Reset View
+        </button>
+        <button type="button" onClick={() => selectView('free')} aria-pressed={viewMode === 'free'}
+          className={`shrink-0 rounded px-2 py-1 text-xs ${viewMode === 'free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+          Free Orbit
+        </button>
       </div>
       <div ref={containerRef} className="relative min-h-0 flex-1 bg-slate-50 touch-none">
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
       </div>
+      {beamControls && (
+        <div className="max-h-[45%] overflow-y-auto border-t border-slate-200 px-3 py-3">
+          <h3 className="mb-2 text-xs font-semibold text-slate-700">Beam controls</h3>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-slate-600">
+            <label className="flex flex-col gap-1">Beam length ({workspace.units.length})
+              <input aria-label="Beam length" type="number" min="0.1" step="0.1" value={beamControls.length}
+                onChange={(event) => updateNumber('length', event.currentTarget.value)}
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
+            </label>
+            <label className="flex flex-col gap-1">Point load ({workspace.units.force})
+              <input aria-label="Point-load magnitude" type="number" min="0" step="0.1" value={beamControls.loadMagnitude}
+                onChange={(event) => updateNumber('loadMagnitude', event.currentTarget.value)}
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
+            </label>
+            <label className="flex flex-col gap-1">Load position from A ({workspace.units.length})
+              <input aria-label="Point-load position from A" type="number" min="0.01" max={beamControls.length - 0.01} step="0.1"
+                value={beamControls.loadPosition} onChange={(event) => updateNumber('loadPosition', event.currentTarget.value)}
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
+            </label>
+            <div />
+            <label className="flex flex-col gap-1">Support at A
+              <select aria-label="Support type at A" value={beamControls.supportA}
+                onChange={(event) => updateSupport('supportA', event.currentTarget.value as 'pin' | 'roller' | 'fixed')}
+                className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900">
+                <option value="pin">Pin</option><option value="roller">Roller</option><option value="fixed">Fixed</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">Support at B
+              <select aria-label="Support type at B" value={beamControls.supportB}
+                onChange={(event) => updateSupport('supportB', event.currentTarget.value as 'pin' | 'roller' | 'fixed')}
+                className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900">
+                <option value="pin">Pin</option><option value="roller">Roller</option><option value="fixed">Fixed</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      )}
       <div className="border-t border-slate-200 px-3 py-2 text-[11px] text-slate-500">
-        Drag to rotate · Scroll to zoom · Right drag to pan · Length: {workspace.units.length} · Force: {workspace.units.force}
+        {viewMode === 'free' ? 'Drag to rotate' : 'Free Orbit enables rotation'} · Scroll to zoom · Right drag to pan · Length: {workspace.units.length} · Force: {workspace.units.force}
       </div>
     </aside>
   );
