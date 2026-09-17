@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo, useCallback } from 'react';
+import { useState, useRef, useEffect, memo, useCallback, lazy, Suspense } from 'react';
 import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Bot, Globe2, Search, Table, Pencil, Save } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
@@ -12,6 +12,10 @@ import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { AuthPage } from './components/AuthPage';
 import { StaticsWorkspaceProvider } from './statics/StaticsWorkspaceProvider';
+
+const EngineeringVisualizationPanel = lazy(() =>
+  import('./statics/EngineeringVisualizationPanel').then(({ EngineeringVisualizationPanel }) => ({ default: EngineeringVisualizationPanel }))
+);
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
@@ -1234,6 +1238,7 @@ export default function App() {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
+  const [showEngineeringPanel, setShowEngineeringPanel] = useState(() => window.innerWidth >= 768);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ name: string; type: string; content: string; preview?: string }>>([]);
   const [showImageDialog, setShowImageDialog] = useState(false);
@@ -3101,6 +3106,15 @@ ${data.response}` : data.response,
             </div>
             <div className="flex items-center gap-2">
               <button
+                type="button"
+                onClick={() => setShowEngineeringPanel((open) => !open)}
+                className="rounded-lg bg-white/20 px-2.5 py-1.5 text-xs font-semibold hover:bg-white/30"
+                title={showEngineeringPanel ? 'Hide engineering visualization' : 'Show engineering visualization'}
+                aria-pressed={showEngineeringPanel}
+              >
+                3D View
+              </button>
+              <button
                 onClick={() => setShowClearWorkspaceDialog(true)}
                 className="size-8 rounded-lg bg-white/20 hover:bg-white/30 transition flex items-center justify-center"
                 title="Clear Workspace (preserves archive)"
@@ -3126,7 +3140,7 @@ ${data.response}` : data.response,
         </div>
 
         {/* Main Area */}
-        <div className="flex-1 flex overflow-hidden min-h-0 bg-slate-50">
+        <div className="relative flex-1 flex overflow-hidden min-h-0 bg-slate-50">
           
           {/* Chat */}
           <div className="flex-1 flex flex-col min-w-0 relative">
@@ -3335,6 +3349,12 @@ ${data.response}` : data.response,
               </div>
             </div>
           </div>
+
+          {showEngineeringPanel && (
+            <Suspense fallback={<div className="w-[min(40vw,480px)] border-l bg-slate-50 p-4 text-sm text-slate-500">Loading 3D view...</div>}>
+              <EngineeringVisualizationPanel onClose={() => setShowEngineeringPanel(false)} />
+            </Suspense>
+          )}
 
           {/* Archive Panel */}
           {showArchive && (
