@@ -11,6 +11,7 @@ import { API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } from '/utils/api';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { AuthPage } from './components/AuthPage';
+import { StaticsWorkspaceProvider } from './statics/StaticsWorkspaceProvider';
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
@@ -3086,6 +3087,7 @@ ${data.response}` : data.response,
   };
 
   return (
+    <StaticsWorkspaceProvider key={userId} userId={userId}>
     <div className="h-screen bg-slate-50 flex">
       <div className="w-full h-full bg-white flex flex-col">{/* Header */}
         <div className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white flex-shrink-0">
@@ -3630,5 +3632,6 @@ ${data.response}` : data.response,
         </DialogContent>
       </Dialog>
     </div>
+    </StaticsWorkspaceProvider>
   );
 }
