@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { calculateSimplySupportedBeamReactions } from './calculations.ts';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
+import { updateBeamWorkspace } from './beamControls.ts';
 
 const solve = (workspace) => calculateSimplySupportedBeamReactions(workspace);
 const verticals = (workspace) => solve(workspace).reactions.map((reaction) => reaction.vertical);
@@ -24,6 +25,15 @@ test('10 kN at 3 m from A gives 2.5 kN at A and 7.5 kN at B', () => {
   const workspace = createSimplySupportedBeamWorkspace();
   workspace.nodes.find((node) => node.id === 'C').x = 3;
   assert.deepEqual(verticals(workspace), [2.5, 7.5]);
+});
+
+test('editing the workspace load automatically yields updated reaction data', () => {
+  const original = createSimplySupportedBeamWorkspace();
+  const moved = updateBeamWorkspace(original, { field: 'loadPosition', value: 3 });
+  const heavier = updateBeamWorkspace(moved, { field: 'loadMagnitude', value: 12 });
+  assert.deepEqual(verticals(original), [5, 5]);
+  assert.deepEqual(verticals(moved), [2.5, 7.5]);
+  assert.deepEqual(verticals(heavier), [3, 9]);
 });
 
 test('two point loads add by moment balance', () => {

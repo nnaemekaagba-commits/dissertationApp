@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, RotateCcw, X } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useStaticsWorkspace } from './StaticsWorkspaceProvider';
 import { readBeamControls, updateBeamWorkspace } from './beamControls';
+import { calculateSimplySupportedBeamReactions, type BeamReactionResult } from './calculations';
 import type { StaticsWorkspace } from './model';
 
 type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
@@ -50,7 +51,7 @@ function addLine(group: THREE.Group, start: THREE.Vector3, end: THREE.Vector3, c
   group.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color })));
 }
 
-function buildModel(workspace: StaticsWorkspace) {
+function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult | null) {
   const group = new THREE.Group();
   const nodes = new Map(workspace.nodes.map((node) => [node.id, node]));
   const points = workspace.nodes.map((node) => new THREE.Vector3(node.x, node.y, 0));
@@ -135,6 +136,27 @@ function buildModel(workspace: StaticsWorkspace) {
     } else {
       addLine(group, new THREE.Vector3(point.x - width * 0.65, baseline, 0),
         new THREE.Vector3(point.x + width * 0.65, baseline, 0), 0x92400e);
+    }
+  });
+
+  reactions?.reactions.forEach((reaction) => {
+    const point = at(reaction.nodeId);
+    if (!point) return;
+    const xOffset = (point.x <= center.x ? -1 : 1) * Math.max(0.23, span * 0.08);
+    const arrowX = point.x + xOffset;
+    const arrowTop = point.y - Math.max(0.22, span * 0.06);
+    const arrowLength = Math.max(0.48, span * 0.17);
+    if (reaction.vertical !== 0) {
+      const direction = new THREE.Vector3(0, Math.sign(reaction.vertical), 0);
+      const originY = reaction.vertical > 0 ? arrowTop - arrowLength : arrowTop;
+      group.add(new THREE.ArrowHelper(direction, new THREE.Vector3(arrowX, originY, 0.14),
+        arrowLength, 0x059669, arrowLength * 0.25, arrowLength * 0.16));
+    }
+    const amount = Number(reaction.vertical.toPrecision(6));
+    const label = textSprite(`R_${reaction.nodeId} = ${amount} ${reactions.forceUnit}`, '#047857', 0.42);
+    if (label) {
+      label.position.set(arrowX, arrowTop - arrowLength - Math.max(0.15, span * 0.04), 0.18);
+      group.add(label);
     }
   });
 
@@ -232,6 +254,13 @@ function buildModel(workspace: StaticsWorkspace) {
 export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void }) {
   const { workspace, setWorkspace } = useStaticsWorkspace();
   const beamControls = readBeamControls(workspace);
+  const reactionState = useMemo(() => {
+    try {
+      return { result: calculateSimplySupportedBeamReactions(workspace), error: '' };
+    } catch (error) {
+      return { result: null, error: error instanceof Error ? error.message : 'Cannot calculate reactions.' };
+    }
+  }, [workspace]);
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -341,7 +370,7 @@ export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void
       scene.remove(modelRef.current);
       disposeGroup(modelRef.current);
     }
-    const model = buildModel(workspace);
+    const model = buildModel(workspace, reactionState.result);
     modelRef.current = model.group;
     viewBoundsRef.current = { center: model.center, span: model.span };
     scene.add(model.group);
@@ -350,7 +379,7 @@ export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void
       framedRef.current = true;
       framedSpanRef.current = model.span;
     }
-  }, [ready, workspace]);
+  }, [ready, workspace, reactionState]);
 
   const resetView = () => {
     const bounds = viewBoundsRef.current;
@@ -408,6 +437,11 @@ export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void
       <div ref={containerRef} className="relative min-h-0 flex-1 bg-slate-50 touch-none">
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
       </div>
+      {reactionState.error && (
+        <p className="border-t border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" role="status">
+          Reactions unavailable: {reactionState.error}
+        </p>
+      )}
       {beamControls && (
         <div className="max-h-[45%] overflow-y-auto border-t border-slate-200 px-3 py-3">
           <h3 className="mb-2 text-xs font-semibold text-slate-700">Beam controls</h3>
