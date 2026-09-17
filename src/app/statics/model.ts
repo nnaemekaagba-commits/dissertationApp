@@ -63,6 +63,29 @@ export function createStaticsWorkspace(): StaticsWorkspace {
   };
 }
 
+/** Starting problem; geometry and annotations are ordinary editable workspace data. */
+export function createSimplySupportedBeamWorkspace(): StaticsWorkspace {
+  return {
+    nodes: [
+      { id: 'A', x: 0, y: 0 },
+      { id: 'C', x: 2, y: 0 },
+      { id: 'B', x: 4, y: 0 },
+    ],
+    members: [{ id: 'AB', startNodeId: 'A', endNodeId: 'B' }],
+    supports: [
+      { id: 'support-A', nodeId: 'A', kind: 'pin' },
+      { id: 'support-B', nodeId: 'B', kind: 'roller', reactionAngle: 90 },
+    ],
+    loads: [{ id: 'load-C', kind: 'force', nodeId: 'C', magnitude: 10, angle: -90 }],
+    dimensions: [
+      { id: 'A-C', startNodeId: 'A', endNodeId: 'C', value: 2 },
+      { id: 'C-B', startNodeId: 'C', endNodeId: 'B', value: 2 },
+      { id: 'A-B', startNodeId: 'A', endNodeId: 'B', value: 4 },
+    ],
+    units: { ...DEFAULT_STATICS_UNITS },
+  };
+}
+
 /** Validates untrusted JSON and returns a detached, JSON-compatible value. */
 export function parseStaticsWorkspace(input: unknown): StaticsWorkspace {
   const fail = (path: string): never => { throw new Error(`Invalid statics workspace: ${path}`); };

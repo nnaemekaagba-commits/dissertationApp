@@ -5,12 +5,6 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useStaticsWorkspace } from './StaticsWorkspaceProvider';
 import type { StaticsWorkspace } from './model';
 
-const TEST_BEAM: StaticsWorkspace = {
-  nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 4, y: 0 }],
-  members: [{ id: 'AB', startNodeId: 'A', endNodeId: 'B', label: 'Test beam' }],
-  supports: [], loads: [], dimensions: [], units: { length: 'm', force: 'kN' },
-};
-
 function textSprite(text: string, color = '#0f172a', scale = 0.64) {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -100,14 +94,39 @@ function buildModel(workspace: StaticsWorkspace) {
   workspace.supports.forEach((support) => {
     const point = at(support.nodeId);
     if (!point) return;
-    const marker = new THREE.Mesh(
-      support.kind === 'fixed'
-        ? new THREE.BoxGeometry(radius * 4, radius * 4, radius * 2)
-        : new THREE.ConeGeometry(radius * 2.5, radius * 4, 3),
-      new THREE.MeshStandardMaterial({ color: 0xf59e0b }),
-    );
-    marker.position.copy(point).add(new THREE.Vector3(0, -radius * 3, 0));
-    group.add(marker);
+    const width = Math.max(radius * 3, span * 0.07);
+    const height = width * 0.8;
+    if (support.kind === 'fixed') {
+      const block = new THREE.Mesh(new THREE.BoxGeometry(width * 0.4, height * 1.5, radius),
+        new THREE.MeshStandardMaterial({ color: 0xf59e0b }));
+      block.position.copy(point).add(new THREE.Vector3(-width * 0.25, 0, 0));
+      group.add(block);
+      return;
+    }
+    // Triangle beneath the joint for both support types; the roller has wheels below it.
+    const vertices = new Float32Array([
+      point.x, point.y - radius, 0,
+      point.x - width / 2, point.y - radius - height, 0,
+      point.x + width / 2, point.y - radius - height, 0,
+    ]);
+    const triangle = new THREE.BufferGeometry();
+    triangle.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    triangle.computeVertexNormals();
+    group.add(new THREE.Mesh(triangle, new THREE.MeshBasicMaterial({ color: 0xf59e0b, side: THREE.DoubleSide })));
+    const baseline = point.y - radius - height;
+    if (support.kind === 'roller') {
+      [-width * 0.24, width * 0.24].forEach((dx) => {
+        const wheel = new THREE.Mesh(new THREE.CircleGeometry(radius * 0.6, 16),
+          new THREE.MeshBasicMaterial({ color: 0xb45309, side: THREE.DoubleSide }));
+        wheel.position.set(point.x + dx, baseline - radius * 0.65, 0.02);
+        group.add(wheel);
+      });
+      addLine(group, new THREE.Vector3(point.x - width * 0.65, baseline - radius * 1.4, 0),
+        new THREE.Vector3(point.x + width * 0.65, baseline - radius * 1.4, 0), 0x92400e);
+    } else {
+      addLine(group, new THREE.Vector3(point.x - width * 0.65, baseline, 0),
+        new THREE.Vector3(point.x + width * 0.65, baseline, 0), 0x92400e);
+    }
   });
 
   const angleToRadians = (angle: number) => workspace.units.angle === 'rad' ? angle : THREE.MathUtils.degToRad(angle);
@@ -120,7 +139,17 @@ function buildModel(workspace: StaticsWorkspace) {
   workspace.loads.forEach((load) => {
     if (load.kind === 'force') {
       const point = at(load.nodeId);
-      if (point) addForceArrow(point, load.angle, Math.max(0.55, span * 0.26));
+      if (point) {
+        const arrowLength = Math.max(0.55, span * 0.26);
+        addForceArrow(point, load.angle, arrowLength);
+        const radians = angleToRadians(load.angle);
+        const label = textSprite(`${load.magnitude} ${workspace.units.force}`, '#b91c1c', 0.48);
+        if (label) {
+          label.position.set(point.x - Math.cos(radians) * (arrowLength + 0.2),
+            point.y - Math.sin(radians) * (arrowLength + 0.2), 0.12);
+          group.add(label);
+        }
+      }
     } else if (load.kind === 'distributed') {
       const member = workspace.members.find((item) => item.id === load.memberId);
       const start = member && at(member.startNodeId);
@@ -147,13 +176,20 @@ function buildModel(workspace: StaticsWorkspace) {
     const end = at(dimension.endNodeId);
     if (!start || !end) return;
     const direction = end.clone().sub(start).normalize();
-    const offset = new THREE.Vector3(-direction.y, direction.x, 0).multiplyScalar(Math.max(0.28, span * 0.09));
+    const isOverall = workspace.dimensions.some((other) => other.id !== dimension.id && other.value < dimension.value);
+    const offsetDistance = Math.max(0.4, span * (isOverall ? 0.28 : 0.18));
+    const offset = new THREE.Vector3(direction.y, -direction.x, 0).multiplyScalar(offsetDistance);
     const from = start.clone().add(offset);
     const to = end.clone().add(offset);
     addLine(group, from, to, 0x7c3aed);
+    const tick = Math.max(0.07, span * 0.018);
+    [from, to].forEach((endPoint) => addLine(group,
+      endPoint.clone().add(new THREE.Vector3(-direction.y, direction.x, 0).multiplyScalar(tick)),
+      endPoint.clone().add(new THREE.Vector3(direction.y, -direction.x, 0).multiplyScalar(tick)), 0x7c3aed));
     const label = textSprite(dimension.label || `${dimension.value} ${workspace.units.length}`, '#6d28d9', 0.48);
     if (label) {
-      label.position.copy(from.add(to).multiplyScalar(0.5)).add(new THREE.Vector3(0, 0, 0.05));
+      label.position.copy(from.clone().add(to).multiplyScalar(0.5))
+        .add(new THREE.Vector3(0, -Math.max(0.13, span * 0.035), 0.05));
       group.add(label);
     }
   });
@@ -185,8 +221,6 @@ function buildModel(workspace: StaticsWorkspace) {
 
 export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void }) {
   const { workspace } = useStaticsWorkspace();
-  const isExample = workspace.nodes.length === 0 && workspace.members.length === 0;
-  const visibleWorkspace = isExample ? TEST_BEAM : workspace;
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -281,17 +315,17 @@ export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void
       scene.remove(modelRef.current);
       disposeGroup(modelRef.current);
     }
-    const model = buildModel(visibleWorkspace);
+    const model = buildModel(workspace);
     modelRef.current = model.group;
     scene.add(model.group);
     if (!framedRef.current) {
       frameModel(model.center, model.span);
       framedRef.current = true;
     }
-  }, [ready, visibleWorkspace]);
+  }, [ready, workspace]);
 
   const resetView = () => {
-    const model = buildModel(visibleWorkspace);
+    const model = buildModel(workspace);
     frameModel(model.center, model.span);
     disposeGroup(model.group);
   };
@@ -303,7 +337,7 @@ export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void
           <Box className="size-4 text-blue-600" />
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-slate-900">Engineering visualization</h2>
-            <p className="text-[11px] text-slate-500">{isExample ? 'Example beam · A to B' : `${workspace.nodes.length} nodes · ${workspace.members.length} members`}</p>
+            <p className="text-[11px] text-slate-500">{workspace.nodes.length} nodes · {workspace.members.length} members</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -315,7 +349,7 @@ export function EngineeringVisualizationPanel({ onClose }: { onClose: () => void
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
       </div>
       <div className="border-t border-slate-200 px-3 py-2 text-[11px] text-slate-500">
-        Drag to rotate · Scroll to zoom · Right drag to pan · Length: {visibleWorkspace.units.length} · Force: {visibleWorkspace.units.force}
+        Drag to rotate · Scroll to zoom · Right drag to pan · Length: {workspace.units.length} · Force: {workspace.units.force}
       </div>
     </aside>
   );

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createStaticsWorkspace, parseStaticsWorkspace } from './model.ts';
+import { createSimplySupportedBeamWorkspace, createStaticsWorkspace, parseStaticsWorkspace } from './model.ts';
 import { loadStaticsWorkspace, saveStaticsWorkspace, staticsStorageKey } from './storage.ts';
 
 const example = () => ({
@@ -30,6 +30,17 @@ test('empty state matches the requested JSON structure', () => {
   assert.deepEqual(parseStaticsWorkspace(createStaticsWorkspace()), createStaticsWorkspace());
 });
 
+test('starting beam is valid data with a central downward load and two support kinds', () => {
+  const beam = createSimplySupportedBeamWorkspace();
+  assert.deepEqual(parseStaticsWorkspace(JSON.parse(JSON.stringify(beam))), beam);
+  assert.deepEqual(beam.nodes.map(({ id, x, y }) => [id, x, y]),
+    [['A', 0, 0], ['C', 2, 0], ['B', 4, 0]]);
+  assert.deepEqual(beam.supports.map(({ nodeId, kind }) => [nodeId, kind]),
+    [['A', 'pin'], ['B', 'roller']]);
+  assert.deepEqual(beam.loads, [{ id: 'load-C', kind: 'force', nodeId: 'C', magnitude: 10, angle: -90 }]);
+  assert.deepEqual(beam.dimensions.map(({ value }) => value), [2, 2, 4]);
+});
+
 test('reads the earlier stored format without losing angle annotations or units', () => {
   const old = { ...example(), id: 'old-problem', schemaVersion: 1,
     units: { length: 'm', force: 'N', moment: 'N*m', angle: 'deg' } };
@@ -51,12 +62,18 @@ test('saves per user and recovers from corrupt stored JSON', () => {
   const storage = { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) };
   saveStaticsWorkspace(storage, 'student-1', example());
   assert.deepEqual(loadStaticsWorkspace(storage, 'student-1'), example());
+  assert.deepEqual(loadStaticsWorkspace(storage, 'student-2'), createSimplySupportedBeamWorkspace());
+  saveStaticsWorkspace(storage, 'student-2', createStaticsWorkspace());
   assert.deepEqual(loadStaticsWorkspace(storage, 'student-2'), createStaticsWorkspace());
+  data.set('mydis-statics:v1:student-3', JSON.stringify(createStaticsWorkspace()));
+  assert.deepEqual(loadStaticsWorkspace(storage, 'student-3'), createSimplySupportedBeamWorkspace());
+  data.set('mydis-statics:v1:student-4', JSON.stringify(example()));
+  assert.deepEqual(loadStaticsWorkspace(storage, 'student-4'), example());
   data.set(staticsStorageKey('student-1'), '{bad json');
   const originalWarn = console.warn;
   try {
     console.warn = () => {};
-    assert.deepEqual(loadStaticsWorkspace(storage, 'student-1'), createStaticsWorkspace());
+    assert.deepEqual(loadStaticsWorkspace(storage, 'student-1'), createSimplySupportedBeamWorkspace());
   } finally {
     console.warn = originalWarn;
   }
