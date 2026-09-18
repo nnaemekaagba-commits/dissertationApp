@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { createEmptyFBDState, engineeringStructureKey, fbdStorageKey, loadFBDState,
   saveFBDState, selectFBDTarget, addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle,
+  addFBDLabel, moveFBDLabel,
   visibleReactions, createFBDHistory, applyFBDChange,
   undoFBDChange, redoFBDChange } from './fbdState.ts';
 import { buildFBDForceArrow } from './fbdForceScene.ts';
@@ -318,4 +319,59 @@ test('adding an angle never calculates its text or runs the solver and logs the 
   assert.equal(event.sessionId, 'session-1');
   assert.equal(event.timestamp, '2026-09-18T12:00:00.000Z');
   assert.deepEqual(event.angle, added.angles[0]);
+});
+
+test('student label persists its position, text, and optional association without changing the structure', () => {
+  const before = JSON.stringify(workspace);
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const labels = [
+    addFBDLabel(selected, { at: { x: 1, y: 1 }, text: 'Unknown force' }, workspace, 'label-1'),
+    addFBDLabel(selected, { at: { x: 2, y: 1 }, text: 'A',
+      associatedWith: { kind: 'node', id: 'A' } }, workspace, 'label-2'),
+  ];
+  const force = addFBDForce(selected, { at: { x: 2, y: 0 }, angle: -90, label: 'P' }, workspace, 'force-1');
+  const withForceLabel = addFBDLabel(force, { at: { x: 2, y: 2 }, text: 'P',
+    associatedWith: { kind: 'force', id: 'force-1' } }, workspace, 'label-3');
+  assert.equal(labels[0].labels[0].associatedWith, undefined);
+  assert.deepEqual(labels[1].labels[0].associatedWith, { kind: 'node', id: 'A' });
+  assert.deepEqual(withForceLabel.labels[0].associatedWith, { kind: 'force', id: 'force-1' });
+  assert.equal(JSON.stringify(workspace), before);
+  const moved = moveFBDLabel(labels[1], 'label-2', { x: 3, y: 2 });
+  assert.deepEqual(moved.labels[0], { id: 'label-2', at: { x: 3, y: 2 }, text: 'A',
+    associatedWith: { kind: 'node', id: 'A' } });
+  const records = new Map();
+  const storage = { getItem: (key) => records.get(key) ?? null, setItem: (key, value) => records.set(key, value) };
+  saveFBDState(storage, 'label-student', moved, workspace);
+  assert.deepEqual(loadFBDState(storage, 'label-student', workspace), moved);
+});
+
+test('labels validate text, position, association, and movement', () => {
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'joint', id: 'A' }, workspace);
+  const input = { at: { x: 0, y: 0 }, text: 'R_A' };
+  const added = addFBDLabel(selected, input, workspace, 'label-1');
+  assert.throws(() => addFBDLabel(added, input, workspace, 'label-1'), /unique/);
+  assert.throws(() => addFBDLabel(selected, { ...input, text: ' ' }, workspace, 'label-2'), /valid label/);
+  assert.throws(() => addFBDLabel(selected, { ...input, at: { x: Infinity, y: 0 } }, workspace, 'label-2'), /valid label/);
+  assert.throws(() => addFBDLabel(selected, { ...input,
+    associatedWith: { kind: 'force', id: 'missing' } }, workspace, 'label-2'), /association/);
+  assert.throws(() => addFBDLabel(createEmptyFBDState(workspace), input, workspace, 'label-2'), /Select/);
+  assert.throws(() => moveFBDLabel(added, 'missing', { x: 1, y: 2 }), /Unknown/);
+  assert.throws(() => moveFBDLabel(added, 'label-1', { x: NaN, y: 2 }), /finite/);
+});
+
+test('FBD panel renders selectable labels and supports moving on canvas without solver calls', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /textSprite\(item\.text, item\.id === selectedLabelId/);
+  assert.match(panel, /sprite\.userData\.fbdLabelId = item\.id/);
+  assert.match(panel, /setSelectedLabelId\(object\.userData\.fbdLabelId/);
+  assert.match(panel, /moveFBDLabel\(fbdState, selectedLabelId/);
+  let solverCalls = 0;
+  assert.equal(visibleReactions(true, workspace, () => { solverCalls++; return {}; }).result, null);
+  assert.equal(solverCalls, 0);
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const added = addFBDLabel(selected, { at: { x: 1, y: 1 }, text: 'Given' }, workspace, 'label-1');
+  const event = createVisualizationResearchEvent('session-1', 'fbd_label_add',
+    () => 'event-1', () => '2026-09-18T12:00:00.000Z', undefined, undefined, undefined, undefined, undefined, added.labels[0]);
+  assert.deepEqual(event.label, added.labels[0]);
+  assert.equal(event.sessionId, 'session-1');
 });

@@ -10,7 +10,9 @@ export type FBDDimension = { id: string; start: FBDPoint; end: FBDPoint; label?:
 export type FBDDimensionInput = { start: FBDPoint; end: FBDPoint; label: string };
 export type FBDAngle = { id: string; vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label?: string };
 export type FBDAngleInput = { vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label: string };
-export type FBDLabel = { id: string; at: FBDPoint; text: string };
+export type FBDLabelAssociation = { kind: 'force' | 'moment' | 'node' | 'member' | 'dimension' | 'angle'; id: string };
+export type FBDLabel = { id: string; at: FBDPoint; text: string; associatedWith?: FBDLabelAssociation };
+export type FBDLabelInput = { at: FBDPoint; text: string; associatedWith?: FBDLabelAssociation };
 
 /** Student-created diagram data. EngineeringState is never copied or edited here. */
 export interface FBDState {
@@ -135,6 +137,39 @@ export function addFBDAngle(state: FBDState, input: FBDAngleInput,
   return { ...state, sourceStructureKey: engineeringStructureKey(workspace), angles: [...state.angles, angle] };
 }
 
+function validLabelAssociation(state: FBDState, workspace: StaticsWorkspace, association: FBDLabelAssociation) {
+  const { kind, id } = association;
+  return kind === 'node' ? workspace.nodes.some((node) => node.id === id) :
+    kind === 'member' ? workspace.members.some((member) => member.id === id) :
+    kind === 'force' ? state.forces.some((force) => force.id === id) :
+    kind === 'moment' ? state.moments.some((moment) => moment.id === id) :
+    kind === 'dimension' ? state.dimensions.some((dimension) => dimension.id === id) :
+    kind === 'angle' && state.angles.some((angle) => angle.id === id);
+}
+
+export function addFBDLabel(state: FBDState, input: FBDLabelInput,
+  workspace: StaticsWorkspace, labelId: string): FBDState {
+  if (!state.selectedTarget || !validTarget(state.selectedTarget, workspace))
+    throw new Error('Select a body, member, or joint before adding a label.');
+  if (!labelId.trim() || state.labels.some((label) => label.id === labelId))
+    throw new Error('Label ID must be unique.');
+  if (!Number.isFinite(input.at.x) || !Number.isFinite(input.at.y) ||
+    !input.text.trim() || input.text.length > 120)
+    throw new Error('Enter valid label text and a finite position.');
+  if (input.associatedWith && !validLabelAssociation(state, workspace, input.associatedWith))
+    throw new Error('Unknown FBD label association.');
+  const label: FBDLabel = { id: labelId, at: { ...input.at }, text: input.text.trim(),
+    ...(input.associatedWith ? { associatedWith: { ...input.associatedWith } } : {}) };
+  return { ...state, sourceStructureKey: engineeringStructureKey(workspace), labels: [...state.labels, label] };
+}
+
+export function moveFBDLabel(state: FBDState, labelId: string, at: FBDPoint): FBDState {
+  if (!Number.isFinite(at.x) || !Number.isFinite(at.y)) throw new Error('Enter a finite label position.');
+  if (!state.labels.some((label) => label.id === labelId)) throw new Error('Unknown FBD label.');
+  return { ...state, labels: state.labels.map((label) => label.id === labelId
+    ? { ...label, at: { x: at.x, y: at.y } } : label) };
+}
+
 export interface FBDHistory { present: FBDState; past: FBDState[]; future: FBDState[] }
 export const createFBDHistory = (present: FBDState): FBDHistory => ({ present, past: [], future: [] });
 export function applyFBDChange(history: FBDHistory, next: FBDState): FBDHistory {
@@ -188,11 +223,22 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),
     angles: rows(root.angles, (row) => ({ id: id(row.id), vertex: point(row.vertex),
       from: point(row.from), to: point(row.to), ...(row.label === undefined ? {} : { label: label(row.label) }) })),
-    labels: rows(root.labels, (row) => ({ id: id(row.id), at: point(row.at), text: id(row.text) })),
+    labels: rows(root.labels, (row) => {
+      const association = row.associatedWith === undefined ? undefined : object(row.associatedWith);
+      const kind = association?.kind;
+      const validKind = kind === 'force' || kind === 'moment' || kind === 'node' ||
+        kind === 'member' || kind === 'dimension' || kind === 'angle';
+      if (association && !validKind) fail();
+      return { id: id(row.id), at: point(row.at), text: id(row.text),
+        ...(association ? { associatedWith: { kind: kind as FBDLabelAssociation['kind'], id: id(association.id) } } : {}) };
+    }),
   };
   for (const key of ['forces', 'moments', 'dimensions', 'angles', 'labels'] as const) {
     if (new Set(output[key].map((item) => item.id)).size !== output[key].length) fail();
   }
+  output.labels = output.labels.map((item) => item.associatedWith &&
+    !validLabelAssociation(output, workspace, item.associatedWith)
+    ? { id: item.id, at: item.at, text: item.text } : item);
   return associateFBDState(output, workspace);
 }
 

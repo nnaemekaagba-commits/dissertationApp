@@ -9,8 +9,9 @@ import { calculatePlanarBeamReactions, type BeamReactionResult } from './calcula
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
 import { createEmptyFBDState, selectFBDTarget, visibleReactions,
-  addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle,
-  type FBDForce, type FBDMoment, type FBDDimension, type FBDAngle, type FBDState, type FBDTarget } from './fbdState';
+  addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
+  type FBDForce, type FBDMoment, type FBDDimension, type FBDAngle, type FBDLabel,
+  type FBDLabelAssociation, type FBDState, type FBDTarget } from './fbdState';
 import { buildFBDForceArrow } from './fbdForceScene';
 import { buildFBDMomentArrow } from './fbdMomentScene';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene';
@@ -62,7 +63,7 @@ function addLine(group: THREE.Group, start: THREE.Vector3, end: THREE.Vector3, c
 
 function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   selectedForceId: string | null, selectedMomentId: string | null,
-  selectedDimensionId: string | null, selectedAngleId: string | null) {
+  selectedDimensionId: string | null, selectedAngleId: string | null, selectedLabelId: string | null) {
   const group = new THREE.Group();
   const nodes = new Map(workspace.nodes.map((node) => [node.id, node]));
   const points = workspace.nodes.map((node) => new THREE.Vector3(node.x, node.y, 0));
@@ -139,14 +140,23 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       group.add(label);
     }
   }
+  for (const item of fbdState.labels) {
+    const sprite = textSprite(item.text, item.id === selectedLabelId ? '#c2410c' : '#1e293b', 0.55);
+    if (sprite) {
+      sprite.position.set(item.at.x, item.at.y, 0.45);
+      sprite.userData.fbdLabelId = item.id;
+      group.add(sprite);
+    }
+  }
   return { group, center, span };
 }
 
 function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult | null,
   showFbd: boolean, fbdState: FBDState, selectedForceId: string | null,
-  selectedMomentId: string | null, selectedDimensionId: string | null, selectedAngleId: string | null) {
+  selectedMomentId: string | null, selectedDimensionId: string | null,
+  selectedAngleId: string | null, selectedLabelId: string | null) {
   if (showFbd) return buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId,
-    selectedDimensionId, selectedAngleId);
+    selectedDimensionId, selectedAngleId, selectedLabelId);
   const group = new THREE.Group();
   const sceneData = selectSceneData(workspace);
   const nodes = new Map(sceneData.nodes.map((node) => [node.id, node]));
@@ -417,7 +427,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   showFbd: boolean;
   onFbdChange: (visible: boolean) => void;
   onVisualizationInteraction: (action: VisualizationAction, target?: FBDTarget,
-    force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension, angle?: FBDAngle) => void;
+    force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension, angle?: FBDAngle,
+    label?: FBDLabel) => void;
 }) {
   const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd } = useStaticsWorkspace();
   const reactionState = useMemo(() => visibleReactions(showFbd, workspace, calculatePlanarBeamReactions),
@@ -456,6 +467,11 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   const [anglePick, setAnglePick] = useState<'vertex' | 'from' | 'to'>('vertex');
   const [angleError, setAngleError] = useState('');
   const [selectedAngleId, setSelectedAngleId] = useState<string | null>(null);
+  const [labelFormOpen, setLabelFormOpen] = useState(false);
+  const [labelDraft, setLabelDraft] = useState({ x: '0', y: '0', text: '', association: '' });
+  const [labelError, setLabelError] = useState('');
+  const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
+  const [labelMoveMode, setLabelMoveMode] = useState(false);
   useEffect(() => {
     if (selectedForceId && !fbdState.forces.some((force) => force.id === selectedForceId))
       setSelectedForceId(null);
@@ -472,6 +488,12 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     if (selectedAngleId && !fbdState.angles.some((angle) => angle.id === selectedAngleId))
       setSelectedAngleId(null);
   }, [fbdState.angles, selectedAngleId]);
+  useEffect(() => {
+    if (selectedLabelId && !fbdState.labels.some((label) => label.id === selectedLabelId)) {
+      setSelectedLabelId(null);
+      setLabelMoveMode(false);
+    }
+  }, [fbdState.labels, selectedLabelId]);
   const canvasClickRef = useRef<(event: MouseEvent) => void>(() => {});
   canvasClickRef.current = (event) => {
     if (!showFbd || !rendererRef.current || !cameraRef.current) return;
@@ -480,7 +502,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       -((event.clientY - rect.top) / rect.height * 2 - 1));
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(pointer, cameraRef.current);
-    if (forceFormOpen || momentFormOpen || dimensionFormOpen || angleFormOpen) {
+    if (forceFormOpen || momentFormOpen || dimensionFormOpen || angleFormOpen || labelFormOpen || labelMoveMode) {
       const point = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
       if (point && forceFormOpen) setForceDraft((current) => ({ ...current, x: point.x.toFixed(2), y: point.y.toFixed(2) }));
       if (point && momentFormOpen) setMomentDraft((current) => ({ ...current, x: point.x.toFixed(2), y: point.y.toFixed(2) }));
@@ -490,18 +512,33 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       if (point && angleFormOpen) setAngleDraft((current) => ({ ...current,
         [`${anglePick}Choice`]: 'custom', [`${anglePick}X`]: point.x.toFixed(2),
         [`${anglePick}Y`]: point.y.toFixed(2) }));
+      if (point && labelFormOpen) setLabelDraft((current) => ({ ...current,
+        x: point.x.toFixed(2), y: point.y.toFixed(2) }));
+      if (point && labelMoveMode && selectedLabelId) {
+        const next = moveFBDLabel(fbdState, selectedLabelId, { x: point.x, y: point.y });
+        setFbdState(next);
+        setLabelMoveMode(false);
+        onVisualizationInteraction('fbd_label_move', undefined, undefined, undefined, undefined, undefined,
+          next.labels.find((label) => label.id === selectedLabelId));
+      }
       return;
     }
     raycaster.params.Line.threshold = Math.max(0.08, (viewBoundsRef.current?.span || 1) * 0.018);
     for (const hit of raycaster.intersectObjects(modelRef.current?.children || [], true)) {
       let object: THREE.Object3D | null = hit.object;
       while (object && !object.userData.fbdForceId && !object.userData.fbdMomentId &&
-        !object.userData.fbdDimensionId && !object.userData.fbdAngleId) object = object.parent;
+        !object.userData.fbdDimensionId && !object.userData.fbdAngleId && !object.userData.fbdLabelId) object = object.parent;
+      if (object?.userData.fbdLabelId) {
+        setSelectedLabelId(object.userData.fbdLabelId as string);
+        setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null);
+        return;
+      }
       if (object?.userData.fbdForceId) {
         setSelectedForceId(object.userData.fbdForceId as string);
         setSelectedMomentId(null);
         setSelectedDimensionId(null);
         setSelectedAngleId(null);
+        setSelectedLabelId(null);
         return;
       }
       if (object?.userData.fbdMomentId) {
@@ -509,6 +546,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
         setSelectedForceId(null);
         setSelectedDimensionId(null);
         setSelectedAngleId(null);
+        setSelectedLabelId(null);
         return;
       }
       if (object?.userData.fbdDimensionId) {
@@ -516,6 +554,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
         setSelectedForceId(null);
         setSelectedMomentId(null);
         setSelectedAngleId(null);
+        setSelectedLabelId(null);
         return;
       }
       if (object?.userData.fbdAngleId) {
@@ -523,6 +562,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
         setSelectedForceId(null);
         setSelectedMomentId(null);
         setSelectedDimensionId(null);
+        setSelectedLabelId(null);
         return;
       }
     }
@@ -632,7 +672,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       disposeGroup(modelRef.current);
     }
     const model = buildModel(workspace, reactionState.result, showFbd, fbdState,
-      selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId);
+      selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId, selectedLabelId);
     modelRef.current = model.group;
     viewBoundsRef.current = { center: model.center, span: model.span };
     scene.add(model.group);
@@ -641,7 +681,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       framedRef.current = true;
       framedSpanRef.current = model.span;
     }
-  }, [ready, workspace, reactionState, showFbd, fbdState, selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId]);
+  }, [ready, workspace, reactionState, showFbd, fbdState, selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId, selectedLabelId]);
 
   const resetView = () => {
     const bounds = viewBoundsRef.current;
@@ -682,6 +722,14 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
         point: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 } }] : [];
     }),
   ];
+  const labelAssociations = [
+    ...workspace.nodes.map((node) => ({ value: `node:${node.id}`, text: `Node · ${node.label || node.id}` })),
+    ...workspace.members.map((member) => ({ value: `member:${member.id}`, text: `Member · ${member.label || member.id}` })),
+    ...fbdState.forces.map((force) => ({ value: `force:${force.id}`, text: `Force · ${force.label || force.id}` })),
+    ...fbdState.moments.map((moment) => ({ value: `moment:${moment.id}`, text: `Moment · ${moment.label || moment.id}` })),
+    ...fbdState.dimensions.map((dimension) => ({ value: `dimension:${dimension.id}`, text: `Dimension · ${dimension.label || dimension.id}` })),
+    ...fbdState.angles.map((angle) => ({ value: `angle:${angle.id}`, text: `Angle · ${angle.label || angle.id}` })),
+  ];
   const selectTarget = (target: FBDTarget | null) => {
     setFbdState((current) => selectFBDTarget(current, target, workspace));
     if (target) onVisualizationInteraction('fbd_select', target);
@@ -706,6 +754,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     setDimensionFormOpen(false);
     setAngleFormOpen(false);
     setForceFormOpen(true);
+    setLabelFormOpen(false);
   };
   const submitForce = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -721,6 +770,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       setSelectedMomentId(null);
       setSelectedDimensionId(null);
       setSelectedAngleId(null);
+      setSelectedLabelId(null);
       setForceFormOpen(false);
       setForceError('');
       onVisualizationInteraction('fbd_force_add', undefined, force);
@@ -737,6 +787,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     setDimensionFormOpen(false);
     setAngleFormOpen(false);
     setMomentFormOpen(true);
+    setLabelFormOpen(false);
   };
   const submitMoment = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -752,6 +803,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       setSelectedForceId(null);
       setSelectedDimensionId(null);
       setSelectedAngleId(null);
+      setSelectedLabelId(null);
       setMomentFormOpen(false);
       setMomentError('');
       onVisualizationInteraction('fbd_moment_add', undefined, undefined, moment);
@@ -776,6 +828,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     setMomentFormOpen(false);
     setAngleFormOpen(false);
     setDimensionFormOpen(true);
+    setLabelFormOpen(false);
   };
   const submitDimension = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -791,6 +844,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       setSelectedForceId(null);
       setSelectedMomentId(null);
       setSelectedAngleId(null);
+      setSelectedLabelId(null);
       setDimensionFormOpen(false);
       setDimensionError('');
       onVisualizationInteraction('fbd_dimension_add', undefined, undefined, undefined, dimension);
@@ -813,6 +867,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     setMomentFormOpen(false);
     setDimensionFormOpen(false);
     setAngleFormOpen(true);
+    setLabelFormOpen(false);
   };
   const submitAngle = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -829,11 +884,56 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       setSelectedForceId(null);
       setSelectedMomentId(null);
       setSelectedDimensionId(null);
+      setSelectedLabelId(null);
       setAngleFormOpen(false);
       setAngleError('');
       onVisualizationInteraction('fbd_angle_add', undefined, undefined, undefined, undefined, angle);
     } catch (caught) {
       setAngleError(caught instanceof Error ? caught.message : 'Could not add angle.');
+    }
+  };
+
+  const openLabelForm = () => {
+    if (!fbdState.selectedTarget) return;
+    const { x, y } = selectedTargetPoint();
+    setLabelDraft({ x: String(x), y: String(y), text: '', association: '' });
+    setLabelError('');
+    setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false); setAngleFormOpen(false);
+    setLabelMoveMode(false);
+    setLabelFormOpen(true);
+  };
+  const submitLabel = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      const association = labelAssociations.find((item) => item.value === labelDraft.association);
+      if (labelDraft.association && !association) throw new Error('Unknown FBD label association.');
+      const input = { at: { x: Number(labelDraft.x), y: Number(labelDraft.y) }, text: labelDraft.text,
+        ...(association ? { associatedWith: {
+          kind: labelDraft.association.split(':')[0] as FBDLabelAssociation['kind'],
+          id: labelDraft.association.slice(labelDraft.association.indexOf(':') + 1),
+        } } : {}) };
+      const next = addFBDLabel(fbdState, input, workspace, crypto.randomUUID());
+      const label = next.labels[next.labels.length - 1];
+      setFbdState(next);
+      setSelectedLabelId(label.id);
+      setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null);
+      setLabelFormOpen(false);
+      setLabelError('');
+      onVisualizationInteraction('fbd_label_add', undefined, undefined, undefined, undefined, undefined, label);
+    } catch (caught) {
+      setLabelError(caught instanceof Error ? caught.message : 'Could not add label.');
+    }
+  };
+  const moveSelectedLabel = (x: number, y: number) => {
+    if (!selectedLabelId) return;
+    try {
+      const next = moveFBDLabel(fbdState, selectedLabelId, { x, y });
+      setFbdState(next);
+      setLabelError('');
+      onVisualizationInteraction('fbd_label_move', undefined, undefined, undefined, undefined, undefined,
+        next.labels.find((item) => item.id === selectedLabelId));
+    } catch (caught) {
+      setLabelError(caught instanceof Error ? caught.message : 'Could not move label.');
     }
   };
 
@@ -874,7 +974,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       <div ref={containerRef} className="relative min-h-0 basis-0 flex-1 bg-slate-50 touch-none">
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
         {showFbd && !fbdState.selectedTarget && fbdState.forces.length === 0 &&
-          fbdState.moments.length === 0 && fbdState.dimensions.length === 0 && fbdState.angles.length === 0 && !error &&
+          fbdState.moments.length === 0 && fbdState.dimensions.length === 0 && fbdState.angles.length === 0 && fbdState.labels.length === 0 && !error &&
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
             Select a body, member, or joint to begin your free-body diagram.
           </div>}
@@ -901,10 +1001,14 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Dimension</button>
           <button type="button" disabled={!fbdState.selectedTarget} onClick={openAngleForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Angle</button>
-          <button type="button" disabled title="Drawing tool is coming in the next phase"
-            className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-400">Add Label</button>
-          <button type="button" disabled={!selectedForceId && !selectedMomentId && !selectedDimensionId && !selectedAngleId && !fbdState.selectedTarget} onClick={() => {
-            if (selectedAngleId) {
+          <button type="button" disabled={!fbdState.selectedTarget} onClick={openLabelForm}
+            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Label</button>
+          <button type="button" disabled={!selectedForceId && !selectedMomentId && !selectedDimensionId && !selectedAngleId && !selectedLabelId && !fbdState.selectedTarget} onClick={() => {
+            if (selectedLabelId) {
+              setFbdState((current) => ({ ...current, labels: current.labels.filter((item) => item.id !== selectedLabelId) }));
+              setSelectedLabelId(null); setLabelMoveMode(false);
+              onVisualizationInteraction('fbd_delete');
+            } else if (selectedAngleId) {
               setFbdState((current) => ({ ...current, angles: current.angles.filter((angle) => angle.id !== selectedAngleId) }));
               setSelectedAngleId(null);
               onVisualizationInteraction('fbd_delete');
@@ -927,9 +1031,30 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Undo</button>
           <button type="button" disabled={!canRedoFbd} onClick={() => { redoFbd(); onVisualizationInteraction('fbd_redo'); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Redo</button>
-          <button type="button" onClick={() => { setFbdState(createEmptyFBDState(workspace)); setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null); setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false); setAngleFormOpen(false); onVisualizationInteraction('fbd_reset'); }}
+          <button type="button" onClick={() => { setFbdState(createEmptyFBDState(workspace)); setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null); setSelectedLabelId(null); setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false); setAngleFormOpen(false); setLabelFormOpen(false); setLabelMoveMode(false); onVisualizationInteraction('fbd_reset'); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs">Reset FBD</button>
         </div>
+        {labelFormOpen && <form onSubmit={submitLabel} className="mt-2 grid grid-cols-2 gap-2 text-xs" aria-label="Add label details">
+          <p className="col-span-2 text-slate-600">Enter text and position. Click the canvas to choose a position; association is optional.</p>
+          <label className="col-span-2">Label text<input required maxLength={120} value={labelDraft.text}
+            onChange={(event) => setLabelDraft({ ...labelDraft, text: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <label>Position X ({workspace.units.length})<input required type="number" step="any" value={labelDraft.x}
+            onChange={(event) => setLabelDraft({ ...labelDraft, x: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <label>Position Y ({workspace.units.length})<input required type="number" step="any" value={labelDraft.y}
+            onChange={(event) => setLabelDraft({ ...labelDraft, y: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <label className="col-span-2">Associate with (optional)<select value={labelDraft.association}
+            onChange={(event) => setLabelDraft({ ...labelDraft, association: event.target.value })}
+            className="block w-full rounded border border-slate-300 bg-white px-2 py-1">
+            <option value="">No association</option>
+            {labelAssociations.map((item) => <option key={item.value} value={item.value}>{item.text}</option>)}
+          </select></label>
+          <div className="col-span-2 flex gap-2"><button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Add label</button>
+            <button type="button" onClick={() => setLabelFormOpen(false)} className="rounded bg-slate-100 px-2 py-1">Cancel</button></div>
+          {labelError && <p className="col-span-2 text-red-700" role="alert">{labelError}</p>}
+        </form>}
         {forceFormOpen && <form onSubmit={submitForce} className="mt-2 grid grid-cols-2 gap-2 text-xs" aria-label="Add force details">
           <p className="col-span-2 text-slate-600">Choose the application point on the canvas or enter its coordinates.</p>
           <label>Point X ({workspace.units.length})<input required type="number" step="any" value={forceDraft.x}
@@ -1062,28 +1187,53 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
         </form>}
         {fbdState.forces.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD forces">
           {fbdState.forces.map((force) => <button key={force.id} type="button" aria-pressed={selectedForceId === force.id}
-            onClick={() => { setSelectedForceId(force.id); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null); }}
+            onClick={() => { setSelectedForceId(force.id); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null); setSelectedLabelId(null); setLabelMoveMode(false); }}
             className={`rounded px-2 py-1 text-xs ${selectedForceId === force.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
             {force.label || 'F'} ({force.at.x}, {force.at.y})</button>)}
         </div>}
         {fbdState.moments.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD moments">
           {fbdState.moments.map((moment) => <button key={moment.id} type="button" aria-pressed={selectedMomentId === moment.id}
-            onClick={() => { setSelectedMomentId(moment.id); setSelectedForceId(null); setSelectedDimensionId(null); setSelectedAngleId(null); }}
+            onClick={() => { setSelectedMomentId(moment.id); setSelectedForceId(null); setSelectedDimensionId(null); setSelectedAngleId(null); setSelectedLabelId(null); setLabelMoveMode(false); }}
             className={`rounded px-2 py-1 text-xs ${selectedMomentId === moment.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
             {moment.label || 'M'} · {moment.clockwise ? 'CW' : 'CCW'} ({moment.at.x}, {moment.at.y})</button>)}
         </div>}
         {fbdState.dimensions.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD dimensions">
           {fbdState.dimensions.map((dimension) => <button key={dimension.id} type="button" aria-pressed={selectedDimensionId === dimension.id}
-            onClick={() => { setSelectedDimensionId(dimension.id); setSelectedForceId(null); setSelectedMomentId(null); setSelectedAngleId(null); }}
+            onClick={() => { setSelectedDimensionId(dimension.id); setSelectedForceId(null); setSelectedMomentId(null); setSelectedAngleId(null); setSelectedLabelId(null); setLabelMoveMode(false); }}
             className={`rounded px-2 py-1 text-xs ${selectedDimensionId === dimension.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
             {dimension.label || 'Dimension'} ({dimension.start.x}, {dimension.start.y})–({dimension.end.x}, {dimension.end.y})</button>)}
         </div>}
         {fbdState.angles.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD angles">
           {fbdState.angles.map((angle) => <button key={angle.id} type="button" aria-pressed={selectedAngleId === angle.id}
-            onClick={() => { setSelectedAngleId(angle.id); setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); }}
+            onClick={() => { setSelectedAngleId(angle.id); setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedLabelId(null); setLabelMoveMode(false); }}
             className={`rounded px-2 py-1 text-xs ${selectedAngleId === angle.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
             {angle.label} ({angle.vertex.x}, {angle.vertex.y})</button>)}
         </div>}
+        {fbdState.labels.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD labels">
+          {fbdState.labels.map((item) => <button key={item.id} type="button" aria-pressed={selectedLabelId === item.id}
+            onClick={() => { setSelectedLabelId(item.id); setSelectedForceId(null); setSelectedMomentId(null);
+              setSelectedDimensionId(null); setSelectedAngleId(null); setLabelMoveMode(false); }}
+            className={`rounded px-2 py-1 text-xs ${selectedLabelId === item.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
+            {item.text} ({item.at.x.toFixed(2)}, {item.at.y.toFixed(2)})</button>)}
+        </div>}
+        {selectedLabelId && fbdState.labels.some((item) => item.id === selectedLabelId) &&
+          <form key={`${selectedLabelId}:${fbdState.labels.find((item) => item.id === selectedLabelId)?.at.x}:${fbdState.labels.find((item) => item.id === selectedLabelId)?.at.y}`}
+            aria-label="Move selected label" className="mt-2 flex flex-wrap items-end gap-2 text-xs"
+            onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget);
+              moveSelectedLabel(Number(data.get('x')), Number(data.get('y'))); }}>
+            <span className="font-medium">Move label</span>
+            <label>X ({workspace.units.length})<input name="x" required type="number" step="any"
+              defaultValue={fbdState.labels.find((item) => item.id === selectedLabelId)?.at.x}
+              className="block w-20 rounded border border-slate-300 px-2 py-1" /></label>
+            <label>Y ({workspace.units.length})<input name="y" required type="number" step="any"
+              defaultValue={fbdState.labels.find((item) => item.id === selectedLabelId)?.at.y}
+              className="block w-20 rounded border border-slate-300 px-2 py-1" /></label>
+            <button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Set position</button>
+            <button type="button" aria-pressed={labelMoveMode} onClick={() => setLabelMoveMode((current) => !current)}
+              className={`rounded px-2 py-1 ${labelMoveMode ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}>
+              {labelMoveMode ? 'Click destination on canvas' : 'Move on canvas'}</button>
+            {labelError && <p className="w-full text-red-700" role="alert">{labelError}</p>}
+          </form>}
       </div>}
       {!showFbd && reactionState.error && (
         <p className="border-t border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" role="status">

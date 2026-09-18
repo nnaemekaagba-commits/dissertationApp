@@ -1,8 +1,8 @@
 import type { EngineeringToolBatch } from './engineeringTools.ts';
-import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDTarget } from './fbdState.ts';
+import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel, FBDTarget } from './fbdState.ts';
 
 export type VisualizationAction = 'front' | 'top' | 'right' | 'isometric' | 'reset' | 'free' | 'orbit' | 'fbd' |
-  'fbd_enter' | 'fbd_exit' | 'fbd_select' | 'fbd_delete' | 'fbd_undo' | 'fbd_redo' | 'fbd_reset' | 'fbd_force_add' | 'fbd_moment_add' | 'fbd_dimension_add' | 'fbd_angle_add';
+  'fbd_enter' | 'fbd_exit' | 'fbd_select' | 'fbd_delete' | 'fbd_undo' | 'fbd_redo' | 'fbd_reset' | 'fbd_force_add' | 'fbd_moment_add' | 'fbd_dimension_add' | 'fbd_angle_add' | 'fbd_label_add' | 'fbd_label_move';
 export type EngineeringResearchEvent = {
   kind: 'tool'; eventId: string; sessionId: string; timestamp: string;
   studentMessage: string; toolName: string; toolArguments: unknown;
@@ -10,7 +10,7 @@ export type EngineeringResearchEvent = {
   solverResult?: unknown; aiResponse: string; succeeded: boolean; error?: string;
 } | {
   kind: 'visualization'; eventId: string; sessionId: string; timestamp: string; action: VisualizationAction;
-  target?: FBDTarget; force?: FBDForce; moment?: FBDMoment; dimension?: FBDDimension; angle?: FBDAngle;
+  target?: FBDTarget; force?: FBDForce; moment?: FBDMoment; dimension?: FBDDimension; angle?: FBDAngle; label?: FBDLabel;
 };
 
 export function getEngineeringSessionId(storage: Pick<Storage, 'getItem' | 'setItem'>,
@@ -41,8 +41,8 @@ export function createToolResearchEvents(sessionId: string, studentMessage: stri
 export function createVisualizationResearchEvent(sessionId: string, action: VisualizationAction,
   newId = () => crypto.randomUUID(), now = () => new Date().toISOString(),
   target?: FBDTarget, force?: FBDForce, moment?: FBDMoment,
-  dimension?: FBDDimension, angle?: FBDAngle): EngineeringResearchEvent {
+  dimension?: FBDDimension, angle?: FBDAngle, label?: FBDLabel): EngineeringResearchEvent {
   return { kind: 'visualization', eventId: newId(), sessionId, timestamp: now(), action,
     ...(target ? { target } : {}), ...(force ? { force } : {}), ...(moment ? { moment } : {}),
-    ...(dimension ? { dimension } : {}), ...(angle ? { angle } : {}) };
+    ...(dimension ? { dimension } : {}), ...(angle ? { angle } : {}), ...(label ? { label } : {}) };
 }
