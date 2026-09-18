@@ -9,8 +9,9 @@ import { calculatePlanarBeamReactions, type BeamReactionResult } from './calcula
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
 import { createEmptyFBDState, selectFBDTarget, visibleReactions,
-  addFBDForce, type FBDForce, type FBDState, type FBDTarget } from './fbdState';
+  addFBDForce, addFBDMoment, type FBDForce, type FBDMoment, type FBDState, type FBDTarget } from './fbdState';
 import { buildFBDForceArrow } from './fbdForceScene';
+import { buildFBDMomentArrow } from './fbdMomentScene';
 
 type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
 const VIEW_BUTTONS: { label: string; mode: Exclude<ViewMode, 'free'> }[] = [
@@ -56,7 +57,8 @@ function addLine(group: THREE.Group, start: THREE.Vector3, end: THREE.Vector3, c
   group.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color })));
 }
 
-function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState, selectedForceId: string | null) {
+function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
+  selectedForceId: string | null, selectedMomentId: string | null) {
   const group = new THREE.Group();
   const nodes = new Map(workspace.nodes.map((node) => [node.id, node]));
   const points = workspace.nodes.map((node) => new THREE.Vector3(node.x, node.y, 0));
@@ -107,12 +109,21 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState, selected
       group.add(label);
     }
   }
+  for (const moment of fbdState.moments) {
+    group.add(buildFBDMomentArrow(moment, span, moment.id === selectedMomentId));
+    const labelText = `${moment.label || 'M'}${moment.magnitude === undefined ? '' : ` = ${moment.magnitude} ${workspace.units.force}·${workspace.units.length}`}`;
+    const label = textSprite(labelText, moment.id === selectedMomentId ? '#c2410c' : '#6d28d9', 0.42);
+    if (label) {
+      label.position.set(moment.at.x, moment.at.y + Math.max(0.55, span * 0.17), 0.2);
+      group.add(label);
+    }
+  }
   return { group, center, span };
 }
 
 function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult | null,
-  showFbd: boolean, fbdState: FBDState, selectedForceId: string | null) {
-  if (showFbd) return buildFBDModel(workspace, fbdState, selectedForceId);
+  showFbd: boolean, fbdState: FBDState, selectedForceId: string | null, selectedMomentId: string | null) {
+  if (showFbd) return buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId);
   const group = new THREE.Group();
   const sceneData = selectSceneData(workspace);
   const nodes = new Map(sceneData.nodes.map((node) => [node.id, node]));
@@ -382,7 +393,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   viewCommand?: { view: EngineeringView; sequence: number };
   showFbd: boolean;
   onFbdChange: (visible: boolean) => void;
-  onVisualizationInteraction: (action: VisualizationAction, target?: FBDTarget, force?: FBDForce) => void;
+  onVisualizationInteraction: (action: VisualizationAction, target?: FBDTarget,
+    force?: FBDForce, moment?: FBDMoment) => void;
 }) {
   const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd } = useStaticsWorkspace();
   const reactionState = useMemo(() => visibleReactions(showFbd, workspace, calculatePlanarBeamReactions),
@@ -405,10 +417,18 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   const [forceDraft, setForceDraft] = useState({ x: '0', y: '0', label: 'F', angle: '-90', magnitude: '' });
   const [forceError, setForceError] = useState('');
   const [selectedForceId, setSelectedForceId] = useState<string | null>(null);
+  const [momentFormOpen, setMomentFormOpen] = useState(false);
+  const [momentDraft, setMomentDraft] = useState({ x: '0', y: '0', label: 'M', clockwise: 'clockwise', magnitude: '' });
+  const [momentError, setMomentError] = useState('');
+  const [selectedMomentId, setSelectedMomentId] = useState<string | null>(null);
   useEffect(() => {
     if (selectedForceId && !fbdState.forces.some((force) => force.id === selectedForceId))
       setSelectedForceId(null);
   }, [fbdState.forces, selectedForceId]);
+  useEffect(() => {
+    if (selectedMomentId && !fbdState.moments.some((moment) => moment.id === selectedMomentId))
+      setSelectedMomentId(null);
+  }, [fbdState.moments, selectedMomentId]);
   const canvasClickRef = useRef<(event: MouseEvent) => void>(() => {});
   canvasClickRef.current = (event) => {
     if (!showFbd || !rendererRef.current || !cameraRef.current) return;
@@ -417,16 +437,23 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       -((event.clientY - rect.top) / rect.height * 2 - 1));
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(pointer, cameraRef.current);
-    if (forceFormOpen) {
+    if (forceFormOpen || momentFormOpen) {
       const point = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
-      if (point) setForceDraft((current) => ({ ...current, x: point.x.toFixed(2), y: point.y.toFixed(2) }));
+      if (point && forceFormOpen) setForceDraft((current) => ({ ...current, x: point.x.toFixed(2), y: point.y.toFixed(2) }));
+      if (point && momentFormOpen) setMomentDraft((current) => ({ ...current, x: point.x.toFixed(2), y: point.y.toFixed(2) }));
       return;
     }
     for (const hit of raycaster.intersectObjects(modelRef.current?.children || [], true)) {
       let object: THREE.Object3D | null = hit.object;
-      while (object && !object.userData.fbdForceId) object = object.parent;
+      while (object && !object.userData.fbdForceId && !object.userData.fbdMomentId) object = object.parent;
       if (object?.userData.fbdForceId) {
         setSelectedForceId(object.userData.fbdForceId as string);
+        setSelectedMomentId(null);
+        return;
+      }
+      if (object?.userData.fbdMomentId) {
+        setSelectedMomentId(object.userData.fbdMomentId as string);
+        setSelectedForceId(null);
         return;
       }
     }
@@ -534,7 +561,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       scene.remove(modelRef.current);
       disposeGroup(modelRef.current);
     }
-    const model = buildModel(workspace, reactionState.result, showFbd, fbdState, selectedForceId);
+    const model = buildModel(workspace, reactionState.result, showFbd, fbdState, selectedForceId, selectedMomentId);
     modelRef.current = model.group;
     viewBoundsRef.current = { center: model.center, span: model.span };
     scene.add(model.group);
@@ -543,7 +570,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       framedRef.current = true;
       framedSpanRef.current = model.span;
     }
-  }, [ready, workspace, reactionState, showFbd, fbdState, selectedForceId]);
+  }, [ready, workspace, reactionState, showFbd, fbdState, selectedForceId, selectedMomentId]);
 
   const resetView = () => {
     const bounds = viewBoundsRef.current;
@@ -579,17 +606,22 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     if (target) onVisualizationInteraction('fbd_select', target);
     else onVisualizationInteraction('fbd_delete');
   };
-  const openForceForm = () => {
-    if (!fbdState.selectedTarget) return;
+  const selectedTargetPoint = () => {
     const target = fbdState.selectedTarget;
+    if (!target) return { x: 0, y: 0 };
     const joint = target.kind === 'joint' ? workspace.nodes.find((node) => node.id === target.id) : null;
     const member = target.kind === 'member' ? workspace.members.find((item) => item.id === target.id) : null;
     const start = member ? workspace.nodes.find((node) => node.id === member.startNodeId) : null;
     const end = member ? workspace.nodes.find((node) => node.id === member.endNodeId) : null;
-    const x = joint?.x ?? (start && end ? (start.x + end.x) / 2 : 0);
-    const y = joint?.y ?? (start && end ? (start.y + end.y) / 2 : 0);
+    return { x: joint?.x ?? (start && end ? (start.x + end.x) / 2 : 0),
+      y: joint?.y ?? (start && end ? (start.y + end.y) / 2 : 0) };
+  };
+  const openForceForm = () => {
+    if (!fbdState.selectedTarget) return;
+    const { x, y } = selectedTargetPoint();
     setForceDraft({ x: String(x), y: String(y), label: 'F', angle: '-90', magnitude: '' });
     setForceError('');
+    setMomentFormOpen(false);
     setForceFormOpen(true);
   };
   const submitForce = (event: FormEvent<HTMLFormElement>) => {
@@ -603,11 +635,39 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       const force = next.forces[next.forces.length - 1];
       setFbdState(next);
       setSelectedForceId(force.id);
+      setSelectedMomentId(null);
       setForceFormOpen(false);
       setForceError('');
       onVisualizationInteraction('fbd_force_add', undefined, force);
     } catch (caught) {
       setForceError(caught instanceof Error ? caught.message : 'Could not add force.');
+    }
+  };
+  const openMomentForm = () => {
+    if (!fbdState.selectedTarget) return;
+    const { x, y } = selectedTargetPoint();
+    setMomentDraft({ x: String(x), y: String(y), label: 'M', clockwise: 'clockwise', magnitude: '' });
+    setMomentError('');
+    setForceFormOpen(false);
+    setMomentFormOpen(true);
+  };
+  const submitMoment = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      const momentId = crypto.randomUUID();
+      const input = { at: { x: Number(momentDraft.x), y: Number(momentDraft.y) },
+        label: momentDraft.label, clockwise: momentDraft.clockwise === 'clockwise',
+        ...(momentDraft.magnitude.trim() ? { magnitude: Number(momentDraft.magnitude) } : {}) };
+      const next = addFBDMoment(fbdState, input, workspace, momentId);
+      const moment = next.moments[next.moments.length - 1];
+      setFbdState(next);
+      setSelectedMomentId(moment.id);
+      setSelectedForceId(null);
+      setMomentFormOpen(false);
+      setMomentError('');
+      onVisualizationInteraction('fbd_moment_add', undefined, undefined, moment);
+    } catch (caught) {
+      setMomentError(caught instanceof Error ? caught.message : 'Could not add moment.');
     }
   };
 
@@ -647,7 +707,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       </div>
       <div ref={containerRef} className="relative min-h-0 flex-1 bg-slate-50 touch-none">
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
-        {showFbd && !fbdState.selectedTarget && fbdState.forces.length === 0 && !error &&
+        {showFbd && !fbdState.selectedTarget && fbdState.forces.length === 0 && fbdState.moments.length === 0 && !error &&
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
             Select a body, member, or joint to begin your free-body diagram.
           </div>}
@@ -668,11 +728,17 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
           </select>
           <button type="button" disabled={!fbdState.selectedTarget} onClick={openForceForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Force</button>
-          {['Add Moment', 'Add Dimension', 'Add Angle', 'Add Label'].map((label) =>
+          <button type="button" disabled={!fbdState.selectedTarget} onClick={openMomentForm}
+            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Moment</button>
+          {['Add Dimension', 'Add Angle', 'Add Label'].map((label) =>
             <button key={label} type="button" disabled title="Drawing tools are coming in the next phase"
               className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-400">{label}</button>)}
-          <button type="button" disabled={!selectedForceId && !fbdState.selectedTarget} onClick={() => {
-            if (selectedForceId) {
+          <button type="button" disabled={!selectedForceId && !selectedMomentId && !fbdState.selectedTarget} onClick={() => {
+            if (selectedMomentId) {
+              setFbdState((current) => ({ ...current, moments: current.moments.filter((moment) => moment.id !== selectedMomentId) }));
+              setSelectedMomentId(null);
+              onVisualizationInteraction('fbd_delete');
+            } else if (selectedForceId) {
               setFbdState((current) => ({ ...current, forces: current.forces.filter((force) => force.id !== selectedForceId) }));
               setSelectedForceId(null);
               onVisualizationInteraction('fbd_delete');
@@ -683,7 +749,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Undo</button>
           <button type="button" disabled={!canRedoFbd} onClick={() => { redoFbd(); onVisualizationInteraction('fbd_redo'); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Redo</button>
-          <button type="button" onClick={() => { setFbdState(createEmptyFBDState(workspace)); setSelectedForceId(null); setForceFormOpen(false); onVisualizationInteraction('fbd_reset'); }}
+          <button type="button" onClick={() => { setFbdState(createEmptyFBDState(workspace)); setSelectedForceId(null); setSelectedMomentId(null); setForceFormOpen(false); setMomentFormOpen(false); onVisualizationInteraction('fbd_reset'); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs">Reset FBD</button>
         </div>
         {forceFormOpen && <form onSubmit={submitForce} className="mt-2 grid grid-cols-2 gap-2 text-xs" aria-label="Add force details">
@@ -708,11 +774,40 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             <button type="button" onClick={() => setForceFormOpen(false)} className="rounded bg-slate-100 px-2 py-1">Cancel</button></div>
           {forceError && <p className="col-span-2 text-red-700" role="alert">{forceError}</p>}
         </form>}
+        {momentFormOpen && <form onSubmit={submitMoment} className="mt-2 grid grid-cols-2 gap-2 text-xs" aria-label="Add moment details">
+          <p className="col-span-2 text-slate-600">Choose the application point on the canvas or enter its coordinates.</p>
+          <label>Point X ({workspace.units.length})<input required type="number" step="any" value={momentDraft.x}
+            onChange={(event) => setMomentDraft({ ...momentDraft, x: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <label>Point Y ({workspace.units.length})<input required type="number" step="any" value={momentDraft.y}
+            onChange={(event) => setMomentDraft({ ...momentDraft, y: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <label>Moment label<input required maxLength={80} value={momentDraft.label}
+            onChange={(event) => setMomentDraft({ ...momentDraft, label: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <label>Direction<select value={momentDraft.clockwise}
+            onChange={(event) => setMomentDraft({ ...momentDraft, clockwise: event.target.value })}
+            className="block w-full rounded border border-slate-300 bg-white px-2 py-1">
+            <option value="clockwise">Clockwise</option><option value="counterclockwise">Counterclockwise</option>
+          </select></label>
+          <label>Magnitude ({workspace.units.force}·{workspace.units.length}, optional)<input type="number" min="0" step="any" value={momentDraft.magnitude}
+            onChange={(event) => setMomentDraft({ ...momentDraft, magnitude: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <div className="flex items-end gap-2"><button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Add moment</button>
+            <button type="button" onClick={() => setMomentFormOpen(false)} className="rounded bg-slate-100 px-2 py-1">Cancel</button></div>
+          {momentError && <p className="col-span-2 text-red-700" role="alert">{momentError}</p>}
+        </form>}
         {fbdState.forces.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD forces">
           {fbdState.forces.map((force) => <button key={force.id} type="button" aria-pressed={selectedForceId === force.id}
-            onClick={() => setSelectedForceId(force.id)}
+            onClick={() => { setSelectedForceId(force.id); setSelectedMomentId(null); }}
             className={`rounded px-2 py-1 text-xs ${selectedForceId === force.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
             {force.label || 'F'} ({force.at.x}, {force.at.y})</button>)}
+        </div>}
+        {fbdState.moments.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD moments">
+          {fbdState.moments.map((moment) => <button key={moment.id} type="button" aria-pressed={selectedMomentId === moment.id}
+            onClick={() => { setSelectedMomentId(moment.id); setSelectedForceId(null); }}
+            className={`rounded px-2 py-1 text-xs ${selectedMomentId === moment.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
+            {moment.label || 'M'} · {moment.clockwise ? 'CW' : 'CCW'} ({moment.at.x}, {moment.at.y})</button>)}
         </div>}
       </div>}
       {!showFbd && reactionState.error && (

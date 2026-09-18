@@ -1,8 +1,8 @@
 import type { EngineeringToolBatch } from './engineeringTools.ts';
-import type { FBDForce, FBDTarget } from './fbdState.ts';
+import type { FBDForce, FBDMoment, FBDTarget } from './fbdState.ts';
 
 export type VisualizationAction = 'front' | 'top' | 'right' | 'isometric' | 'reset' | 'free' | 'orbit' | 'fbd' |
-  'fbd_enter' | 'fbd_exit' | 'fbd_select' | 'fbd_delete' | 'fbd_undo' | 'fbd_redo' | 'fbd_reset' | 'fbd_force_add';
+  'fbd_enter' | 'fbd_exit' | 'fbd_select' | 'fbd_delete' | 'fbd_undo' | 'fbd_redo' | 'fbd_reset' | 'fbd_force_add' | 'fbd_moment_add';
 export type EngineeringResearchEvent = {
   kind: 'tool'; eventId: string; sessionId: string; timestamp: string;
   studentMessage: string; toolName: string; toolArguments: unknown;
@@ -10,7 +10,7 @@ export type EngineeringResearchEvent = {
   solverResult?: unknown; aiResponse: string; succeeded: boolean; error?: string;
 } | {
   kind: 'visualization'; eventId: string; sessionId: string; timestamp: string; action: VisualizationAction;
-  target?: FBDTarget; force?: FBDForce;
+  target?: FBDTarget; force?: FBDForce; moment?: FBDMoment;
 };
 
 export function getEngineeringSessionId(storage: Pick<Storage, 'getItem' | 'setItem'>,
@@ -40,7 +40,7 @@ export function createToolResearchEvents(sessionId: string, studentMessage: stri
 
 export function createVisualizationResearchEvent(sessionId: string, action: VisualizationAction,
   newId = () => crypto.randomUUID(), now = () => new Date().toISOString(),
-  target?: FBDTarget, force?: FBDForce): EngineeringResearchEvent {
+  target?: FBDTarget, force?: FBDForce, moment?: FBDMoment): EngineeringResearchEvent {
   return { kind: 'visualization', eventId: newId(), sessionId, timestamp: now(), action,
-    ...(target ? { target } : {}), ...(force ? { force } : {}) };
+    ...(target ? { target } : {}), ...(force ? { force } : {}), ...(moment ? { moment } : {}) };
 }

@@ -4,9 +4,10 @@ import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { createEmptyFBDState, engineeringStructureKey, fbdStorageKey, loadFBDState,
-  saveFBDState, selectFBDTarget, addFBDForce, visibleReactions, createFBDHistory, applyFBDChange,
+  saveFBDState, selectFBDTarget, addFBDForce, addFBDMoment, visibleReactions, createFBDHistory, applyFBDChange,
   undoFBDChange, redoFBDChange } from './fbdState.ts';
 import { buildFBDForceArrow } from './fbdForceScene.ts';
+import { buildFBDMomentArrow, momentArcPoints } from './fbdMomentScene.ts';
 import { createVisualizationResearchEvent } from './researchLog.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
@@ -133,4 +134,60 @@ test('force addition log includes point, label, angle, magnitude, session, and t
   assert.equal(event.sessionId, 'session-1');
   assert.equal(event.timestamp, '2026-09-17T12:00:00.000Z');
   assert.deepEqual(event.force, force);
+});
+
+test('clockwise and counterclockwise moments are student data, persist, and support unknown magnitude', () => {
+  const engineeringBefore = JSON.stringify(workspace);
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'member', id: 'AB' }, workspace);
+  const clockwise = addFBDMoment(selected, { at: { x: 1, y: 0 }, clockwise: true,
+    label: 'M_A', magnitude: 6 }, workspace, 'moment-cw');
+  const both = addFBDMoment(clockwise, { at: { x: 3, y: 0 }, clockwise: false,
+    label: 'M_B' }, workspace, 'moment-ccw');
+  assert.deepEqual(both.moments.map((moment) => moment.clockwise), [true, false]);
+  assert.equal(both.moments[0].magnitude, 6);
+  assert.equal(both.moments[1].magnitude, undefined);
+  assert.equal(JSON.stringify(workspace), engineeringBefore);
+  const records = new Map();
+  const storage = { getItem: (key) => records.get(key) ?? null, setItem: (key, value) => records.set(key, value) };
+  saveFBDState(storage, 'moment-student', both, workspace);
+  assert.deepEqual(loadFBDState(storage, 'moment-student', workspace), both);
+});
+
+test('moment creation validates point, direction, label, magnitude, and unique ID', () => {
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'joint', id: 'A' }, workspace);
+  const input = { at: { x: 0, y: 0 }, clockwise: true, label: 'M' };
+  const added = addFBDMoment(selected, input, workspace, 'moment-1');
+  assert.throws(() => addFBDMoment(added, input, workspace, 'moment-1'), /unique/);
+  assert.throws(() => addFBDMoment(selected, { ...input, clockwise: 'yes' }, workspace, 'moment-2'), /valid point/);
+  assert.throws(() => addFBDMoment(selected, { ...input, at: { x: Infinity, y: 0 } }, workspace, 'moment-2'), /valid point/);
+  assert.throws(() => addFBDMoment(selected, { ...input, magnitude: -2 }, workspace, 'moment-2'), /valid point/);
+  assert.throws(() => addFBDMoment(createEmptyFBDState(workspace), input, workspace, 'moment-2'), /Select/);
+});
+
+test('curved moment arrows wind clockwise and counterclockwise around their application points', () => {
+  for (const clockwise of [true, false]) {
+    const moment = { id: clockwise ? 'cw' : 'ccw', at: { x: 1, y: 2 }, clockwise, label: 'M' };
+    const points = momentArcPoints(moment, 4);
+    const winding = points[0].x * points[1].y - points[0].y * points[1].x;
+    assert.equal(Math.sign(winding), clockwise ? -1 : 1);
+    const arrow = buildFBDMomentArrow(moment, 4, true);
+    assert.equal(arrow.userData.fbdMomentId, moment.id);
+    assert.deepEqual([arrow.position.x, arrow.position.y], [1, 2]);
+    assert.equal(arrow.children.length, 2);
+    assert.ok(arrow.children[1].isMesh);
+  }
+});
+
+test('adding moments leaves the FBD solver path inactive and logs chosen values', () => {
+  let calls = 0;
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const added = addFBDMoment(selected, { at: { x: 2, y: 0 }, clockwise: false,
+    label: 'C' }, workspace, 'moment-1');
+  assert.equal(visibleReactions(true, workspace, () => { calls += 1; return {}; }).result, null);
+  assert.equal(calls, 0);
+  const event = createVisualizationResearchEvent('session-1', 'fbd_moment_add',
+    () => 'event-1', () => '2026-09-17T12:00:00.000Z', undefined, undefined, added.moments[0]);
+  assert.equal(event.sessionId, 'session-1');
+  assert.equal(event.timestamp, '2026-09-17T12:00:00.000Z');
+  assert.deepEqual(event.moment, added.moments[0]);
 });

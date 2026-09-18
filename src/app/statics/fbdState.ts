@@ -5,6 +5,7 @@ export type FBDPoint = { x: number; y: number };
 export type FBDForce = { id: string; at: FBDPoint; angle: number; magnitude?: number; label?: string };
 export type FBDForceInput = { at: FBDPoint; angle: number; label: string; magnitude?: number };
 export type FBDMoment = { id: string; at: FBDPoint; clockwise: boolean; magnitude?: number; label?: string };
+export type FBDMomentInput = { at: FBDPoint; clockwise: boolean; label: string; magnitude?: number };
 export type FBDDimension = { id: string; start: FBDPoint; end: FBDPoint; label?: string };
 export type FBDAngle = { id: string; vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label?: string };
 export type FBDLabel = { id: string; at: FBDPoint; text: string };
@@ -69,6 +70,24 @@ export function addFBDForce(state: FBDState, input: FBDForceInput, workspace: St
     ...(input.magnitude === undefined ? {} : { magnitude: input.magnitude }) };
   return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
     forces: [...state.forces, force] };
+}
+
+/** Records only the student's moment annotation; no equilibrium calculation is performed. */
+export function addFBDMoment(state: FBDState, input: FBDMomentInput, workspace: StaticsWorkspace,
+  momentId: string): FBDState {
+  if (!state.selectedTarget || !validTarget(state.selectedTarget, workspace))
+    throw new Error('Select a body, member, or joint before adding a moment.');
+  if (!momentId.trim() || state.moments.some((moment) => moment.id === momentId))
+    throw new Error('Moment ID must be unique.');
+  if (!Number.isFinite(input.at.x) || !Number.isFinite(input.at.y) ||
+    typeof input.clockwise !== 'boolean' || !input.label.trim() || input.label.length > 80 ||
+    (input.magnitude !== undefined && (!Number.isFinite(input.magnitude) || input.magnitude < 0)))
+    throw new Error('Enter a valid point, label, direction, and optional nonnegative magnitude.');
+  const moment: FBDMoment = { id: momentId, at: { x: input.at.x, y: input.at.y },
+    clockwise: input.clockwise, label: input.label.trim(),
+    ...(input.magnitude === undefined ? {} : { magnitude: input.magnitude }) };
+  return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
+    moments: [...state.moments, moment] };
 }
 
 export interface FBDHistory { present: FBDState; past: FBDState[]; future: FBDState[] }
