@@ -7,6 +7,7 @@ export type FBDForceInput = { at: FBDPoint; angle: number; label: string; magnit
 export type FBDMoment = { id: string; at: FBDPoint; clockwise: boolean; magnitude?: number; label?: string };
 export type FBDMomentInput = { at: FBDPoint; clockwise: boolean; label: string; magnitude?: number };
 export type FBDDimension = { id: string; start: FBDPoint; end: FBDPoint; label?: string };
+export type FBDDimensionInput = { start: FBDPoint; end: FBDPoint; label: string };
 export type FBDAngle = { id: string; vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label?: string };
 export type FBDLabel = { id: string; at: FBDPoint; text: string };
 
@@ -88,6 +89,24 @@ export function addFBDMoment(state: FBDState, input: FBDMomentInput, workspace: 
     ...(input.magnitude === undefined ? {} : { magnitude: input.magnitude }) };
   return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
     moments: [...state.moments, moment] };
+}
+
+/** The label is supplied by the student; endpoint geometry never determines its value. */
+export function addFBDDimension(state: FBDState, input: FBDDimensionInput,
+  workspace: StaticsWorkspace, dimensionId: string): FBDState {
+  if (!state.selectedTarget || !validTarget(state.selectedTarget, workspace))
+    throw new Error('Select a body, member, or joint before adding a dimension.');
+  if (!dimensionId.trim() || state.dimensions.some((dimension) => dimension.id === dimensionId))
+    throw new Error('Dimension ID must be unique.');
+  const { start, end } = input;
+  if (![start.x, start.y, end.x, end.y].every(Number.isFinite) ||
+    Math.hypot(end.x - start.x, end.y - start.y) < 1e-9 ||
+    !input.label.trim() || input.label.length > 120)
+    throw new Error('Enter two distinct points and dimension text.');
+  const dimension: FBDDimension = { id: dimensionId,
+    start: { x: start.x, y: start.y }, end: { x: end.x, y: end.y }, label: input.label.trim() };
+  return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
+    dimensions: [...state.dimensions, dimension] };
 }
 
 export interface FBDHistory { present: FBDState; past: FBDState[]; future: FBDState[] }

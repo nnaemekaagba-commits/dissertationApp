@@ -4,10 +4,12 @@ import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { createEmptyFBDState, engineeringStructureKey, fbdStorageKey, loadFBDState,
-  saveFBDState, selectFBDTarget, addFBDForce, addFBDMoment, visibleReactions, createFBDHistory, applyFBDChange,
+  saveFBDState, selectFBDTarget, addFBDForce, addFBDMoment, addFBDDimension,
+  visibleReactions, createFBDHistory, applyFBDChange,
   undoFBDChange, redoFBDChange } from './fbdState.ts';
 import { buildFBDForceArrow } from './fbdForceScene.ts';
 import { buildFBDMomentArrow, momentArcPoints } from './fbdMomentScene.ts';
+import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene.ts';
 import { createVisualizationResearchEvent } from './researchLog.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
@@ -195,4 +197,64 @@ test('adding moments leaves the FBD solver path inactive and logs chosen values'
   assert.equal(event.sessionId, 'session-1');
   assert.equal(event.timestamp, '2026-09-17T12:00:00.000Z');
   assert.deepEqual(event.moment, added.moments[0]);
+});
+
+test('student dimension keeps exact text and endpoints in FBDState across reload', () => {
+  const before = JSON.stringify(workspace);
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'member', id: 'AB' }, workspace);
+  const added = addFBDDimension(selected, { start: { x: 0, y: 0 }, end: { x: 2, y: 0 },
+    label: '2 m' }, workspace, 'dimension-1');
+  assert.deepEqual(added.dimensions, [{ id: 'dimension-1', start: { x: 0, y: 0 },
+    end: { x: 2, y: 0 }, label: '2 m' }]);
+  assert.equal(JSON.stringify(workspace), before);
+  const records = new Map();
+  const storage = { getItem: (key) => records.get(key) ?? null, setItem: (key, value) => records.set(key, value) };
+  saveFBDState(storage, 'dimension-student', added, workspace);
+  assert.deepEqual(loadFBDState(storage, 'dimension-student', workspace), added);
+});
+
+test('dimension creation rejects missing text, duplicate IDs, and coincident or invalid points', () => {
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const input = { start: { x: 0, y: 0 }, end: { x: 4, y: 0 }, label: '4 ft' };
+  const added = addFBDDimension(selected, input, workspace, 'dimension-1');
+  assert.throws(() => addFBDDimension(added, input, workspace, 'dimension-1'), /unique/);
+  assert.throws(() => addFBDDimension(selected, { ...input, label: ' ' }, workspace, 'dimension-2'), /distinct/);
+  assert.throws(() => addFBDDimension(selected, { ...input, end: input.start }, workspace, 'dimension-2'), /distinct/);
+  assert.throws(() => addFBDDimension(selected, { ...input, end: { x: Infinity, y: 0 } }, workspace, 'dimension-2'), /distinct/);
+  assert.throws(() => addFBDDimension(createEmptyFBDState(workspace), input, workspace, 'dimension-2'), /Select/);
+});
+
+test('dimension scene renders line, two extension lines, ticks, and student text position', () => {
+  const dimension = { id: 'dimension-1', start: { x: 0, y: 0 }, end: { x: 4, y: 0 }, label: '4 ft' };
+  const layout = dimensionLayout(dimension, 4);
+  assert.deepEqual([layout.dimensionStart.x, layout.dimensionEnd.x], [0, 4]);
+  assert.ok(layout.dimensionStart.y > 0);
+  assert.ok(layout.labelPosition.y > layout.dimensionStart.y);
+  const group = buildFBDDimensionLines(dimension, 4, true);
+  assert.equal(group.userData.fbdDimensionId, 'dimension-1');
+  assert.equal(group.children.length, 5);
+  const [main, startExtension, endExtension] = group.children;
+  assert.equal(main.type, 'Line');
+  assert.equal(startExtension.type, 'Line');
+  assert.equal(endExtension.type, 'Line');
+  assert.equal(startExtension.geometry.getAttribute('position').getY(0), 0);
+  assert.equal(endExtension.geometry.getAttribute('position').getX(0), 4);
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /textSprite\(dimension\.label \|\| ''/);
+  assert.match(panel, /dimensionLayout\(dimension, span\)\.labelPosition/);
+});
+
+test('dimension addition does not calculate a value or invoke the solver and is logged', () => {
+  let calls = 0;
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const added = addFBDDimension(selected, { start: { x: 0, y: 0 }, end: { x: 1, y: 0 },
+    label: '4 ft' }, workspace, 'dimension-1');
+  assert.equal(added.dimensions[0].label, '4 ft');
+  assert.equal(visibleReactions(true, workspace, () => { calls += 1; return {}; }).result, null);
+  assert.equal(calls, 0);
+  const event = createVisualizationResearchEvent('session-1', 'fbd_dimension_add',
+    () => 'event-1', () => '2026-09-18T12:00:00.000Z', undefined, undefined, undefined, added.dimensions[0]);
+  assert.equal(event.sessionId, 'session-1');
+  assert.equal(event.timestamp, '2026-09-18T12:00:00.000Z');
+  assert.deepEqual(event.dimension, added.dimensions[0]);
 });
