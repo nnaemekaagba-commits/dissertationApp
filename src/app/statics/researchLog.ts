@@ -3,6 +3,7 @@ import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
   FBDElement, FBDElementKind, FBDState, FBDTarget } from './fbdState.ts';
 
 export type VisualizationAction = 'front' | 'top' | 'right' | 'isometric' | 'reset' | 'free' | 'orbit' | 'fbd' |
+  'structure_view' | 'fbd_view' | 'split_view' |
   'fbd_enter' | 'fbd_exit' | 'fbd_select' | 'fbd_delete' | 'fbd_undo' | 'fbd_redo' | 'fbd_reset' | 'fbd_force_add' | 'fbd_moment_add' | 'fbd_dimension_add' | 'fbd_angle_add' | 'fbd_label_add' | 'fbd_label_move' | 'fbd_element_edit' | 'fbd_element_delete' | 'fbd_element_drag' | 'fbd_element_reposition';
 export type EngineeringResearchEvent = {
   kind: 'tool'; eventId: string; sessionId: string; timestamp: string;

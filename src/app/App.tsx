@@ -19,6 +19,7 @@ import { createToolResearchEvents, createVisualizationResearchEvent, getEngineer
   type EngineeringResearchEvent, type VisualizationAction } from './statics/researchLog';
 import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
   FBDElement, FBDElementKind, FBDState, FBDTarget } from './statics/fbdState';
+import { displayModeLayout, type EngineeringDisplayMode } from './statics/displayMode';
 
 const EngineeringVisualizationPanel = lazy(() =>
   import('./statics/EngineeringVisualizationPanel').then(({ EngineeringVisualizationPanel }) => ({ default: EngineeringVisualizationPanel }))
@@ -1246,8 +1247,8 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [showEngineeringPanel, setShowEngineeringPanel] = useState(() => window.innerWidth >= 768);
-  const [showFbd, setShowFbd] = useState(false);
-  const previousFbdModeRef = useRef(false);
+  const [displayMode, setDisplayMode] = useState<EngineeringDisplayMode>('structure');
+  const previousDisplayModeRef = useRef<EngineeringDisplayMode>('structure');
   const [viewCommand, setViewCommand] = useState<{ view: EngineeringView; sequence: number }>();
   const staticsControllerRef = useRef<StaticsWorkspaceController | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -1324,10 +1325,10 @@ export default function App() {
   }, [recordEngineeringEvent, userId]);
 
   useEffect(() => {
-    if (previousFbdModeRef.current === showFbd) return;
-    previousFbdModeRef.current = showFbd;
-    recordVisualizationInteraction(showFbd ? 'fbd_enter' : 'fbd_exit');
-  }, [showFbd, recordVisualizationInteraction]);
+    if (previousDisplayModeRef.current === displayMode) return;
+    previousDisplayModeRef.current = displayMode;
+    recordVisualizationInteraction(displayModeLayout(displayMode).logAction);
+  }, [displayMode, recordVisualizationInteraction]);
 
   const loadLocalArchive = useCallback((currentUserId: string) => {
     try {
@@ -1916,7 +1917,7 @@ export default function App() {
             setShowEngineeringPanel(true);
             setViewCommand((previous) => ({ view, sequence: (previous?.sequence ?? 0) + 1 }));
           } else {
-            setShowFbd(action.visible);
+            setDisplayMode(action.visible ? 'fbd' : 'structure');
             if (action.visible) setShowEngineeringPanel(true);
           }
         }
@@ -3288,7 +3289,7 @@ ${data.response}` : data.response,
           {showEngineeringPanel && (
             <Suspense fallback={<div className="w-[min(40vw,480px)] border-l bg-slate-50 p-4 text-sm text-slate-500">Loading 3D view...</div>}>
               <EngineeringVisualizationPanel onClose={() => setShowEngineeringPanel(false)}
-                viewCommand={viewCommand} showFbd={showFbd} onFbdChange={setShowFbd}
+                viewCommand={viewCommand} displayMode={displayMode} onDisplayModeChange={setDisplayMode}
                 onVisualizationInteraction={recordVisualizationInteraction} />
             </Suspense>
           )}

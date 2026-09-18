@@ -17,6 +17,7 @@ import { buildFBDMomentArrow, momentArcPoints } from './fbdMomentScene.ts';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene.ts';
 import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene.ts';
 import { createVisualizationResearchEvent } from './researchLog.ts';
+import { DISPLAY_MODES, displayModeLayout } from './displayMode.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
 
@@ -177,12 +178,12 @@ test('entering Build FBD Mode never invokes the solver', () => {
 
 test('FBD mode uses the existing visualization component and same canvas', () => {
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
-  assert.match(panel, /onFbdChange\(!showFbd\)/);
+  assert.match(panel, /onDisplayModeChange\(mode\)/);
   assert.match(panel, /ref=\{containerRef\}/);
   assert.match(panel, /FBD construction toolbar/);
   assert.doesNotMatch(panel, /navigate\(|window\.open\(/);
   assert.match(panel, /flex h-full max-h-full min-h-0 flex-col overflow-hidden/);
-  assert.match(panel, /ref=\{containerRef\} className="relative min-h-0 basis-0 flex-1/);
+  assert.match(panel, /ref=\{containerRef\} className=\{`relative min-h-0 bg-slate-50 touch-none/);
   assert.match(panel, /max-h-\[45%\] min-h-0 shrink-0 overflow-y-auto[^\n]+aria-label="FBD construction toolbar"/);
   assert.match(panel, /renderer\.setSize\(width, height\)/);
   assert.doesNotMatch(panel, /renderer\.setSize\(width, height, false\)/);
@@ -196,7 +197,35 @@ test('mode changes and selected target produce research log events', () => {
   assert.deepEqual(createVisualizationResearchEvent('session-1', 'fbd_select', id, now,
     { kind: 'joint', id: 'A' }).target, { kind: 'joint', id: 'A' });
   const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
-  assert.match(app, /recordVisualizationInteraction\(showFbd \? 'fbd_enter' : 'fbd_exit'\)/);
+  assert.match(app, /recordVisualizationInteraction\(displayModeLayout\(displayMode\)\.logAction\)/);
+});
+
+test('Structure, FBD, and Split View preserve both states without solving on view changes', () => {
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const fbd = addFBDForce(selected, { at: { x: 2, y: 0 }, angle: -90, label: 'P' }, workspace, 'force-1');
+  const structureBefore = JSON.stringify(workspace);
+  const fbdBefore = JSON.stringify(fbd);
+  assert.deepEqual(DISPLAY_MODES.map(({ mode }) => mode), ['structure', 'fbd', 'split']);
+  assert.deepEqual(displayModeLayout('structure'),
+    { showStructure: true, showFbd: false, logAction: 'structure_view' });
+  assert.deepEqual(displayModeLayout('fbd'),
+    { showStructure: false, showFbd: true, logAction: 'fbd_view' });
+  assert.deepEqual(displayModeLayout('split'),
+    { showStructure: true, showFbd: true, logAction: 'split_view' });
+  for (const mode of ['fbd', 'split', 'structure', 'split', 'fbd']) {
+    const layout = displayModeLayout(mode);
+    const event = createVisualizationResearchEvent('session-1', layout.logAction,
+      () => 'event-1', () => '2026-09-18T12:00:00.000Z');
+    assert.equal(event.action, `${mode}_view`);
+    assert.equal(JSON.stringify(workspace), structureBefore);
+    assert.equal(JSON.stringify(fbd), fbdBefore);
+  }
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /displayMode === 'split' && <div/);
+  assert.match(panel, /<StructurePreview workspace=\{workspace\} reactions=\{reactionState\.result\} \/>/);
+  assert.match(panel, /showFbd\s*\? buildFBDModel/);
+  assert.match(panel, /: buildStructureModel\(workspace, reactionState\.result\)/);
+  assert.match(panel, /visibleReactions\(false, workspace, calculatePlanarBeamReactions\),\s*\[workspace\]/);
 });
 
 test('student force is stored only in FBDState and survives a storage reload', () => {

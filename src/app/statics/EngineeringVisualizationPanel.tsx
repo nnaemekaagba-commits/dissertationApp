@@ -8,6 +8,7 @@ import type { VisualizationAction } from './researchLog';
 import { calculatePlanarBeamReactions, type BeamReactionResult } from './calculations';
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
+import { DISPLAY_MODES, displayModeLayout, type EngineeringDisplayMode } from './displayMode';
 import { hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget, visibleReactions,
   addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
@@ -191,12 +192,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   return { group, center, span };
 }
 
-function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult | null,
-  showFbd: boolean, fbdState: FBDState, selectedForceId: string | null,
-  selectedMomentId: string | null, selectedDimensionId: string | null,
-  selectedAngleId: string | null, selectedLabelId: string | null) {
-  if (showFbd) return buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId,
-    selectedDimensionId, selectedAngleId, selectedLabelId);
+function buildStructureModel(workspace: StaticsWorkspace, reactions: BeamReactionResult | null) {
   const group = new THREE.Group();
   const sceneData = selectSceneData(workspace);
   const nodes = new Map(sceneData.nodes.map((node) => [node.id, node]));
@@ -212,12 +208,10 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
   };
 
   // Light grid and axes keep orientation clear while orbiting in 3D.
-  if (!showFbd) {
-    const grid = new THREE.GridHelper(Math.max(10, Math.ceil(span * 3)), 20, 0xcbd5e1, 0xe2e8f0);
-    grid.rotation.x = Math.PI / 2;
-    grid.position.z = -0.14;
-    group.add(grid);
-  }
+  const grid = new THREE.GridHelper(Math.max(10, Math.ceil(span * 3)), 20, 0xcbd5e1, 0xe2e8f0);
+  grid.rotation.x = Math.PI / 2;
+  grid.position.z = -0.14;
+  group.add(grid);
 
   sceneData.members.forEach((member) => {
     const start = at(member.startNodeId);
@@ -249,7 +243,7 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
     }
   });
 
-  if (!showFbd) sceneData.supports.forEach((support) => {
+  sceneData.supports.forEach((support) => {
     const point = at(support.nodeId);
     if (!point) return;
     const width = Math.max(radius * 3, span * 0.07);
@@ -411,7 +405,7 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
     }
   });
 
-  if (!showFbd) sceneData.dimensions.forEach((dimension) => {
+  sceneData.dimensions.forEach((dimension) => {
     const start = at(dimension.startNodeId);
     const end = at(dimension.endNodeId);
     if (!start || !end) return;
@@ -460,12 +454,74 @@ function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult |
   return { group, center, span };
 }
 
-export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, onFbdChange,
+function StructurePreview({ workspace, reactions }: {
+  workspace: StaticsWorkspace; reactions: BeamReactionResult | null;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    let renderer: THREE.WebGLRenderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
+    catch { setError('3D graphics are unavailable in this browser.'); return; }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setClearColor(0xf8fafc);
+    container.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    scene.add(new THREE.AmbientLight(0xffffff, 2));
+    const light = new THREE.DirectionalLight(0xffffff, 2);
+    light.position.set(3, 5, 8);
+    scene.add(light);
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.screenSpacePanning = true;
+    controls.minDistance = 0.4;
+    controls.maxDistance = 500;
+    const model = buildStructureModel(workspace, reactions);
+    scene.add(model.group);
+    controls.target.copy(model.center);
+    camera.position.copy(model.center).add(new THREE.Vector3(0.12, 0.16, Math.max(4.5, model.span * 1.7)));
+    controls.update();
+    const resize = () => {
+      const width = Math.max(container.clientWidth, 1);
+      const height = Math.max(container.clientHeight, 1);
+      renderer.setSize(width, height);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    resize();
+    let frame = 0;
+    const animate = () => {
+      frame = requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    };
+    animate();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      controls.dispose();
+      scene.remove(model.group);
+      disposeGroup(model.group);
+      renderer.dispose();
+      renderer.domElement.remove();
+    };
+  }, [workspace, reactions]);
+  return <div ref={containerRef} className="relative min-h-0 flex-1 bg-slate-50 touch-none" aria-label="Structure preview">
+    {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
+  </div>;
+}
+
+export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMode, onDisplayModeChange,
   onVisualizationInteraction }: {
   onClose: () => void;
   viewCommand?: { view: EngineeringView; sequence: number };
-  showFbd: boolean;
-  onFbdChange: (visible: boolean) => void;
+  displayMode: EngineeringDisplayMode;
+  onDisplayModeChange: (mode: EngineeringDisplayMode) => void;
   onVisualizationInteraction: (action: VisualizationAction, target?: FBDTarget,
     force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension, angle?: FBDAngle,
     label?: FBDLabel,
@@ -474,8 +530,10 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     history?: { before: FBDState; after: FBDState }) => void;
 }) {
   const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd } = useStaticsWorkspace();
-  const reactionState = useMemo(() => visibleReactions(showFbd, workspace, calculatePlanarBeamReactions),
-    [workspace, showFbd]);
+  const { showFbd, showStructure } = displayModeLayout(displayMode);
+  // View selection only changes rendering; solve again only when EngineeringState changes.
+  const reactionState = useMemo(() => visibleReactions(false, workspace, calculatePlanarBeamReactions),
+    [workspace]);
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -825,8 +883,10 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       scene.remove(modelRef.current);
       disposeGroup(modelRef.current);
     }
-    const model = buildModel(workspace, reactionState.result, showFbd, fbdState,
-      selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId, selectedLabelId);
+    const model = showFbd
+      ? buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId,
+        selectedDimensionId, selectedAngleId, selectedLabelId)
+      : buildStructureModel(workspace, reactionState.result);
     modelRef.current = model.group;
     viewBoundsRef.current = { center: model.center, span: model.span };
     scene.add(model.group);
@@ -1178,7 +1238,12 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
           <button type="button" onClick={onClose} className="rounded p-1.5 text-slate-600 hover:bg-slate-100" title="Close visualization" aria-label="Close visualization"><X className="size-4" /></button>
         </div>
       </div>
-      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200 px-2 py-2" aria-label={showFbd ? 'Build FBD mode' : 'Camera views'}>
+      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200 px-2 py-2" aria-label="Engineering display modes and camera views">
+        {DISPLAY_MODES.map(({ mode, label }) => <button key={mode} type="button"
+          onClick={() => onDisplayModeChange(mode)} aria-pressed={displayMode === mode}
+          className={`shrink-0 rounded px-2 py-1 text-xs ${displayMode === mode ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+          {label}
+        </button>)}
         {!showFbd && VIEW_BUTTONS.map(({ label, mode }) => (
           <button key={mode} type="button" onClick={() => selectView(mode)} aria-pressed={viewMode === mode}
             className={`shrink-0 rounded px-2 py-1 text-xs ${viewMode === mode ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
@@ -1193,18 +1258,21 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
           Free Orbit
         </button>}
         {showFbd && <span className="self-center px-2 text-xs font-medium text-emerald-800">Build FBD Mode</span>}
-        <button type="button" onClick={() => onFbdChange(!showFbd)} aria-pressed={showFbd}
-          className={`shrink-0 rounded px-2 py-1 text-xs ${showFbd ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
-          {showFbd ? 'Return to Structure' : 'FBD'}
-        </button>
       </div>
-      <div ref={containerRef} className="relative min-h-0 basis-0 flex-1 bg-slate-50 touch-none">
+      <div className={`min-h-0 basis-0 flex-1 ${displayMode === 'split' ? 'flex flex-col' : ''}`}>
+        {displayMode === 'split' && <div className="relative flex min-h-0 flex-1 flex-col border-b border-slate-300">
+          <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">Structure</span>
+          <StructurePreview workspace={workspace} reactions={reactionState.result} />
+        </div>}
+        <div ref={containerRef} className={`relative min-h-0 bg-slate-50 touch-none ${displayMode === 'split' ? 'flex-1' : 'h-full'}`} aria-label={showFbd ? 'FBD canvas' : 'Structure canvas'}>
+        {displayMode === 'split' && <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">FBD</span>}
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
         {showFbd && !fbdState.selectedTarget && fbdState.forces.length === 0 &&
           fbdState.moments.length === 0 && fbdState.dimensions.length === 0 && fbdState.angles.length === 0 && fbdState.labels.length === 0 && !error &&
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
             Select a body, member, or joint to begin your free-body diagram.
           </div>}
+        </div>
       </div>
       {showFbd && <div className="max-h-[45%] min-h-0 shrink-0 overflow-y-auto border-t border-slate-200 px-3 py-2" aria-label="FBD construction toolbar">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -1517,7 +1585,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             {item.text} ({item.at.x.toFixed(2)}, {item.at.y.toFixed(2)})</button>)}
         </div>}
       </div>}
-      {!showFbd && reactionState.error && (
+      {showStructure && reactionState.error && (
         <p className="border-t border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" role="status">
           Reactions unavailable: {reactionState.error}
         </p>
