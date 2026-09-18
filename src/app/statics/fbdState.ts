@@ -47,6 +47,17 @@ export function createEmptyFBDState(workspace: StaticsWorkspace): FBDState {
     forces: [], moments: [], dimensions: [], angles: [], labels: [] };
 }
 
+export function hasStudentFBDElements(state: FBDState): boolean {
+  return state.forces.length + state.moments.length + state.dimensions.length +
+    state.angles.length + state.labels.length > 0;
+}
+
+/** Clears only student annotations, retaining the selected body and structure association. */
+export function resetStudentFBDElements(state: FBDState): FBDState {
+  if (!hasStudentFBDElements(state)) return state;
+  return { ...state, forces: [], moments: [], dimensions: [], angles: [], labels: [] };
+}
+
 function validTarget(target: FBDTarget, workspace: StaticsWorkspace): boolean {
   return target.kind === 'body' ? target.id === 'structure' :
     target.kind === 'member' ? workspace.members.some((member) => member.id === target.id) :

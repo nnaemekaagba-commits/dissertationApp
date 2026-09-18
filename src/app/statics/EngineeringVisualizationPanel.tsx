@@ -8,7 +8,7 @@ import type { VisualizationAction } from './researchLog';
 import { calculatePlanarBeamReactions, type BeamReactionResult } from './calculations';
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
-import { createEmptyFBDState, selectFBDTarget, visibleReactions,
+import { hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget, visibleReactions,
   addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
   deleteFBDElement, getFBDElement, repositionFBDLabel, moveFBDForceApplication,
@@ -490,6 +490,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   const [viewMode, setViewMode] = useState<ViewMode>('free');
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
+  const [resetPending, setResetPending] = useState(false);
   const [forceFormOpen, setForceFormOpen] = useState(false);
   const [forceDraft, setForceDraft] = useState({ x: '0', y: '0', label: 'F', angle: '-90', magnitude: '' });
   const [forceError, setForceError] = useState('');
@@ -1239,9 +1240,29 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             if (transition) onVisualizationInteraction('fbd_redo', undefined, undefined, undefined,
               undefined, undefined, undefined, undefined, transition); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Redo</button>
-          <button type="button" onClick={() => { setFbdState(createEmptyFBDState(workspace)); setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null); setSelectedLabelId(null); setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false); setAngleFormOpen(false); setLabelFormOpen(false); setLabelMoveMode(false); onVisualizationInteraction('fbd_reset'); }}
-            className="rounded bg-slate-100 px-2 py-1 text-xs">Reset FBD</button>
+          <button type="button" disabled={!hasStudentFBDElements(fbdState)} onClick={() => setResetPending(true)}
+            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Reset FBD</button>
         </div>
+        {resetPending && hasStudentFBDElements(fbdState) && <div role="group" aria-label="Confirm Reset FBD"
+          className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs">
+          <span>Clear all student-created FBD elements? You can undo this.</span>
+          <button type="button" className="rounded bg-amber-600 px-2 py-1 text-white" onClick={() => {
+            const before = fbdState;
+            const after = resetStudentFBDElements(before);
+            if (after === before) { setResetPending(false); return; }
+            setFbdState(after);
+            setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
+            setSelectedAngleId(null); setSelectedLabelId(null);
+            setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false);
+            setAngleFormOpen(false); setLabelFormOpen(false); setLabelMoveMode(false);
+            setResetPending(false);
+            onVisualizationInteraction('fbd_reset', undefined, undefined, undefined,
+              undefined, undefined, undefined, undefined, { before, after });
+          }}>Clear FBD</button>
+          <button type="button" className="rounded bg-slate-100 px-2 py-1" onClick={() => setResetPending(false)}>
+            Cancel
+          </button>
+        </div>}
         {selectedElement && selectedKind && <form key={`${selectedKind}:${selectedElement.id}:${JSON.stringify(selectedElement)}`}
           onSubmit={submitSelectedEdit} className="mt-2 grid grid-cols-2 gap-2 rounded border border-blue-200 bg-blue-50 p-2 text-xs"
           aria-label={`Edit selected ${selectedKind}`}>

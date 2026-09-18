@@ -3,7 +3,8 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
-import { createEmptyFBDState, engineeringStructureKey, fbdStorageKey, loadFBDState,
+import { createEmptyFBDState, hasStudentFBDElements, resetStudentFBDElements,
+  engineeringStructureKey, fbdStorageKey, loadFBDState,
   saveFBDState, selectFBDTarget, addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle,
   addFBDLabel, moveFBDLabel,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
@@ -18,6 +19,45 @@ import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene.ts';
 import { createVisualizationResearchEvent } from './researchLog.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
+
+test('Reset FBD clears only student elements, preserves the engineering model, and supports undo', () => {
+  const engineeringBefore = JSON.stringify(workspace);
+  const selected = selectFBDTarget(createEmptyFBDState(workspace),
+    { kind: 'member', id: workspace.members[0].id }, workspace);
+  let state = addFBDForce(selected, { at: { x: 1, y: 0 }, angle: -90, label: 'P' }, workspace, 'f1');
+  state = addFBDMoment(state, { at: { x: 1, y: 0 }, clockwise: true, label: 'M' }, workspace, 'm1');
+  state = addFBDDimension(state, { start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, label: '1 m' }, workspace, 'd1');
+  state = addFBDAngle(state, { vertex: { x: 0, y: 0 }, from: { x: 1, y: 0 },
+    to: { x: 0, y: 1 }, label: '90°' }, workspace, 'a1');
+  state = addFBDLabel(state, { at: { x: 2, y: 1 }, text: 'Given' }, workspace, 'l1');
+  assert.equal(hasStudentFBDElements(state), true);
+  const cleared = resetStudentFBDElements(state);
+  assert.deepEqual([cleared.forces, cleared.moments, cleared.dimensions, cleared.angles, cleared.labels],
+    [[], [], [], [], []]);
+  assert.deepEqual(cleared.selectedTarget, state.selectedTarget);
+  assert.equal(cleared.sourceStructureKey, state.sourceStructureKey);
+  assert.equal(JSON.stringify(workspace), engineeringBefore);
+  assert.equal(hasStudentFBDElements(cleared), false);
+  assert.equal(resetStudentFBDElements(cleared), cleared);
+  const history = applyFBDChange(createFBDHistory(state), cleared);
+  assert.deepEqual(undoFBDChange(history).present, state);
+  assert.deepEqual(redoFBDChange(undoFBDChange(history)).present, cleared);
+  assert.equal(applyFBDChange(history, resetStudentFBDElements(cleared)), history);
+  const event = createVisualizationResearchEvent('session-1', 'fbd_reset',
+    () => 'event-1', () => '2026-09-18T12:00:00.000Z', undefined, undefined,
+    undefined, undefined, undefined, undefined, undefined, { before: state, after: cleared });
+  assert.deepEqual(event.fbdBefore, state);
+  assert.deepEqual(event.fbdAfter, cleared);
+});
+
+test('Reset FBD requires confirmation in the student toolbar', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /onClick=\{\(\) => setResetPending\(true\)\}/);
+  assert.match(panel, /Confirm Reset FBD/);
+  assert.match(panel, /Clear FBD/);
+  assert.match(panel, /Cancel/);
+  assert.match(panel, /onVisualizationInteraction\('fbd_reset'/);
+});
 
 test('Build FBD Mode starts empty and leaves EngineeringState unchanged', () => {
   const before = JSON.stringify(workspace);
