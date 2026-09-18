@@ -3,6 +3,7 @@ import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js";
 import * as kv from "./kv_store.tsx";
+import { studentAttachmentError } from "../_shared/studentInput.ts";
 const app = new Hono();
 
 // Enable logger
@@ -70,11 +71,16 @@ app.get("/make-server-09672449/debug/test-supabase", async (c) => {
 app.post("/make-server-09672449/messages/:userId", async (c) => {
   try {
     const userId = c.req.param("userId");
-    const { id, role, content, timestamp, aiProvider, feedback, attachments, isIncorrect } = await c.req.json();
+    const body = await c.req.json();
+    const { id, role, content, timestamp, aiProvider, feedback, attachments, isIncorrect,
+      inputModality, transcriptionSource } = body;
     
     if (!userId || !id || !role || !content || !timestamp) {
       return c.json({ error: "Missing required fields: userId, id, role, content, timestamp" }, 400);
     }
+
+    const inputError = studentAttachmentError(body, false, role === "user");
+    if (inputError) return c.json({ error: inputError }, 400);
 
     const message = { 
       id, 
@@ -84,6 +90,8 @@ app.post("/make-server-09672449/messages/:userId", async (c) => {
       aiProvider: aiProvider || undefined,
       feedback: feedback || undefined, 
       attachments: attachments || undefined,
+      inputModality: inputModality || undefined,
+      transcriptionSource: transcriptionSource || undefined,
       isIncorrect: isIncorrect ?? false  // Use ?? instead of || to preserve false values
     };
     await kv.set(`user:${userId}:message:${id}`, message);
@@ -178,10 +186,10 @@ app.put("/make-server-09672449/messages/:userId/:messageId/feedback", async (c) 
 
 const SYSTEM_PROMPT = `You are a helpful AI assistant for problem-solving support. Provide clear, structured responses using markdown formatting with professional mathematical equation rendering.
 
-IMPORTANT: You have access to DALL-E 3 for image generation. When a student asks you to generate, create, or draw an image, diagram, or illustration, tell them to use the Generate Image button next to Attach Files instead of asking in chat.
+IMPORTANT: You have access to DALL-E 3 for image generation. When a student asks you to generate, create, or draw an image, diagram, or illustration, tell them to use the Generate Image button in the chat controls instead of asking in chat.
 
 When you detect image-generation requests, respond with:
-"I can help you generate images using DALL-E 3. Please click the Generate Image button next to Attach Files below, describe what you want to see, and I will create it for you."
+"I can help you generate images using DALL-E 3. Please click the Generate Image button in the chat controls, describe what you want to see, and I will create it for you."
 
 CRITICAL RULE: parentheses, brackets, braces, equals signs, and punctuation that are part of a mathematical expression must stay inside the LaTeX delimiters.
 
@@ -299,7 +307,10 @@ const buildAnthropicUserContent = (message: string, files: any[]) => {
 // Chat endpoint
 app.post("/make-server-09672449/chat", async (c) => {
   try {
-    const { message, conversationHistory = [], files = [], provider = "openai" } = await c.req.json();
+    const body = await c.req.json();
+    const { message, conversationHistory = [], files = [], provider = "openai" } = body;
+    const inputError = studentAttachmentError(body, true);
+    if (inputError) return c.json({ error: inputError }, 400);
 
     if (!message) {
       return c.json({ error: "Message is required" }, 400);
@@ -462,7 +473,7 @@ app.post("/make-server-09672449/chat", async (c) => {
         role: "system",
         content: `You are a helpful AI assistant for problem-solving support. Provide clear, structured responses using markdown formatting with professional mathematical equation rendering.
 
-**IMPORTANT**: You have access to DALL-E 3 for image generation! When a student asks you to generate, create, or draw an image/diagram/illustration, inform them to use the "Generate Image" button (purple button with wand icon) located next to the "Attach Files" button. They should NOT ask you in chat - they need to click that button and describe what they want.
+**IMPORTANT**: You have access to DALL-E 3 for image generation! When a student asks you to generate, create, or draw an image/diagram/illustration, inform them to use the "Generate Image" button (purple button with wand icon) in the chat controls. They should NOT ask you in chat - they need to click that button and describe what they want.
 
 Examples of requests that need the Generate Image button:
 - "Can you draw a diagram of..."
@@ -472,7 +483,7 @@ Examples of requests that need the Generate Image button:
 - "Show me a visual of..."
 
 When you detect these requests, respond with:
-"🎨 I can help you generate images using DALL-E 3! Please click the **Generate Image** button (purple button with wand icon ✨) next to the 'Attach Files' button below. Describe what you want to see, and I'll create it for you!"
+"🎨 I can help you generate images using DALL-E 3! Please click the **Generate Image** button (purple button with wand icon ✨) in the chat controls. Describe what you want to see, and I'll create it for you!"
 
 ⚠️ CRITICAL RULE #1 - MATHEMATICAL DELIMITER PLACEMENT ⚠️
 

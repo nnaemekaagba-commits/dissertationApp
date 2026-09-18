@@ -10,7 +10,7 @@ import { publicAnonKey } from '/utils/supabase/info';
 import { API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } from '/utils/api';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
-import { createStudentMessageInput, hasTransferredFiles } from './studentInput';
+import { createStudentMessageInput, hasTransferredFiles, STUDENT_INPUT_NOTICE } from './studentInput';
 import { AuthPage } from './components/AuthPage';
 import { StaticsWorkspaceProvider, type StaticsWorkspaceController } from './statics/StaticsWorkspaceProvider';
 import { executeEngineeringToolBatch, formatEngineeringToolBatch,
@@ -211,13 +211,8 @@ const sanitizeMessageForRemoteSave = (message: Message): Message => ({
     ...event,
     timestamp: event.timestamp instanceof Date ? event.timestamp : new Date(event.timestamp),
   })),
-  attachments: message.attachments?.map((attachment) => ({
-    name: attachment.name,
-    type: attachment.type,
-    content: '',
-    preview: undefined,
-    extractedText: attachment.extractedText,
-  })),
+  // Historical attachments remain viewable locally; new remote messages are text-only.
+  attachments: undefined,
 });
 
 const dataImageMarkdownPattern = /!\[([^\]]*)\]\((data:image\/[a-zA-Z0-9.+-]+;base64,[^)]+)\)/g;
@@ -250,7 +245,10 @@ const sanitizeMessageForLocalArchive = (message: Message): Message => ({
 });
 
 const sanitizeConversationHistoryForChat = (history: Message[]): Message[] =>
-  history.map((message) => sanitizeMessageForRemoteSave(message));
+  history.map((message) => {
+    const { attachments: _attachments, ...textMessage } = sanitizeMessageForRemoteSave(message);
+    return textMessage;
+  });
 
 const getBase64PayloadLength = (value: string) => {
   const markerIndex = value.indexOf(',');
@@ -3048,14 +3046,14 @@ ${data.response}` : data.response,
       onPasteCapture={(event) => {
         if (hasTransferredFiles(event.clipboardData)) {
           event.preventDefault();
-          setAudioRecordingError('File and image paste is disabled. Use text or voice.');
+          setAudioRecordingError(STUDENT_INPUT_NOTICE);
         }
       }}
       onDragOverCapture={(event) => { if (hasTransferredFiles(event.dataTransfer)) event.preventDefault(); }}
       onDropCapture={(event) => {
         if (hasTransferredFiles(event.dataTransfer)) {
           event.preventDefault();
-          setAudioRecordingError('File drop is disabled. Use text or voice.');
+          setAudioRecordingError(STUDENT_INPUT_NOTICE);
         }
       }}>
       <div className="w-full h-full bg-white flex flex-col">{/* Header */}
@@ -3188,8 +3186,8 @@ ${data.response}` : data.response,
                     <Textarea
                       value={input}
                       onChange={(e) => { setInput(e.target.value); if (!e.target.value.trim()) { setPendingInputModality('text'); setTranscriptionSource(undefined); } }}
-                      onPaste={(e) => { if (hasTransferredFiles(e.clipboardData)) { e.preventDefault(); setAudioRecordingError('File and image paste is disabled. Use text or voice.'); } }}
-                      onDrop={(e) => { if (hasTransferredFiles(e.dataTransfer)) { e.preventDefault(); setAudioRecordingError('File drop is disabled. Use text or voice.'); } }}
+                      onPaste={(e) => { if (hasTransferredFiles(e.clipboardData)) { e.preventDefault(); setAudioRecordingError(STUDENT_INPUT_NOTICE); } }}
+                      onDrop={(e) => { if (hasTransferredFiles(e.dataTransfer)) { e.preventDefault(); setAudioRecordingError(STUDENT_INPUT_NOTICE); } }}
                       onDragOver={(e) => { if (hasTransferredFiles(e.dataTransfer)) e.preventDefault(); }}
                       onKeyPress={handleKeyPress}
                       placeholder={needsReflection ? "Please complete the reflection above to continue..." : "Describe your problem or ask a question..."}
