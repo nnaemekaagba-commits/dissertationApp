@@ -19,6 +19,8 @@ import { buildFBDForceArrow } from './fbdForceScene';
 import { buildFBDMomentArrow } from './fbdMomentScene';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene';
 import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene';
+import { DEFAULT_GIVEN_VISIBILITY, GIVEN_TOGGLES, type GivenVisibility } from './fbdGiven';
+import { buildGivenFBDOverlay } from './fbdGivenScene';
 
 type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
 type FBDDrag = { pointerId: number; kind: FBDElementKind; id: string;
@@ -97,7 +99,8 @@ function fbdLabelPosition(kind: FBDElementKind, item: FBDElement, span: number):
 
 function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   selectedForceId: string | null, selectedMomentId: string | null,
-  selectedDimensionId: string | null, selectedAngleId: string | null, selectedLabelId: string | null) {
+  selectedDimensionId: string | null, selectedAngleId: string | null, selectedLabelId: string | null,
+  givenVisibility: GivenVisibility) {
   const group = new THREE.Group();
   const nodes = new Map(workspace.nodes.map((node) => [node.id, node]));
   const points = workspace.nodes.map((node) => new THREE.Vector3(node.x, node.y, 0));
@@ -130,9 +133,8 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       halo.position.set(node.x, node.y, 0.03);
       group.add(halo);
     }
-    const label = textSprite(node.label || node.id);
-    if (label) { label.position.set(node.x, node.y + Math.max(0.28, span * 0.07), 0.1); group.add(label); }
   }
+  group.add(buildGivenFBDOverlay(workspace, fbdState, givenVisibility, textSprite));
   for (const force of fbdState.forces) {
     const arrow = buildFBDForceArrow(force, span, force.id === selectedForceId);
     arrow.userData.fbdDragApplication = force.id;
@@ -547,6 +549,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [resetPending, setResetPending] = useState(false);
+  const [givenVisibility, setGivenVisibility] = useState<GivenVisibility>(DEFAULT_GIVEN_VISIBILITY);
   const [pendingTarget, setPendingTarget] = useState<FBDTarget | null | undefined>(undefined);
   const [forceFormOpen, setForceFormOpen] = useState(false);
   const [forceDraft, setForceDraft] = useState({ x: '0', y: '0', label: 'F', angle: '-90', magnitude: '' });
@@ -884,7 +887,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     }
     const model = showFbd
       ? buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId,
-        selectedDimensionId, selectedAngleId, selectedLabelId)
+        selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility)
       : buildStructureModel(workspace, reactionState.result);
     modelRef.current = model.group;
     viewBoundsRef.current = { center: model.center, span: model.span };
@@ -894,7 +897,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       framedRef.current = true;
       framedSpanRef.current = model.span;
     }
-  }, [ready, workspace, reactionState, showFbd, fbdState, selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId, selectedLabelId]);
+  }, [ready, workspace, reactionState, showFbd, fbdState, selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility]);
 
   const resetView = () => {
     const bounds = viewBoundsRef.current;
@@ -1275,7 +1278,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       <div className={`min-h-0 basis-0 flex-1 ${displayMode === 'split' ? 'flex flex-col' : ''}`}>
         {displayMode === 'split' && <div className="relative flex min-h-0 flex-1 flex-col border-b border-slate-300">
           <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">Structure</span>
-          <StructurePreview workspace={workspace} reactions={reactionState.result} />
+          <StructurePreview workspace={workspace} reactions={null} />
         </div>}
         <div ref={containerRef} className={`relative min-h-0 bg-slate-50 touch-none ${displayMode === 'split' ? 'flex-1' : 'h-full'}`} aria-label={showFbd ? 'FBD canvas' : 'Structure canvas'}>
         {displayMode === 'split' && <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">FBD</span>}
@@ -1291,6 +1294,19 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         </div>
       </div>
       {showFbd && <div className="max-h-[45%] min-h-0 shrink-0 overflow-y-auto border-t border-slate-200 px-3 py-2" aria-label="FBD construction toolbar">
+        <fieldset className="mb-2 rounded border border-slate-200 p-2 text-xs" aria-label="Given problem display">
+          <legend className="px-1 font-semibold text-slate-700">Given problem information</legend>
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            {GIVEN_TOGGLES.map(({ key, label }) => <label key={key} className="flex items-center gap-1 text-slate-700">
+              <input type="checkbox" checked={givenVisibility[key]} onChange={(event) => {
+                const visible = event.currentTarget.checked;
+                setGivenVisibility((current) => ({ ...current, [key]: visible }));
+                onVisualizationInteraction(`fbd_given_${key}_${visible ? 'on' : 'off'}` as VisualizationAction);
+              }} />{label}
+            </label>)}
+          </div>
+          <p className="mt-1 text-slate-500">Gray annotations = givens · Red, purple, and cyan annotations = your work</p>
+        </fieldset>
         <div className="flex flex-wrap items-center gap-1.5">
           <label className="text-xs font-medium text-slate-700" htmlFor="fbd-target-select">Select Body/Member/Joint</label>
           <select id="fbd-target-select" aria-label="Select Body/Member/Joint"

@@ -17,9 +17,88 @@ import { buildFBDMomentArrow, momentArcPoints } from './fbdMomentScene.ts';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene.ts';
 import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene.ts';
 import { createVisualizationResearchEvent } from './researchLog.ts';
+import { DEFAULT_GIVEN_VISIBILITY, GIVEN_TOGGLES, selectGivenFBDInformation } from './fbdGiven.ts';
+import { buildGivenFBDOverlay } from './fbdGivenScene.ts';
 import { DISPLAY_MODES, displayModeLayout } from './displayMode.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
+
+test('given information follows the isolated body, member, or joint and never enters FBDState', () => {
+  const problem = { ...workspace, angles: [{ id: 'angle-C', vertexNodeId: 'C',
+    fromNodeId: 'A', toNodeId: 'B', value: 180 }] };
+  const structureBefore = JSON.stringify(problem);
+  const empty = createEmptyFBDState(problem);
+  const body = selectFBDTarget(empty, { kind: 'body', id: 'structure' }, problem);
+  const member = selectFBDTarget(body, { kind: 'member', id: 'AB' }, problem);
+  const joint = selectFBDTarget(member, { kind: 'joint', id: 'C' }, problem);
+  for (const state of [body, member]) {
+    const given = selectGivenFBDInformation(problem, state, DEFAULT_GIVEN_VISIBILITY);
+    assert.equal(given.loads.length, 1);
+    assert.equal(given.dimensions.length, 3);
+    assert.equal(given.angles.length, 1);
+    assert.deepEqual(given.nodes.map((node) => node.id), ['A', 'C', 'B']);
+  }
+  const givenJoint = selectGivenFBDInformation(problem, joint, DEFAULT_GIVEN_VISIBILITY);
+  assert.equal(givenJoint.loads.length, 1);
+  assert.equal(givenJoint.dimensions.length, 0);
+  assert.equal(givenJoint.angles.length, 1);
+  assert.deepEqual(givenJoint.nodes.map((node) => node.id), ['C']);
+  assert.deepEqual(joint.forces, []);
+  assert.equal(JSON.stringify(problem), structureBefore);
+});
+
+test('given toggles change only the scene projection; given elements are non-draggable and no solver runs', () => {
+  const selected = selectFBDTarget(createEmptyFBDState(workspace),
+    { kind: 'member', id: 'AB' }, workspace);
+  const structureBefore = JSON.stringify(workspace);
+  const fbdBefore = JSON.stringify(selected);
+  assert.deepEqual(GIVEN_TOGGLES.map((toggle) => toggle.key), ['loads', 'dimensions', 'angles', 'labels']);
+  const text = [];
+  const makeText = (value) => { text.push(value); return new THREE.Object3D(); };
+  const shown = buildGivenFBDOverlay(workspace, selected, DEFAULT_GIVEN_VISIBILITY, makeText);
+  assert.equal(shown.userData.source, 'given-problem');
+  assert.ok(text.some((value) => value.includes('Given 10 kN')));
+  assert.ok(text.some((value) => value.includes('Given 2 m')));
+  assert.ok(text.some((value) => value === 'Given A'));
+  assert.ok(shown.children.length > 0);
+  assert.ok(shown.children.every((object) => !object.userData.fbdDragLabel && !object.userData.fbdDragApplication));
+  for (const key of ['loads', 'dimensions', 'angles', 'labels']) {
+    const visibility = { ...DEFAULT_GIVEN_VISIBILITY, [key]: false };
+    const projection = selectGivenFBDInformation(workspace, selected, visibility);
+    assert.equal(projection[key === 'labels' ? 'nodes' : key].length, 0);
+    const event = createVisualizationResearchEvent('session-1', `fbd_given_${key}_off`,
+      () => 'event-1', () => '2026-09-18T12:00:00.000Z');
+    assert.equal(event.action, `fbd_given_${key}_off`);
+  }
+  const hidden = buildGivenFBDOverlay(workspace, selected,
+    { loads: false, dimensions: false, angles: false, labels: false }, makeText);
+  assert.equal(hidden.children.length, 0);
+  assert.equal(JSON.stringify(workspace), structureBefore);
+  assert.equal(JSON.stringify(selected), fbdBefore);
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /<fieldset[^>]+aria-label="Given problem display"/);
+  assert.match(panel, /setGivenVisibility\(\(current\) => \(\{ \.\.\.current, \[key\]: visible \}\)\)/);
+  assert.match(panel, /visibleReactions\(false, workspace, calculatePlanarBeamReactions\),\s*\[workspace\]/);
+  assert.match(panel, /<StructurePreview workspace=\{workspace\} reactions=\{null\} \/>/);
+});
+
+test('given load layer includes stated point, distributed, and moment loads only', () => {
+  const problem = { ...workspace, loads: [
+    ...workspace.loads,
+    { id: 'q', kind: 'distributed', memberId: 'AB', startMagnitude: 2, endMagnitude: 4, angle: -90 },
+    { id: 'M', kind: 'moment', nodeId: 'A', magnitude: 3 },
+  ] };
+  const selected = selectFBDTarget(createEmptyFBDState(problem), { kind: 'member', id: 'AB' }, problem);
+  const texts = [];
+  const group = buildGivenFBDOverlay(problem, selected, DEFAULT_GIVEN_VISIBILITY,
+    (value) => { texts.push(value); return new THREE.Object3D(); });
+  assert.equal(selectGivenFBDInformation(problem, selected, DEFAULT_GIVEN_VISIBILITY).loads.length, 3);
+  assert.ok(texts.some((value) => value.includes('Given q 2→4')));
+  assert.ok(texts.some((value) => value.includes('Given M 3')));
+  assert.ok(group.children.some((object) => object.type === 'ArrowHelper'));
+  const hidden = selectGivenFBDInformation(problem, selected, { ...DEFAULT_GIVEN_VISIBILITY, loads: false });
+  assert.deepEqual(hidden.loads, []);
+});
 
 test('Reset FBD clears only student elements, preserves the engineering model, and supports undo', () => {
   const engineeringBefore = JSON.stringify(workspace);
@@ -268,7 +347,7 @@ test('Structure, FBD, and Split View preserve both states without solving on vie
   }
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
   assert.match(panel, /displayMode === 'split' && <div/);
-  assert.match(panel, /<StructurePreview workspace=\{workspace\} reactions=\{reactionState\.result\} \/>/);
+  assert.match(panel, /<StructurePreview workspace=\{workspace\} reactions=\{null\} \/>/);
   assert.match(panel, /showFbd\s*\? buildFBDModel/);
   assert.match(panel, /: buildStructureModel\(workspace, reactionState\.result\)/);
   assert.match(panel, /visibleReactions\(false, workspace, calculatePlanarBeamReactions\),\s*\[workspace\]/);
