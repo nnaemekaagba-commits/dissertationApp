@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
-import { createEmptyFBDState, hasStudentFBDElements, resetStudentFBDElements,
+import { createEmptyFBDState, hasStudentFBDElements, resetStudentFBDElements, isolatedFBDGeometry,
   engineeringStructureKey, fbdStorageKey, loadFBDState,
   saveFBDState, selectFBDTarget, addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle,
   addFBDLabel, moveFBDLabel,
@@ -53,7 +53,7 @@ test('Reset FBD clears only student elements, preserves the engineering model, a
 
 test('Reset FBD requires confirmation in the student toolbar', () => {
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
-  assert.match(panel, /onClick=\{\(\) => setResetPending\(true\)\}/);
+  assert.match(panel, /setResetPending\(true\)/);
   assert.match(panel, /Confirm Reset FBD/);
   assert.match(panel, /Clear FBD/);
   assert.match(panel, /Cancel/);
@@ -77,6 +77,52 @@ test('student selects a body, member, or joint without creating FBD elements', (
     assert.deepEqual(next.forces, []);
   }
   assert.throws(() => selectFBDTarget(state, { kind: 'member', id: 'unknown' }, workspace));
+});
+
+test('whole body, member, and joint isolate the correct base geometry without adding forces', () => {
+  const engineeringBefore = JSON.stringify(workspace);
+  const empty = createEmptyFBDState(workspace);
+  const body = selectFBDTarget(empty, { kind: 'body', id: 'structure' }, workspace);
+  assert.deepEqual(isolatedFBDGeometry(body, workspace).members.map((item) => item.id), ['AB']);
+  assert.deepEqual(isolatedFBDGeometry(body, workspace).nodes.map((item) => item.id), ['A', 'C', 'B']);
+  const member = selectFBDTarget(body, { kind: 'member', id: 'AB' }, workspace);
+  assert.deepEqual(isolatedFBDGeometry(member, workspace).members.map((item) => item.id), ['AB']);
+  assert.deepEqual(isolatedFBDGeometry(member, workspace).nodes.map((item) => item.id), ['A', 'B']);
+  const joint = selectFBDTarget(member, { kind: 'joint', id: 'C' }, workspace);
+  assert.deepEqual(isolatedFBDGeometry(joint, workspace).members, []);
+  assert.deepEqual(isolatedFBDGeometry(joint, workspace).nodes.map((item) => item.id), ['C']);
+  for (const state of [body, member, joint]) {
+    assert.deepEqual([state.forces, state.moments, state.dimensions, state.angles, state.labels],
+      [[], [], [], [], []]);
+  }
+  assert.equal(JSON.stringify(workspace), engineeringBefore);
+});
+
+test('changing an isolated object clears only its annotations after confirmation and Undo restores them', () => {
+  const engineeringBefore = JSON.stringify(workspace);
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const annotated = addFBDForce(selected, { at: { x: 2, y: 0 }, angle: -90, label: 'P' }, workspace, 'force-1');
+  const replacement = selectFBDTarget(annotated, { kind: 'joint', id: 'A' }, workspace);
+  assert.deepEqual(replacement.selectedTarget, { kind: 'joint', id: 'A' });
+  assert.deepEqual(replacement.forces, []);
+  assert.equal(selectFBDTarget(annotated, annotated.selectedTarget, workspace), annotated);
+  const history = applyFBDChange(createFBDHistory(annotated), replacement);
+  assert.deepEqual(undoFBDChange(history).present, annotated);
+  assert.deepEqual(redoFBDChange(undoFBDChange(history)).present, replacement);
+  const event = createVisualizationResearchEvent('session-1', 'fbd_select',
+    () => 'event-1', () => '2026-09-18T12:00:00.000Z', replacement.selectedTarget,
+    undefined, undefined, undefined, undefined, undefined, undefined,
+    { before: annotated, after: replacement });
+  assert.deepEqual(event.target, replacement.selectedTarget);
+  assert.deepEqual(event.fbdBefore, annotated);
+  assert.deepEqual(event.fbdAfter, replacement);
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /Confirm isolated object change/);
+  assert.match(panel, /hasStudentFBDElements\(fbdState\).*setPendingTarget\(target\)/);
+  assert.match(panel, /Isolated: /);
+  assert.match(panel, /isolatedFBDGeometry\(fbdState, workspace\)/);
+  assert.match(panel, /RingGeometry\(0\.13, 0\.18, 24\)/);
+  assert.equal(JSON.stringify(workspace), engineeringBefore);
 });
 
 test('FBDState survives Structure to FBD switching and a storage reload', () => {

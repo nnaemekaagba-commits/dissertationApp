@@ -67,8 +67,22 @@ function validTarget(target: FBDTarget, workspace: StaticsWorkspace): boolean {
 export function selectFBDTarget(state: FBDState, target: FBDTarget | null,
   workspace: StaticsWorkspace): FBDState {
   if (target && !validTarget(target, workspace)) throw new Error('Unknown FBD body, member, or joint.');
-  return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
+  if (state.selectedTarget?.kind === target?.kind && state.selectedTarget?.id === target?.id) return state;
+  const cleared = resetStudentFBDElements(state);
+  return { ...cleared, sourceStructureKey: engineeringStructureKey(workspace),
     selectedTarget: target ? { ...target } : null };
+}
+
+/** The isolated base geometry comes only from the original engineering problem. */
+export function isolatedFBDGeometry(state: FBDState, workspace: StaticsWorkspace) {
+  const target = state.selectedTarget;
+  if (!target) return { members: [], nodes: [] };
+  if (target.kind === 'body') return { members: workspace.members, nodes: workspace.nodes };
+  if (target.kind === 'joint') return { members: [],
+    nodes: workspace.nodes.filter((node) => node.id === target.id) };
+  const members = workspace.members.filter((member) => member.id === target.id);
+  const nodeIds = new Set(members.flatMap((member) => [member.startNodeId, member.endNodeId]));
+  return { members, nodes: workspace.nodes.filter((node) => nodeIds.has(node.id)) };
 }
 
 /** Adds only student supplied values; this never changes the engineering model or calls a solver. */

@@ -9,7 +9,7 @@ import { calculatePlanarBeamReactions, type BeamReactionResult } from './calcula
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
 import { DISPLAY_MODES, displayModeLayout, type EngineeringDisplayMode } from './displayMode';
-import { hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget, visibleReactions,
+import { hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget, isolatedFBDGeometry, visibleReactions,
   addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
   deleteFBDElement, getFBDElement, repositionFBDLabel, moveFBDForceApplication,
@@ -105,33 +105,31 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
   const size = bounds.isEmpty() ? new THREE.Vector3(1, 1, 0) : bounds.getSize(new THREE.Vector3());
   const span = Math.max(size.x, size.y, 1);
-  const target = fbdState.selectedTarget;
-  const selectedMembers = target?.kind === 'body' ? workspace.members :
-    target?.kind === 'member' ? workspace.members.filter((member) => member.id === target.id) : [];
-  const selectedNodeIds = new Set<string>();
-  for (const member of selectedMembers) {
+  const isolated = isolatedFBDGeometry(fbdState, workspace);
+  for (const member of isolated.members) {
     const start = nodes.get(member.startNodeId);
     const end = nodes.get(member.endNodeId);
     if (!start || !end) continue;
-    selectedNodeIds.add(start.id);
-    selectedNodeIds.add(end.id);
     const from = new THREE.Vector3(start.x, start.y, 0);
     const to = new THREE.Vector3(end.x, end.y, 0);
     const vector = to.clone().sub(from);
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, vector.length(), 12),
-      new THREE.MeshStandardMaterial({ color: 0x2563eb }));
+      new THREE.MeshStandardMaterial({ color: 0x059669 }));
     beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), vector.normalize());
     beam.position.copy(from).add(to).multiplyScalar(0.5);
     group.add(beam);
   }
-  if (target?.kind === 'joint') selectedNodeIds.add(target.id);
-  for (const nodeId of selectedNodeIds) {
-    const node = nodes.get(nodeId);
-    if (!node) continue;
+  for (const node of isolated.nodes) {
     const marker = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10),
-      new THREE.MeshStandardMaterial({ color: 0x0f172a }));
+      new THREE.MeshStandardMaterial({ color: 0x047857 }));
     marker.position.set(node.x, node.y, 0.04);
     group.add(marker);
+    if (fbdState.selectedTarget?.kind === 'joint') {
+      const halo = new THREE.Mesh(new THREE.RingGeometry(0.13, 0.18, 24),
+        new THREE.MeshBasicMaterial({ color: 0x10b981, side: THREE.DoubleSide }));
+      halo.position.set(node.x, node.y, 0.03);
+      group.add(halo);
+    }
     const label = textSprite(node.label || node.id);
     if (label) { label.position.set(node.x, node.y + Math.max(0.28, span * 0.07), 0.1); group.add(label); }
   }
@@ -549,6 +547,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [resetPending, setResetPending] = useState(false);
+  const [pendingTarget, setPendingTarget] = useState<FBDTarget | null | undefined>(undefined);
   const [forceFormOpen, setForceFormOpen] = useState(false);
   const [forceDraft, setForceDraft] = useState({ x: '0', y: '0', label: 'F', angle: '-90', magnitude: '' });
   const [forceError, setForceError] = useState('');
@@ -948,10 +947,24 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     selectedDimensionId ? 'dimension' : selectedAngleId ? 'angle' : selectedLabelId ? 'label' : null;
   const selectedId = selectedForceId || selectedMomentId || selectedDimensionId || selectedAngleId || selectedLabelId;
   const selectedElement = selectedKind && selectedId ? getFBDElement(fbdState, selectedKind, selectedId) : undefined;
+  const commitTarget = (target: FBDTarget | null) => {
+    const before = fbdState;
+    const after = selectFBDTarget(before, target, workspace);
+    if (after === before) { setPendingTarget(undefined); return; }
+    setFbdState(after);
+    setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
+    setSelectedAngleId(null); setSelectedLabelId(null);
+    setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false);
+    setAngleFormOpen(false); setLabelFormOpen(false); setLabelMoveMode(false);
+    setPendingTarget(undefined);
+    onVisualizationInteraction(target ? 'fbd_select' : 'fbd_delete', target || undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, { before, after });
+  };
   const selectTarget = (target: FBDTarget | null) => {
-    setFbdState((current) => selectFBDTarget(current, target, workspace));
-    if (target) onVisualizationInteraction('fbd_select', target);
-    else onVisualizationInteraction('fbd_delete');
+    if (fbdState.selectedTarget?.kind === target?.kind && fbdState.selectedTarget?.id === target?.id) return;
+    setResetPending(false);
+    if (hasStudentFBDElements(fbdState)) { setPendingTarget(target); return; }
+    commitTarget(target);
   };
   const selectedTargetPoint = () => {
     const target = fbdState.selectedTarget;
@@ -1266,6 +1279,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         </div>}
         <div ref={containerRef} className={`relative min-h-0 bg-slate-50 touch-none ${displayMode === 'split' ? 'flex-1' : 'h-full'}`} aria-label={showFbd ? 'FBD canvas' : 'Structure canvas'}>
         {displayMode === 'split' && <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">FBD</span>}
+        {showFbd && fbdState.selectedTarget && <span className="pointer-events-none absolute right-2 top-2 z-10 max-w-[70%] truncate rounded border border-emerald-300 bg-white/95 px-2 py-1 text-xs font-semibold text-emerald-800">
+          Isolated: {targetOptions.find(({ target }) => target.kind === fbdState.selectedTarget?.kind && target.id === fbdState.selectedTarget?.id)?.label || fbdState.selectedTarget.id}
+        </span>}
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
         {showFbd && !fbdState.selectedTarget && fbdState.forces.length === 0 &&
           fbdState.moments.length === 0 && fbdState.dimensions.length === 0 && fbdState.angles.length === 0 && fbdState.labels.length === 0 && !error &&
@@ -1288,6 +1304,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             {targetOptions.map(({ label, target }) =>
               <option key={`${target.kind}:${target.id}`} value={JSON.stringify(target)}>{label}</option>)}
           </select>
+          <span className="text-[11px] text-slate-500">Other rigid components appear only when defined in the engineering model.</span>
           <button type="button" disabled={!fbdState.selectedTarget} onClick={openForceForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Force</button>
           <button type="button" disabled={!fbdState.selectedTarget} onClick={openMomentForm}
@@ -1308,9 +1325,17 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             if (transition) onVisualizationInteraction('fbd_redo', undefined, undefined, undefined,
               undefined, undefined, undefined, undefined, transition); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Redo</button>
-          <button type="button" disabled={!hasStudentFBDElements(fbdState)} onClick={() => setResetPending(true)}
+          <button type="button" disabled={!hasStudentFBDElements(fbdState)} onClick={() => { setPendingTarget(undefined); setResetPending(true); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Reset FBD</button>
         </div>
+        {pendingTarget !== undefined && <div role="group" aria-label="Confirm isolated object change"
+          className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs">
+          <span>This workspace holds one FBD. Switching the isolated object will clear its student-created elements. Undo can restore this diagram.</span>
+          <button type="button" className="rounded bg-amber-600 px-2 py-1 text-white"
+            onClick={() => commitTarget(pendingTarget)}>Replace diagram</button>
+          <button type="button" className="rounded bg-slate-100 px-2 py-1"
+            onClick={() => setPendingTarget(undefined)}>Cancel</button>
+        </div>}
         {resetPending && hasStudentFBDElements(fbdState) && <div role="group" aria-label="Confirm Reset FBD"
           className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs">
           <span>Clear all student-created FBD elements? You can undo this.</span>
