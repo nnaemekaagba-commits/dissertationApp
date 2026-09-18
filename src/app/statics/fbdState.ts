@@ -13,6 +13,8 @@ export type FBDAngleInput = { vertex: FBDPoint; from: FBDPoint; to: FBDPoint; la
 export type FBDLabelAssociation = { kind: 'force' | 'moment' | 'node' | 'member' | 'dimension' | 'angle'; id: string };
 export type FBDLabel = { id: string; at: FBDPoint; text: string; associatedWith?: FBDLabelAssociation };
 export type FBDLabelInput = { at: FBDPoint; text: string; associatedWith?: FBDLabelAssociation };
+export type FBDElementKind = 'force' | 'moment' | 'dimension' | 'angle' | 'label';
+export type FBDElement = FBDForce | FBDMoment | FBDDimension | FBDAngle | FBDLabel;
 
 /** Student-created diagram data. EngineeringState is never copied or edited here. */
 export interface FBDState {
@@ -168,6 +170,68 @@ export function moveFBDLabel(state: FBDState, labelId: string, at: FBDPoint): FB
   if (!state.labels.some((label) => label.id === labelId)) throw new Error('Unknown FBD label.');
   return { ...state, labels: state.labels.map((label) => label.id === labelId
     ? { ...label, at: { x: at.x, y: at.y } } : label) };
+}
+
+const editTarget: FBDTarget = { kind: 'body', id: 'structure' };
+function replaceElement<T extends { id: string }>(items: T[], id: string, replacement: T): T[] {
+  if (!items.some((item) => item.id === id)) throw new Error('Unknown FBD element.');
+  return items.map((item) => item.id === id ? replacement : item);
+}
+
+/** Validate edits through the same constructors used to add each student annotation. */
+export function editFBDForce(state: FBDState, id: string, input: FBDForceInput,
+  workspace: StaticsWorkspace): FBDState {
+  if (!state.forces.some((item) => item.id === id)) throw new Error('Unknown FBD force.');
+  const valid = addFBDForce({ ...state, selectedTarget: editTarget,
+    forces: state.forces.filter((item) => item.id !== id) }, input, workspace, id).forces.at(-1)!;
+  return { ...state, forces: replaceElement(state.forces, id, valid) };
+}
+export function editFBDMoment(state: FBDState, id: string, input: FBDMomentInput,
+  workspace: StaticsWorkspace): FBDState {
+  if (!state.moments.some((item) => item.id === id)) throw new Error('Unknown FBD moment.');
+  const valid = addFBDMoment({ ...state, selectedTarget: editTarget,
+    moments: state.moments.filter((item) => item.id !== id) }, input, workspace, id).moments.at(-1)!;
+  return { ...state, moments: replaceElement(state.moments, id, valid) };
+}
+export function editFBDDimension(state: FBDState, id: string, input: FBDDimensionInput,
+  workspace: StaticsWorkspace): FBDState {
+  if (!state.dimensions.some((item) => item.id === id)) throw new Error('Unknown FBD dimension.');
+  const valid = addFBDDimension({ ...state, selectedTarget: editTarget,
+    dimensions: state.dimensions.filter((item) => item.id !== id) }, input, workspace, id).dimensions.at(-1)!;
+  return { ...state, dimensions: replaceElement(state.dimensions, id, valid) };
+}
+export function editFBDAngle(state: FBDState, id: string, input: FBDAngleInput,
+  workspace: StaticsWorkspace): FBDState {
+  if (!state.angles.some((item) => item.id === id)) throw new Error('Unknown FBD angle.');
+  const valid = addFBDAngle({ ...state, selectedTarget: editTarget,
+    angles: state.angles.filter((item) => item.id !== id) }, input, workspace, id).angles.at(-1)!;
+  return { ...state, angles: replaceElement(state.angles, id, valid) };
+}
+export function editFBDLabel(state: FBDState, id: string, input: FBDLabelInput,
+  workspace: StaticsWorkspace): FBDState {
+  if (!state.labels.some((item) => item.id === id)) throw new Error('Unknown FBD label.');
+  const valid = addFBDLabel({ ...state, selectedTarget: editTarget,
+    labels: state.labels.filter((item) => item.id !== id) }, input, workspace, id).labels.at(-1)!;
+  return { ...state, labels: replaceElement(state.labels, id, valid) };
+}
+
+export function getFBDElement(state: FBDState, kind: FBDElementKind, id: string): FBDElement | undefined {
+  const collection = kind === 'force' ? state.forces : kind === 'moment' ? state.moments :
+    kind === 'dimension' ? state.dimensions : kind === 'angle' ? state.angles : state.labels;
+  return collection.find((item) => item.id === id);
+}
+
+export function deleteFBDElement(state: FBDState, kind: FBDElementKind, id: string): FBDState {
+  if (!getFBDElement(state, kind, id)) throw new Error('Unknown FBD element.');
+  const remainingLabels = kind === 'label' ? state.labels.filter((item) => item.id !== id) :
+    state.labels.map((item) => item.associatedWith?.kind === kind && item.associatedWith.id === id
+      ? { id: item.id, at: item.at, text: item.text } : item);
+  return { ...state,
+    forces: kind === 'force' ? state.forces.filter((item) => item.id !== id) : state.forces,
+    moments: kind === 'moment' ? state.moments.filter((item) => item.id !== id) : state.moments,
+    dimensions: kind === 'dimension' ? state.dimensions.filter((item) => item.id !== id) : state.dimensions,
+    angles: kind === 'angle' ? state.angles.filter((item) => item.id !== id) : state.angles,
+    labels: remainingLabels };
 }
 
 export interface FBDHistory { present: FBDState; past: FBDState[]; future: FBDState[] }

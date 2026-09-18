@@ -6,6 +6,8 @@ import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { createEmptyFBDState, engineeringStructureKey, fbdStorageKey, loadFBDState,
   saveFBDState, selectFBDTarget, addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle,
   addFBDLabel, moveFBDLabel,
+  editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
+  deleteFBDElement, getFBDElement,
   visibleReactions, createFBDHistory, applyFBDChange,
   undoFBDChange, redoFBDChange } from './fbdState.ts';
 import { buildFBDForceArrow } from './fbdForceScene.ts';
@@ -374,4 +376,73 @@ test('FBD panel renders selectable labels and supports moving on canvas without 
     () => 'event-1', () => '2026-09-18T12:00:00.000Z', undefined, undefined, undefined, undefined, undefined, added.labels[0]);
   assert.deepEqual(event.label, added.labels[0]);
   assert.equal(event.sessionId, 'session-1');
+});
+
+test('editing and deleting every FBD element preserves EngineeringState and never solves', () => {
+  const beforeStructure = JSON.stringify(workspace);
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const cases = [
+    { kind: 'force', add: addFBDForce, edit: editFBDForce,
+      first: { at: { x: 1, y: 0 }, angle: -90, label: 'P', magnitude: 10 },
+      changed: { at: { x: 2, y: 1 }, angle: 45, label: 'Q' }, collection: 'forces' },
+    { kind: 'moment', add: addFBDMoment, edit: editFBDMoment,
+      first: { at: { x: 1, y: 0 }, clockwise: true, label: 'M', magnitude: 5 },
+      changed: { at: { x: 3, y: 1 }, clockwise: false, label: 'N' }, collection: 'moments' },
+    { kind: 'dimension', add: addFBDDimension, edit: editFBDDimension,
+      first: { start: { x: 0, y: 0 }, end: { x: 2, y: 0 }, label: '2 m' },
+      changed: { start: { x: 1, y: 0 }, end: { x: 4, y: 0 }, label: '3 m' }, collection: 'dimensions' },
+    { kind: 'angle', add: addFBDAngle, edit: editFBDAngle,
+      first: { vertex: { x: 0, y: 0 }, from: { x: 1, y: 0 }, to: { x: 0, y: 1 }, label: '30°' },
+      changed: { vertex: { x: 1, y: 1 }, from: { x: 2, y: 1 }, to: { x: 2, y: 2 }, label: '45°' }, collection: 'angles' },
+    { kind: 'label', add: addFBDLabel, edit: editFBDLabel,
+      first: { at: { x: 1, y: 1 }, text: 'A', associatedWith: { kind: 'node', id: 'A' } },
+      changed: { at: { x: 3, y: 2 }, text: 'B' }, collection: 'labels' },
+  ];
+  for (const item of cases) {
+    const id = `${item.kind}-1`;
+    const added = item.add(selected, item.first, workspace, id);
+    const original = getFBDElement(added, item.kind, id);
+    const edited = item.edit(added, id, item.changed, workspace);
+    assert.deepEqual(getFBDElement(edited, item.kind, id), { id, ...item.changed });
+    assert.deepEqual(getFBDElement(added, item.kind, id), original);
+    assert.equal(edited[item.collection].length, 1);
+    const removed = deleteFBDElement(edited, item.kind, id);
+    assert.equal(getFBDElement(removed, item.kind, id), undefined);
+    assert.equal(removed[item.collection].length, 0);
+    assert.equal(JSON.stringify(workspace), beforeStructure);
+  }
+  let calls = 0;
+  assert.equal(visibleReactions(true, workspace, () => { calls++; return {}; }).result, null);
+  assert.equal(calls, 0);
+});
+
+test('invalid FBD edits and deletes fail without changing state; deleting an associated element detaches its label', () => {
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const withForce = addFBDForce(selected, { at: { x: 1, y: 0 }, angle: -90, label: 'P' }, workspace, 'force-1');
+  const withLabel = addFBDLabel(withForce, { at: { x: 1, y: 1 }, text: 'P',
+    associatedWith: { kind: 'force', id: 'force-1' } }, workspace, 'label-1');
+  const before = JSON.stringify(withLabel);
+  assert.throws(() => editFBDForce(withLabel, 'force-1', { at: { x: 1, y: 0 }, angle: Infinity, label: 'P' }, workspace), /valid point/);
+  assert.throws(() => editFBDDimension(withLabel, 'missing', { start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, label: '1 m' }, workspace), /Unknown/);
+  assert.throws(() => deleteFBDElement(withLabel, 'moment', 'missing'), /Unknown/);
+  assert.equal(JSON.stringify(withLabel), before);
+  const removed = deleteFBDElement(withLabel, 'force', 'force-1');
+  assert.deepEqual(removed.labels[0], { id: 'label-1', at: { x: 1, y: 1 }, text: 'P' });
+  const event = createVisualizationResearchEvent('session-1', 'fbd_element_delete',
+    () => 'event-1', () => '2026-09-18T12:00:00.000Z', undefined, undefined, undefined, undefined,
+    undefined, undefined, { elementKind: 'force', elementId: 'force-1',
+      before: withLabel.forces[0], after: null });
+  assert.deepEqual(event.before, withLabel.forces[0]);
+  assert.equal(event.after, null);
+});
+
+test('selected FBD elements expose edit controls and canvas selection', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  for (const kind of ['force', 'moment', 'dimension', 'angle', 'label']) {
+    assert.match(panel, new RegExp(`selectedKind === '${kind}'`));
+  }
+  assert.match(panel, /aria-label=\{`Edit selected \$\{selectedKind\}`\}/);
+  assert.match(panel, /Delete Selected/);
+  assert.match(panel, /fbd_element_edit/);
+  assert.match(panel, /fbd_element_delete/);
 });

@@ -10,8 +10,10 @@ import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
 import { createEmptyFBDState, selectFBDTarget, visibleReactions,
   addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
+  editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
+  deleteFBDElement, getFBDElement,
   type FBDForce, type FBDMoment, type FBDDimension, type FBDAngle, type FBDLabel,
-  type FBDLabelAssociation, type FBDState, type FBDTarget } from './fbdState';
+  type FBDElement, type FBDElementKind, type FBDLabelAssociation, type FBDState, type FBDTarget } from './fbdState';
 import { buildFBDForceArrow } from './fbdForceScene';
 import { buildFBDMomentArrow } from './fbdMomentScene';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene';
@@ -111,6 +113,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     if (label) {
       label.position.set(force.at.x + Math.cos(radians) * (length + 0.32),
         force.at.y + Math.sin(radians) * (length + 0.32), 0.2);
+      label.userData.fbdForceId = force.id;
       group.add(label);
     }
   }
@@ -120,6 +123,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     const label = textSprite(labelText, moment.id === selectedMomentId ? '#c2410c' : '#6d28d9', 0.42);
     if (label) {
       label.position.set(moment.at.x, moment.at.y + Math.max(0.55, span * 0.17), 0.2);
+      label.userData.fbdMomentId = moment.id;
       group.add(label);
     }
   }
@@ -129,6 +133,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       dimension.id === selectedDimensionId ? '#c2410c' : '#0e7490', 0.42);
     if (label) {
       label.position.copy(dimensionLayout(dimension, span).labelPosition);
+      label.userData.fbdDimensionId = dimension.id;
       group.add(label);
     }
   }
@@ -137,6 +142,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     const label = textSprite(angle.label || '', angle.id === selectedAngleId ? '#c2410c' : '#0f766e', 0.42);
     if (label) {
       label.position.copy(angleArcLayout(angle, span).labelPosition);
+      label.userData.fbdAngleId = angle.id;
       group.add(label);
     }
   }
@@ -428,7 +434,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   onFbdChange: (visible: boolean) => void;
   onVisualizationInteraction: (action: VisualizationAction, target?: FBDTarget,
     force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension, angle?: FBDAngle,
-    label?: FBDLabel) => void;
+    label?: FBDLabel,
+    change?: { elementKind: FBDElementKind; elementId: string; before: FBDElement; after: FBDElement | null }) => void;
 }) {
   const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd } = useStaticsWorkspace();
   const reactionState = useMemo(() => visibleReactions(showFbd, workspace, calculatePlanarBeamReactions),
@@ -472,6 +479,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   const [labelError, setLabelError] = useState('');
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
   const [labelMoveMode, setLabelMoveMode] = useState(false);
+  const [editError, setEditError] = useState('');
   useEffect(() => {
     if (selectedForceId && !fbdState.forces.some((force) => force.id === selectedForceId))
       setSelectedForceId(null);
@@ -515,11 +523,13 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       if (point && labelFormOpen) setLabelDraft((current) => ({ ...current,
         x: point.x.toFixed(2), y: point.y.toFixed(2) }));
       if (point && labelMoveMode && selectedLabelId) {
+        const before = getFBDElement(fbdState, 'label', selectedLabelId);
         const next = moveFBDLabel(fbdState, selectedLabelId, { x: point.x, y: point.y });
         setFbdState(next);
         setLabelMoveMode(false);
-        onVisualizationInteraction('fbd_label_move', undefined, undefined, undefined, undefined, undefined,
-          next.labels.find((label) => label.id === selectedLabelId));
+        if (before) onVisualizationInteraction('fbd_element_edit', undefined, undefined, undefined, undefined,
+          undefined, undefined, { elementKind: 'label', elementId: selectedLabelId, before,
+            after: getFBDElement(next, 'label', selectedLabelId)! });
       }
       return;
     }
@@ -730,6 +740,10 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     ...fbdState.dimensions.map((dimension) => ({ value: `dimension:${dimension.id}`, text: `Dimension · ${dimension.label || dimension.id}` })),
     ...fbdState.angles.map((angle) => ({ value: `angle:${angle.id}`, text: `Angle · ${angle.label || angle.id}` })),
   ];
+  const selectedKind: FBDElementKind | null = selectedForceId ? 'force' : selectedMomentId ? 'moment' :
+    selectedDimensionId ? 'dimension' : selectedAngleId ? 'angle' : selectedLabelId ? 'label' : null;
+  const selectedId = selectedForceId || selectedMomentId || selectedDimensionId || selectedAngleId || selectedLabelId;
+  const selectedElement = selectedKind && selectedId ? getFBDElement(fbdState, selectedKind, selectedId) : undefined;
   const selectTarget = (target: FBDTarget | null) => {
     setFbdState((current) => selectFBDTarget(current, target, workspace));
     if (target) onVisualizationInteraction('fbd_select', target);
@@ -924,18 +938,68 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       setLabelError(caught instanceof Error ? caught.message : 'Could not add label.');
     }
   };
-  const moveSelectedLabel = (x: number, y: number) => {
-    if (!selectedLabelId) return;
+  const submitSelectedEdit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedKind || !selectedId || !selectedElement) return;
+    const form = new FormData(event.currentTarget);
+    const value = (name: string) => String(form.get(name) ?? '');
+    const number = (name: string) => {
+      const raw = value(name).trim();
+      if (!raw) throw new Error(`Enter ${name}.`);
+      return Number(raw);
+    };
+    const point = (prefix: string) => ({ x: number(`${prefix}X`), y: number(`${prefix}Y`) });
     try {
-      const next = moveFBDLabel(fbdState, selectedLabelId, { x, y });
+      let next: FBDState;
+      if (selectedKind === 'force') next = editFBDForce(fbdState, selectedId, {
+        at: point('at'), angle: number('angle'), label: value('label'),
+        ...(value('magnitude').trim() ? { magnitude: number('magnitude') } : {}),
+      }, workspace);
+      else if (selectedKind === 'moment') next = editFBDMoment(fbdState, selectedId, {
+        at: point('at'), clockwise: value('direction') === 'clockwise', label: value('label'),
+        ...(value('magnitude').trim() ? { magnitude: number('magnitude') } : {}),
+      }, workspace);
+      else if (selectedKind === 'dimension') next = editFBDDimension(fbdState, selectedId, {
+        start: point('start'), end: point('end'), label: value('label'),
+      }, workspace);
+      else if (selectedKind === 'angle') next = editFBDAngle(fbdState, selectedId, {
+        vertex: point('vertex'), from: point('from'), to: point('to'), label: value('label'),
+      }, workspace);
+      else {
+        const association = value('association');
+        const chosen = labelAssociations.find((item) => item.value === association);
+        if (association && !chosen) throw new Error('Unknown FBD label association.');
+        next = editFBDLabel(fbdState, selectedId, { at: point('at'), text: value('text'),
+          ...(chosen ? { associatedWith: { kind: association.split(':')[0] as FBDLabelAssociation['kind'],
+            id: association.slice(association.indexOf(':') + 1) } } : {}),
+        }, workspace);
+      }
+      const after = getFBDElement(next, selectedKind, selectedId)!;
       setFbdState(next);
-      setLabelError('');
-      onVisualizationInteraction('fbd_label_move', undefined, undefined, undefined, undefined, undefined,
-        next.labels.find((item) => item.id === selectedLabelId));
+      setEditError('');
+      onVisualizationInteraction('fbd_element_edit', undefined, undefined, undefined, undefined,
+        undefined, undefined, { elementKind: selectedKind, elementId: selectedId, before: selectedElement, after });
     } catch (caught) {
-      setLabelError(caught instanceof Error ? caught.message : 'Could not move label.');
+      setEditError(caught instanceof Error ? caught.message : 'Could not edit FBD element.');
     }
   };
+  const deleteSelected = () => {
+    if (!selectedKind || !selectedId || !selectedElement) return;
+    const next = deleteFBDElement(fbdState, selectedKind, selectedId);
+    setFbdState(next);
+    onVisualizationInteraction('fbd_element_delete', undefined, undefined, undefined, undefined,
+      undefined, undefined, { elementKind: selectedKind, elementId: selectedId,
+        before: selectedElement, after: null });
+    setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
+    setSelectedAngleId(null); setSelectedLabelId(null); setLabelMoveMode(false); setEditError('');
+  };
+  const editNumber = (name: string, title: string, initial: number | undefined, optional = false) =>
+    <label key={name}>{title}<input name={name} type="number" step="any" required={!optional}
+      min={optional ? 0 : undefined} defaultValue={initial ?? ''}
+      className="block w-full rounded border border-slate-300 px-2 py-1" /></label>;
+  const editText = (name: string, title: string, initial: string, maxLength = 120) =>
+    <label key={name} className="col-span-2">{title}<input name={name} required maxLength={maxLength}
+      defaultValue={initial} className="block w-full rounded border border-slate-300 px-2 py-1" /></label>;
 
   return (
     <aside className="absolute inset-0 z-20 flex h-full max-h-full min-h-0 flex-col overflow-hidden border-l border-slate-200 bg-white md:relative md:inset-auto md:z-auto md:w-[min(40vw,480px)] md:flex-shrink-0" aria-label="Engineering visualization">
@@ -1003,30 +1067,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Angle</button>
           <button type="button" disabled={!fbdState.selectedTarget} onClick={openLabelForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Label</button>
-          <button type="button" disabled={!selectedForceId && !selectedMomentId && !selectedDimensionId && !selectedAngleId && !selectedLabelId && !fbdState.selectedTarget} onClick={() => {
-            if (selectedLabelId) {
-              setFbdState((current) => ({ ...current, labels: current.labels.filter((item) => item.id !== selectedLabelId) }));
-              setSelectedLabelId(null); setLabelMoveMode(false);
-              onVisualizationInteraction('fbd_delete');
-            } else if (selectedAngleId) {
-              setFbdState((current) => ({ ...current, angles: current.angles.filter((angle) => angle.id !== selectedAngleId) }));
-              setSelectedAngleId(null);
-              onVisualizationInteraction('fbd_delete');
-            } else if (selectedDimensionId) {
-              setFbdState((current) => ({ ...current, dimensions: current.dimensions.filter((dimension) => dimension.id !== selectedDimensionId) }));
-              setSelectedDimensionId(null);
-              onVisualizationInteraction('fbd_delete');
-            } else if (selectedMomentId) {
-              setFbdState((current) => ({ ...current, moments: current.moments.filter((moment) => moment.id !== selectedMomentId) }));
-              setSelectedMomentId(null);
-              onVisualizationInteraction('fbd_delete');
-            } else if (selectedForceId) {
-              setFbdState((current) => ({ ...current, forces: current.forces.filter((force) => force.id !== selectedForceId) }));
-              setSelectedForceId(null);
-              onVisualizationInteraction('fbd_delete');
-            } else selectTarget(null);
-          }}
-            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Delete</button>
+          <button type="button" disabled={!selectedElement} onClick={deleteSelected}
+            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Delete Selected</button>
           <button type="button" disabled={!canUndoFbd} onClick={() => { undoFbd(); onVisualizationInteraction('fbd_undo'); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Undo</button>
           <button type="button" disabled={!canRedoFbd} onClick={() => { redoFbd(); onVisualizationInteraction('fbd_redo'); }}
@@ -1034,6 +1076,60 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
           <button type="button" onClick={() => { setFbdState(createEmptyFBDState(workspace)); setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null); setSelectedLabelId(null); setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false); setAngleFormOpen(false); setLabelFormOpen(false); setLabelMoveMode(false); onVisualizationInteraction('fbd_reset'); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs">Reset FBD</button>
         </div>
+        {selectedElement && selectedKind && <form key={`${selectedKind}:${selectedElement.id}:${JSON.stringify(selectedElement)}`}
+          onSubmit={submitSelectedEdit} className="mt-2 grid grid-cols-2 gap-2 rounded border border-blue-200 bg-blue-50 p-2 text-xs"
+          aria-label={`Edit selected ${selectedKind}`}>
+          <div className="col-span-2 font-semibold text-blue-900">Edit selected {selectedKind}</div>
+          {selectedKind === 'force' && (() => {
+            const item = selectedElement as FBDForce;
+            return <>{editText('label', 'Force label', item.label || '', 80)}
+              {editNumber('atX', `Point X (${workspace.units.length})`, item.at.x)}
+              {editNumber('atY', `Point Y (${workspace.units.length})`, item.at.y)}
+              {editNumber('angle', 'Direction (degrees from +X)', item.angle)}
+              {editNumber('magnitude', `Magnitude (${workspace.units.force}, optional)`, item.magnitude, true)}</>;
+          })()}
+          {selectedKind === 'moment' && (() => {
+            const item = selectedElement as FBDMoment;
+            return <>{editText('label', 'Moment label', item.label || '', 80)}
+              {editNumber('atX', `Point X (${workspace.units.length})`, item.at.x)}
+              {editNumber('atY', `Point Y (${workspace.units.length})`, item.at.y)}
+              <label>Direction<select name="direction" defaultValue={item.clockwise ? 'clockwise' : 'counterclockwise'}
+                className="block w-full rounded border border-slate-300 bg-white px-2 py-1">
+                <option value="clockwise">Clockwise</option><option value="counterclockwise">Counterclockwise</option>
+              </select></label>
+              {editNumber('magnitude', `Magnitude (${workspace.units.force}·${workspace.units.length}, optional)`, item.magnitude, true)}</>;
+          })()}
+          {selectedKind === 'dimension' && (() => {
+            const item = selectedElement as FBDDimension;
+            return <>{editText('label', 'Dimension text', item.label || '')}
+              {editNumber('startX', 'Start X', item.start.x)}{editNumber('startY', 'Start Y', item.start.y)}
+              {editNumber('endX', 'End X', item.end.x)}{editNumber('endY', 'End Y', item.end.y)}</>;
+          })()}
+          {selectedKind === 'angle' && (() => {
+            const item = selectedElement as FBDAngle;
+            return <>{editText('label', 'Angle text', item.label || '')}
+              {editNumber('vertexX', 'Vertex X', item.vertex.x)}{editNumber('vertexY', 'Vertex Y', item.vertex.y)}
+              {editNumber('fromX', 'First reference X', item.from.x)}{editNumber('fromY', 'First reference Y', item.from.y)}
+              {editNumber('toX', 'Second reference X', item.to.x)}{editNumber('toY', 'Second reference Y', item.to.y)}</>;
+          })()}
+          {selectedKind === 'label' && (() => {
+            const item = selectedElement as FBDLabel;
+            return <>{editText('text', 'Label text', item.text)}
+              {editNumber('atX', `Position X (${workspace.units.length})`, item.at.x)}
+              {editNumber('atY', `Position Y (${workspace.units.length})`, item.at.y)}
+              <label className="col-span-2">Associate with (optional)<select name="association"
+                defaultValue={item.associatedWith ? `${item.associatedWith.kind}:${item.associatedWith.id}` : ''}
+                className="block w-full rounded border border-slate-300 bg-white px-2 py-1">
+                <option value="">No association</option>
+                {labelAssociations.map((choice) => <option key={choice.value} value={choice.value}>{choice.text}</option>)}
+              </select></label>
+              <button type="button" aria-pressed={labelMoveMode} onClick={() => setLabelMoveMode((current) => !current)}
+                className="rounded bg-slate-100 px-2 py-1">{labelMoveMode ? 'Click destination on canvas' : 'Move on canvas'}</button></>;
+          })()}
+          <div className="col-span-2 flex gap-2"><button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Save changes</button>
+            <button type="button" onClick={deleteSelected} className="rounded bg-red-50 px-2 py-1 text-red-800">Delete Selected</button></div>
+          {editError && <p className="col-span-2 text-red-700" role="alert">{editError}</p>}
+        </form>}
         {labelFormOpen && <form onSubmit={submitLabel} className="mt-2 grid grid-cols-2 gap-2 text-xs" aria-label="Add label details">
           <p className="col-span-2 text-slate-600">Enter text and position. Click the canvas to choose a position; association is optional.</p>
           <label className="col-span-2">Label text<input required maxLength={120} value={labelDraft.text}
@@ -1216,24 +1312,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             className={`rounded px-2 py-1 text-xs ${selectedLabelId === item.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
             {item.text} ({item.at.x.toFixed(2)}, {item.at.y.toFixed(2)})</button>)}
         </div>}
-        {selectedLabelId && fbdState.labels.some((item) => item.id === selectedLabelId) &&
-          <form key={`${selectedLabelId}:${fbdState.labels.find((item) => item.id === selectedLabelId)?.at.x}:${fbdState.labels.find((item) => item.id === selectedLabelId)?.at.y}`}
-            aria-label="Move selected label" className="mt-2 flex flex-wrap items-end gap-2 text-xs"
-            onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget);
-              moveSelectedLabel(Number(data.get('x')), Number(data.get('y'))); }}>
-            <span className="font-medium">Move label</span>
-            <label>X ({workspace.units.length})<input name="x" required type="number" step="any"
-              defaultValue={fbdState.labels.find((item) => item.id === selectedLabelId)?.at.x}
-              className="block w-20 rounded border border-slate-300 px-2 py-1" /></label>
-            <label>Y ({workspace.units.length})<input name="y" required type="number" step="any"
-              defaultValue={fbdState.labels.find((item) => item.id === selectedLabelId)?.at.y}
-              className="block w-20 rounded border border-slate-300 px-2 py-1" /></label>
-            <button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Set position</button>
-            <button type="button" aria-pressed={labelMoveMode} onClick={() => setLabelMoveMode((current) => !current)}
-              className={`rounded px-2 py-1 ${labelMoveMode ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}>
-              {labelMoveMode ? 'Click destination on canvas' : 'Move on canvas'}</button>
-            {labelError && <p className="w-full text-red-700" role="alert">{labelError}</p>}
-          </form>}
       </div>}
       {!showFbd && reactionState.error && (
         <p className="border-t border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" role="status">
