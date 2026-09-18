@@ -70,6 +70,8 @@ test('FBD mode uses the existing visualization component and same canvas', () =>
   assert.match(panel, /flex h-full max-h-full min-h-0 flex-col overflow-hidden/);
   assert.match(panel, /ref=\{containerRef\} className="relative min-h-0 basis-0 flex-1/);
   assert.match(panel, /max-h-\[45%\] min-h-0 shrink-0 overflow-y-auto[^\n]+aria-label="FBD construction toolbar"/);
+  assert.match(panel, /renderer\.setSize\(width, height\)/);
+  assert.doesNotMatch(panel, /renderer\.setSize\(width, height, false\)/);
 });
 
 test('mode changes and selected target produce research log events', () => {

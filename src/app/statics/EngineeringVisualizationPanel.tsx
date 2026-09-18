@@ -516,7 +516,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     const resize = () => {
       const width = Math.max(container.clientWidth, 1);
       const height = Math.max(container.clientHeight, 1);
-      renderer.setSize(width, height, false);
+      // Keep CSS pixels equal to the container; the drawing buffer also scales for devicePixelRatio.
+      renderer.setSize(width, height);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
     };
