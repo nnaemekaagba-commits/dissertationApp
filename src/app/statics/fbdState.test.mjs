@@ -8,6 +8,7 @@ import { createEmptyFBDState, engineeringStructureKey, fbdStorageKey, loadFBDSta
   addFBDLabel, moveFBDLabel,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
   deleteFBDElement, getFBDElement,
+  repositionFBDLabel, moveFBDForceApplication,
   visibleReactions, createFBDHistory, applyFBDChange,
   undoFBDChange, redoFBDChange } from './fbdState.ts';
 import { buildFBDForceArrow } from './fbdForceScene.ts';
@@ -445,4 +446,74 @@ test('selected FBD elements expose edit controls and canvas selection', () => {
   assert.match(panel, /Delete Selected/);
   assert.match(panel, /fbd_element_edit/);
   assert.match(panel, /fbd_element_delete/);
+});
+
+test('dragging every FBD annotation label changes display coordinates without changing semantic geometry', () => {
+  const beforeStructure = JSON.stringify(workspace);
+  let state = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  state = addFBDForce(state, { at: { x: 1, y: 0 }, angle: -90, magnitude: 10, label: 'P' }, workspace, 'force-1');
+  state = addFBDMoment(state, { at: { x: 2, y: 0 }, clockwise: true, label: 'M' }, workspace, 'moment-1');
+  state = addFBDDimension(state, { start: { x: 0, y: 0 }, end: { x: 2, y: 0 }, label: '2 m' }, workspace, 'dimension-1');
+  state = addFBDAngle(state, { vertex: { x: 0, y: 0 }, from: { x: 1, y: 0 },
+    to: { x: 0, y: 1 }, label: '30°' }, workspace, 'angle-1');
+  state = addFBDLabel(state, { at: { x: 1, y: 1 }, text: 'Given',
+    associatedWith: { kind: 'force', id: 'force-1' } }, workspace, 'label-1');
+  for (const kind of ['force', 'moment', 'dimension', 'angle', 'label']) {
+    const id = `${kind}-1`;
+    const before = structuredClone(getFBDElement(state, kind, id));
+    const next = repositionFBDLabel(state, kind, id, { x: 3, y: 2 });
+    const after = getFBDElement(next, kind, id);
+    assert.deepEqual(getFBDElement(state, kind, id), before);
+    if (kind === 'label') {
+      assert.deepEqual(after.at, { x: 3, y: 2 });
+      assert.deepEqual(after.associatedWith, before.associatedWith);
+    } else {
+      assert.deepEqual(after, { ...before, labelPosition: { x: 3, y: 2 } });
+    }
+    state = next;
+  }
+  assert.deepEqual(state.forces[0].at, { x: 1, y: 0 });
+  assert.equal(state.forces[0].magnitude, 10);
+  assert.deepEqual(state.moments[0].at, { x: 2, y: 0 });
+  assert.deepEqual(state.dimensions[0].end, { x: 2, y: 0 });
+  assert.deepEqual(state.angles[0].vertex, { x: 0, y: 0 });
+  assert.equal(JSON.stringify(workspace), beforeStructure);
+  const records = new Map();
+  const storage = { getItem: (key) => records.get(key) ?? null, setItem: (key, value) => records.set(key, value) };
+  saveFBDState(storage, 'drag-student', state, workspace);
+  assert.deepEqual(loadFBDState(storage, 'drag-student', workspace), state);
+  let calls = 0;
+  assert.equal(visibleReactions(true, workspace, () => { calls++; return {}; }).result, null);
+  assert.equal(calls, 0);
+});
+
+test('force application moves only through explicit operation and retains a separately placed label', () => {
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const added = addFBDForce(selected, { at: { x: 1, y: 0 }, angle: -90, label: 'P' }, workspace, 'force-1');
+  const placed = repositionFBDLabel(added, 'force', 'force-1', { x: 3, y: 2 });
+  const moved = moveFBDForceApplication(placed, 'force-1', { x: 2, y: 0 }, workspace);
+  assert.deepEqual(moved.forces[0].at, { x: 2, y: 0 });
+  assert.deepEqual(moved.forces[0].labelPosition, { x: 3, y: 2 });
+  assert.deepEqual(placed.forces[0].at, { x: 1, y: 0 });
+  assert.throws(() => repositionFBDLabel(placed, 'force', 'force-1', { x: Infinity, y: 0 }), /finite/);
+  assert.throws(() => moveFBDForceApplication(placed, 'force-1', { x: NaN, y: 0 }, workspace), /valid point/);
+  const event = createVisualizationResearchEvent('session-1', 'fbd_element_drag',
+    () => 'event-1', () => '2026-09-18T12:00:00.000Z', undefined, undefined, undefined, undefined,
+    undefined, undefined, { elementKind: 'force', elementId: 'force-1',
+      before: placed.forces[0], after: moved.forces[0], dragTarget: 'application' });
+  assert.deepEqual(event.before, placed.forces[0]);
+  assert.deepEqual(event.after, moved.forces[0]);
+  assert.equal(event.dragTarget, 'application');
+});
+
+test('pointer interaction provides direct drag and coordinate alternatives without solver access', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /addEventListener\('pointerdown', handlePointerDown, true\)/);
+  assert.match(panel, /addEventListener\('pointermove', handlePointerMove, true\)/);
+  assert.match(panel, /addEventListener\('pointerup', handlePointerUp, true\)/);
+  assert.match(panel, /fbdDragLabel/);
+  assert.match(panel, /forceApplicationArmed &&|!forceApplicationArmed/);
+  assert.match(panel, /Move application point \(drag arrow\)/);
+  assert.match(panel, /aria-label="Position selected FBD label"/);
+  assert.match(panel, /fbd_element_drag/);
 });

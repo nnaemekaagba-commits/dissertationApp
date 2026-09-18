@@ -11,7 +11,7 @@ import type { StaticsWorkspace } from './model';
 import { createEmptyFBDState, selectFBDTarget, visibleReactions,
   addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
-  deleteFBDElement, getFBDElement,
+  deleteFBDElement, getFBDElement, repositionFBDLabel, moveFBDForceApplication,
   type FBDForce, type FBDMoment, type FBDDimension, type FBDAngle, type FBDLabel,
   type FBDElement, type FBDElementKind, type FBDLabelAssociation, type FBDState, type FBDTarget } from './fbdState';
 import { buildFBDForceArrow } from './fbdForceScene';
@@ -20,6 +20,10 @@ import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene';
 import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene';
 
 type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
+type FBDDrag = { pointerId: number; kind: FBDElementKind; id: string;
+  target: 'label' | 'application'; object: THREE.Object3D;
+  start: THREE.Vector3; original: THREE.Vector3; current: THREE.Vector3;
+  clientX: number; clientY: number; moved: boolean; controlsEnabled: boolean };
 const VIEW_BUTTONS: { label: string; mode: Exclude<ViewMode, 'free'> }[] = [
   { label: 'Front', mode: 'front' },
   { label: 'Top', mode: 'top' },
@@ -61,6 +65,33 @@ function disposeGroup(group: THREE.Group) {
 function addLine(group: THREE.Group, start: THREE.Vector3, end: THREE.Vector3, color: number) {
   const geometry = new THREE.BufferGeometry().setFromPoints([start, end]);
   group.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color })));
+}
+
+function fbdLabelPosition(kind: FBDElementKind, item: FBDElement, span: number): THREE.Vector3 {
+  if (kind === 'force') {
+    const force = item as FBDForce;
+    const radians = force.angle * Math.PI / 180;
+    const distance = Math.max(0.65, span * 0.27) + 0.32;
+    return new THREE.Vector3(force.labelPosition?.x ?? force.at.x + Math.cos(radians) * distance,
+      force.labelPosition?.y ?? force.at.y + Math.sin(radians) * distance, 0.2);
+  }
+  if (kind === 'moment') {
+    const moment = item as FBDMoment;
+    return new THREE.Vector3(moment.labelPosition?.x ?? moment.at.x,
+      moment.labelPosition?.y ?? moment.at.y + Math.max(0.55, span * 0.17), 0.2);
+  }
+  if (kind === 'dimension') {
+    const dimension = item as FBDDimension;
+    const calculated = dimensionLayout(dimension, span).labelPosition;
+    return dimension.labelPosition ? new THREE.Vector3(dimension.labelPosition.x, dimension.labelPosition.y, 0.24) : calculated;
+  }
+  if (kind === 'angle') {
+    const angle = item as FBDAngle;
+    const calculated = angleArcLayout(angle, span).labelPosition;
+    return angle.labelPosition ? new THREE.Vector3(angle.labelPosition.x, angle.labelPosition.y, 0.24) : calculated;
+  }
+  const label = item as FBDLabel;
+  return new THREE.Vector3(label.at.x, label.at.y, 0.45);
 }
 
 function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
@@ -105,15 +136,14 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   }
   for (const force of fbdState.forces) {
     const arrow = buildFBDForceArrow(force, span, force.id === selectedForceId);
+    arrow.userData.fbdDragApplication = force.id;
     group.add(arrow);
-    const radians = force.angle * Math.PI / 180;
-    const length = Math.max(0.65, span * 0.27);
     const labelText = `${force.label || 'F'}${force.magnitude === undefined ? '' : ` = ${force.magnitude} ${workspace.units.force}`}`;
     const label = textSprite(labelText, force.id === selectedForceId ? '#c2410c' : '#b91c1c', 0.42);
     if (label) {
-      label.position.set(force.at.x + Math.cos(radians) * (length + 0.32),
-        force.at.y + Math.sin(radians) * (length + 0.32), 0.2);
+      label.position.copy(fbdLabelPosition('force', force, span));
       label.userData.fbdForceId = force.id;
+      label.userData.fbdDragLabel = { kind: 'force', id: force.id };
       group.add(label);
     }
   }
@@ -122,7 +152,8 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     const labelText = `${moment.label || 'M'}${moment.magnitude === undefined ? '' : ` = ${moment.magnitude} ${workspace.units.force}·${workspace.units.length}`}`;
     const label = textSprite(labelText, moment.id === selectedMomentId ? '#c2410c' : '#6d28d9', 0.42);
     if (label) {
-      label.position.set(moment.at.x, moment.at.y + Math.max(0.55, span * 0.17), 0.2);
+      label.position.copy(fbdLabelPosition('moment', moment, span));
+      label.userData.fbdDragLabel = { kind: 'moment', id: moment.id };
       label.userData.fbdMomentId = moment.id;
       group.add(label);
     }
@@ -132,7 +163,8 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     const label = textSprite(dimension.label || '',
       dimension.id === selectedDimensionId ? '#c2410c' : '#0e7490', 0.42);
     if (label) {
-      label.position.copy(dimensionLayout(dimension, span).labelPosition);
+      label.position.copy(fbdLabelPosition('dimension', dimension, span));
+      label.userData.fbdDragLabel = { kind: 'dimension', id: dimension.id };
       label.userData.fbdDimensionId = dimension.id;
       group.add(label);
     }
@@ -141,7 +173,8 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     group.add(buildFBDAngleArc(angle, span, angle.id === selectedAngleId));
     const label = textSprite(angle.label || '', angle.id === selectedAngleId ? '#c2410c' : '#0f766e', 0.42);
     if (label) {
-      label.position.copy(angleArcLayout(angle, span).labelPosition);
+      label.position.copy(fbdLabelPosition('angle', angle, span));
+      label.userData.fbdDragLabel = { kind: 'angle', id: angle.id };
       label.userData.fbdAngleId = angle.id;
       group.add(label);
     }
@@ -149,8 +182,9 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   for (const item of fbdState.labels) {
     const sprite = textSprite(item.text, item.id === selectedLabelId ? '#c2410c' : '#1e293b', 0.55);
     if (sprite) {
-      sprite.position.set(item.at.x, item.at.y, 0.45);
+      sprite.position.copy(fbdLabelPosition('label', item, span));
       sprite.userData.fbdLabelId = item.id;
+      sprite.userData.fbdDragLabel = { kind: 'label', id: item.id };
       group.add(sprite);
     }
   }
@@ -435,7 +469,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   onVisualizationInteraction: (action: VisualizationAction, target?: FBDTarget,
     force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension, angle?: FBDAngle,
     label?: FBDLabel,
-    change?: { elementKind: FBDElementKind; elementId: string; before: FBDElement; after: FBDElement | null }) => void;
+    change?: { elementKind: FBDElementKind; elementId: string; before: FBDElement;
+      after: FBDElement | null; dragTarget?: 'label' | 'application' }) => void;
 }) {
   const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd } = useStaticsWorkspace();
   const reactionState = useMemo(() => visibleReactions(showFbd, workspace, calculatePlanarBeamReactions),
@@ -480,10 +515,14 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
   const [labelMoveMode, setLabelMoveMode] = useState(false);
   const [editError, setEditError] = useState('');
+  const [forceApplicationArmed, setForceApplicationArmed] = useState(false);
+  const dragRef = useRef<FBDDrag | null>(null);
+  const suppressClickRef = useRef(false);
   useEffect(() => {
     if (selectedForceId && !fbdState.forces.some((force) => force.id === selectedForceId))
       setSelectedForceId(null);
   }, [fbdState.forces, selectedForceId]);
+  useEffect(() => { if (!selectedForceId) setForceApplicationArmed(false); }, [selectedForceId]);
   useEffect(() => {
     if (selectedMomentId && !fbdState.moments.some((moment) => moment.id === selectedMomentId))
       setSelectedMomentId(null);
@@ -504,6 +543,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   }, [fbdState.labels, selectedLabelId]);
   const canvasClickRef = useRef<(event: MouseEvent) => void>(() => {});
   canvasClickRef.current = (event) => {
+    if (suppressClickRef.current) { suppressClickRef.current = false; return; }
     if (!showFbd || !rendererRef.current || !cameraRef.current) return;
     const rect = rendererRef.current.domElement.getBoundingClientRect();
     const pointer = new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1,
@@ -527,9 +567,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
         const next = moveFBDLabel(fbdState, selectedLabelId, { x: point.x, y: point.y });
         setFbdState(next);
         setLabelMoveMode(false);
-        if (before) onVisualizationInteraction('fbd_element_edit', undefined, undefined, undefined, undefined,
+        if (before) onVisualizationInteraction('fbd_element_reposition', undefined, undefined, undefined, undefined,
           undefined, undefined, { elementKind: 'label', elementId: selectedLabelId, before,
-            after: getFBDElement(next, 'label', selectedLabelId)! });
+            after: getFBDElement(next, 'label', selectedLabelId)!, dragTarget: 'label' });
       }
       return;
     }
@@ -578,6 +618,96 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     }
   };
 
+  const pointerRay = (event: PointerEvent) => {
+    const renderer = rendererRef.current;
+    const camera = cameraRef.current;
+    if (!renderer || !camera) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1,
+      -((event.clientY - rect.top) / rect.height * 2 - 1)), camera);
+    ray.params.Line.threshold = Math.max(0.08, (viewBoundsRef.current?.span || 1) * 0.018);
+    return ray;
+  };
+  const pointerDownRef = useRef<(event: PointerEvent) => void>(() => {});
+  const pointerMoveRef = useRef<(event: PointerEvent) => void>(() => {});
+  const pointerUpRef = useRef<(event: PointerEvent) => void>(() => {});
+  pointerDownRef.current = (event) => {
+    if (!showFbd || event.button !== 0 || forceFormOpen || momentFormOpen || dimensionFormOpen ||
+      angleFormOpen || labelFormOpen || labelMoveMode || !modelRef.current) return;
+    const ray = pointerRay(event);
+    if (!ray) return;
+    const start = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
+    if (!start) return;
+    for (const hit of ray.intersectObjects(modelRef.current.children, true)) {
+      let object: THREE.Object3D | null = hit.object;
+      while (object && !object.userData.fbdDragLabel && !object.userData.fbdDragApplication) object = object.parent;
+      if (!object) continue;
+      const annotation = object.userData.fbdDragLabel as { kind: FBDElementKind; id: string } | undefined;
+      const applicationId = object.userData.fbdDragApplication as string | undefined;
+      if (!annotation && (!applicationId || !forceApplicationArmed || applicationId !== selectedForceId)) continue;
+      const controls = controlsRef.current;
+      dragRef.current = { pointerId: event.pointerId, kind: annotation?.kind || 'force',
+        id: annotation?.id || applicationId!, target: annotation ? 'label' : 'application', object,
+        start: start.clone(), original: object.position.clone(), current: object.position.clone(),
+        clientX: event.clientX, clientY: event.clientY, moved: false,
+        controlsEnabled: controls?.enabled ?? true };
+      if (controls) controls.enabled = false;
+      rendererRef.current?.domElement.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+  };
+  pointerMoveRef.current = (event) => {
+    const drag = dragRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    const point = pointerRay(event)?.ray.intersectPlane(
+      new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
+    if (!point) return;
+    if (Math.hypot(event.clientX - drag.clientX, event.clientY - drag.clientY) > 3) drag.moved = true;
+    if (drag.moved) {
+      drag.current = drag.original.clone().add(point.sub(drag.start));
+      drag.object.position.copy(drag.current);
+    }
+  };
+  pointerUpRef.current = (event) => {
+    const drag = dragRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    dragRef.current = null;
+    if (controlsRef.current) controlsRef.current.enabled = drag.controlsEnabled;
+    if (rendererRef.current?.domElement.hasPointerCapture(event.pointerId))
+      rendererRef.current.domElement.releasePointerCapture(event.pointerId);
+    drag.object.position.copy(drag.original);
+    if (event.type === 'pointercancel') return;
+    if (!drag.moved) {
+      setSelectedForceId(drag.kind === 'force' ? drag.id : null);
+      setSelectedMomentId(drag.kind === 'moment' ? drag.id : null);
+      setSelectedDimensionId(drag.kind === 'dimension' ? drag.id : null);
+      setSelectedAngleId(drag.kind === 'angle' ? drag.id : null);
+      setSelectedLabelId(drag.kind === 'label' ? drag.id : null);
+      return;
+    }
+    const before = getFBDElement(fbdState, drag.kind, drag.id);
+    if (!before) return;
+    const at = { x: drag.current.x, y: drag.current.y };
+    const next = drag.target === 'application'
+      ? moveFBDForceApplication(fbdState, drag.id, at, workspace)
+      : repositionFBDLabel(fbdState, drag.kind, drag.id, at);
+    const after = getFBDElement(next, drag.kind, drag.id)!;
+    setFbdState(next);
+    setSelectedForceId(drag.kind === 'force' ? drag.id : null);
+    setSelectedMomentId(drag.kind === 'moment' ? drag.id : null);
+    setSelectedDimensionId(drag.kind === 'dimension' ? drag.id : null);
+    setSelectedAngleId(drag.kind === 'angle' ? drag.id : null);
+    setSelectedLabelId(drag.kind === 'label' ? drag.id : null);
+    setForceApplicationArmed(false);
+    suppressClickRef.current = true;
+    setTimeout(() => { suppressClickRef.current = false; }, 0);
+    onVisualizationInteraction('fbd_element_drag', undefined, undefined, undefined, undefined,
+      undefined, undefined, { elementKind: drag.kind, elementId: drag.id, before, after,
+        dragTarget: drag.target });
+  };
+
   const frameModel = (center: THREE.Vector3, span: number, mode: ViewMode | 'reset') => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
@@ -621,7 +751,14 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
     const controls = new OrbitControls(camera, renderer.domElement);
     const handleCanvasClick = (event: MouseEvent) => canvasClickRef.current(event);
+    const handlePointerDown = (event: PointerEvent) => pointerDownRef.current(event);
+    const handlePointerMove = (event: PointerEvent) => pointerMoveRef.current(event);
+    const handlePointerUp = (event: PointerEvent) => pointerUpRef.current(event);
     renderer.domElement.addEventListener('click', handleCanvasClick);
+    renderer.domElement.addEventListener('pointerdown', handlePointerDown, true);
+    renderer.domElement.addEventListener('pointermove', handlePointerMove, true);
+    renderer.domElement.addEventListener('pointerup', handlePointerUp, true);
+    renderer.domElement.addEventListener('pointercancel', handlePointerUp, true);
     const recordOrbit = () => onInteractionRef.current('orbit');
     controls.addEventListener('end', recordOrbit);
     controls.enableDamping = true;
@@ -657,6 +794,11 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       controls.dispose();
       controls.removeEventListener('end', recordOrbit);
       renderer.domElement.removeEventListener('click', handleCanvasClick);
+      renderer.domElement.removeEventListener('pointerdown', handlePointerDown, true);
+      renderer.domElement.removeEventListener('pointermove', handlePointerMove, true);
+      renderer.domElement.removeEventListener('pointerup', handlePointerUp, true);
+      renderer.domElement.removeEventListener('pointercancel', handlePointerUp, true);
+      dragRef.current = null;
       if (modelRef.current) {
         scene.remove(modelRef.current);
         disposeGroup(modelRef.current);
@@ -993,6 +1135,25 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
     setSelectedAngleId(null); setSelectedLabelId(null); setLabelMoveMode(false); setEditError('');
   };
+  const submitLabelPosition = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedKind || !selectedId || !selectedElement) return;
+    const form = new FormData(event.currentTarget);
+    const x = String(form.get('x') ?? '').trim();
+    const y = String(form.get('y') ?? '').trim();
+    if (!x || !y) { setEditError('Enter both label coordinates.'); return; }
+    try {
+      const next = repositionFBDLabel(fbdState, selectedKind, selectedId,
+        { x: Number(x), y: Number(y) });
+      setFbdState(next);
+      setEditError('');
+      onVisualizationInteraction('fbd_element_reposition', undefined, undefined, undefined, undefined,
+        undefined, undefined, { elementKind: selectedKind, elementId: selectedId,
+          before: selectedElement, after: getFBDElement(next, selectedKind, selectedId)!, dragTarget: 'label' });
+    } catch (caught) {
+      setEditError(caught instanceof Error ? caught.message : 'Could not reposition label.');
+    }
+  };
   const editNumber = (name: string, title: string, initial: number | undefined, optional = false) =>
     <label key={name}>{title}<input name={name} type="number" step="any" required={!optional}
       min={optional ? 0 : undefined} defaultValue={initial ?? ''}
@@ -1086,7 +1247,12 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
               {editNumber('atX', `Point X (${workspace.units.length})`, item.at.x)}
               {editNumber('atY', `Point Y (${workspace.units.length})`, item.at.y)}
               {editNumber('angle', 'Direction (degrees from +X)', item.angle)}
-              {editNumber('magnitude', `Magnitude (${workspace.units.force}, optional)`, item.magnitude, true)}</>;
+              {editNumber('magnitude', `Magnitude (${workspace.units.force}, optional)`, item.magnitude, true)}
+              <button type="button" aria-pressed={forceApplicationArmed}
+                onClick={() => setForceApplicationArmed((current) => !current)}
+                className={`col-span-2 rounded px-2 py-1 ${forceApplicationArmed ? 'bg-amber-200' : 'bg-slate-100'}`}>
+                {forceApplicationArmed ? 'Drag arrow to new application point' : 'Move application point (drag arrow)'}
+              </button></>;
           })()}
           {selectedKind === 'moment' && (() => {
             const item = selectedElement as FBDMoment;
@@ -1129,6 +1295,18 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
           <div className="col-span-2 flex gap-2"><button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Save changes</button>
             <button type="button" onClick={deleteSelected} className="rounded bg-red-50 px-2 py-1 text-red-800">Delete Selected</button></div>
           {editError && <p className="col-span-2 text-red-700" role="alert">{editError}</p>}
+        </form>}
+        {selectedElement && selectedKind && <form onSubmit={submitLabelPosition}
+          key={`label-position:${selectedKind}:${selectedElement.id}:${JSON.stringify(selectedElement)}`}
+          aria-label="Position selected FBD label" className="mt-2 flex flex-wrap items-end gap-2 text-xs">
+          <span className="font-medium">Display label position</span>
+          <label>X ({workspace.units.length})<input name="x" required type="number" step="any"
+            defaultValue={fbdLabelPosition(selectedKind, selectedElement, viewBoundsRef.current?.span || 1).x}
+            className="block w-20 rounded border border-slate-300 px-2 py-1" /></label>
+          <label>Y ({workspace.units.length})<input name="y" required type="number" step="any"
+            defaultValue={fbdLabelPosition(selectedKind, selectedElement, viewBoundsRef.current?.span || 1).y}
+            className="block w-20 rounded border border-slate-300 px-2 py-1" /></label>
+          <button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Set label position</button>
         </form>}
         {labelFormOpen && <form onSubmit={submitLabel} className="mt-2 grid grid-cols-2 gap-2 text-xs" aria-label="Add label details">
           <p className="col-span-2 text-slate-600">Enter text and position. Click the canvas to choose a position; association is optional.</p>

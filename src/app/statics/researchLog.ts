@@ -3,7 +3,7 @@ import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
   FBDElement, FBDElementKind, FBDTarget } from './fbdState.ts';
 
 export type VisualizationAction = 'front' | 'top' | 'right' | 'isometric' | 'reset' | 'free' | 'orbit' | 'fbd' |
-  'fbd_enter' | 'fbd_exit' | 'fbd_select' | 'fbd_delete' | 'fbd_undo' | 'fbd_redo' | 'fbd_reset' | 'fbd_force_add' | 'fbd_moment_add' | 'fbd_dimension_add' | 'fbd_angle_add' | 'fbd_label_add' | 'fbd_label_move' | 'fbd_element_edit' | 'fbd_element_delete';
+  'fbd_enter' | 'fbd_exit' | 'fbd_select' | 'fbd_delete' | 'fbd_undo' | 'fbd_redo' | 'fbd_reset' | 'fbd_force_add' | 'fbd_moment_add' | 'fbd_dimension_add' | 'fbd_angle_add' | 'fbd_label_add' | 'fbd_label_move' | 'fbd_element_edit' | 'fbd_element_delete' | 'fbd_element_drag' | 'fbd_element_reposition';
 export type EngineeringResearchEvent = {
   kind: 'tool'; eventId: string; sessionId: string; timestamp: string;
   studentMessage: string; toolName: string; toolArguments: unknown;
@@ -13,6 +13,7 @@ export type EngineeringResearchEvent = {
   kind: 'visualization'; eventId: string; sessionId: string; timestamp: string; action: VisualizationAction;
   target?: FBDTarget; force?: FBDForce; moment?: FBDMoment; dimension?: FBDDimension; angle?: FBDAngle; label?: FBDLabel;
   elementKind?: FBDElementKind; elementId?: string; before?: FBDElement; after?: FBDElement | null;
+  dragTarget?: 'label' | 'application';
 };
 
 export function getEngineeringSessionId(storage: Pick<Storage, 'getItem' | 'setItem'>,
@@ -44,7 +45,8 @@ export function createVisualizationResearchEvent(sessionId: string, action: Visu
   newId = () => crypto.randomUUID(), now = () => new Date().toISOString(),
   target?: FBDTarget, force?: FBDForce, moment?: FBDMoment,
   dimension?: FBDDimension, angle?: FBDAngle, label?: FBDLabel,
-  change?: { elementKind: FBDElementKind; elementId: string; before: FBDElement; after: FBDElement | null }): EngineeringResearchEvent {
+  change?: { elementKind: FBDElementKind; elementId: string; before: FBDElement;
+    after: FBDElement | null; dragTarget?: 'label' | 'application' }): EngineeringResearchEvent {
   return { kind: 'visualization', eventId: newId(), sessionId, timestamp: now(), action,
     ...(target ? { target } : {}), ...(force ? { force } : {}), ...(moment ? { moment } : {}),
     ...(dimension ? { dimension } : {}), ...(angle ? { angle } : {}), ...(label ? { label } : {}),

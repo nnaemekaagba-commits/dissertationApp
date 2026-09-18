@@ -1314,7 +1314,8 @@ export default function App() {
 
   const recordVisualizationInteraction = useCallback((action: VisualizationAction, target?: FBDTarget,
     force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension, angle?: FBDAngle, label?: FBDLabel,
-    change?: { elementKind: FBDElementKind; elementId: string; before: FBDElement; after: FBDElement | null }) => {
+    change?: { elementKind: FBDElementKind; elementId: string; before: FBDElement;
+      after: FBDElement | null; dragTarget?: 'label' | 'application' }) => {
     if (!userId) return;
     const event = createVisualizationResearchEvent(getEngineeringSessionId(sessionStorage, userId), action,
       undefined, undefined, target, force, moment, dimension, angle, label, change);

@@ -2,13 +2,13 @@ import type { StaticsWorkspace } from './model.ts';
 
 export type FBDTarget = { kind: 'body' | 'member' | 'joint'; id: string };
 export type FBDPoint = { x: number; y: number };
-export type FBDForce = { id: string; at: FBDPoint; angle: number; magnitude?: number; label?: string };
+export type FBDForce = { id: string; at: FBDPoint; angle: number; magnitude?: number; label?: string; labelPosition?: FBDPoint };
 export type FBDForceInput = { at: FBDPoint; angle: number; label: string; magnitude?: number };
-export type FBDMoment = { id: string; at: FBDPoint; clockwise: boolean; magnitude?: number; label?: string };
+export type FBDMoment = { id: string; at: FBDPoint; clockwise: boolean; magnitude?: number; label?: string; labelPosition?: FBDPoint };
 export type FBDMomentInput = { at: FBDPoint; clockwise: boolean; label: string; magnitude?: number };
-export type FBDDimension = { id: string; start: FBDPoint; end: FBDPoint; label?: string };
+export type FBDDimension = { id: string; start: FBDPoint; end: FBDPoint; label?: string; labelPosition?: FBDPoint };
 export type FBDDimensionInput = { start: FBDPoint; end: FBDPoint; label: string };
-export type FBDAngle = { id: string; vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label?: string };
+export type FBDAngle = { id: string; vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label?: string; labelPosition?: FBDPoint };
 export type FBDAngleInput = { vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label: string };
 export type FBDLabelAssociation = { kind: 'force' | 'moment' | 'node' | 'member' | 'dimension' | 'angle'; id: string };
 export type FBDLabel = { id: string; at: FBDPoint; text: string; associatedWith?: FBDLabelAssociation };
@@ -172,6 +172,31 @@ export function moveFBDLabel(state: FBDState, labelId: string, at: FBDPoint): FB
     ? { ...label, at: { x: at.x, y: at.y } } : label) };
 }
 
+/** Repositions annotation text only. Geometry, forces, and points of application stay intact. */
+export function repositionFBDLabel(state: FBDState, kind: FBDElementKind, id: string,
+  position: FBDPoint): FBDState {
+  if (!Number.isFinite(position.x) || !Number.isFinite(position.y))
+    throw new Error('Enter a finite label position.');
+  if (!getFBDElement(state, kind, id)) throw new Error('Unknown FBD element.');
+  if (kind === 'label') return moveFBDLabel(state, id, position);
+  const withPosition = <T extends { id: string; labelPosition?: FBDPoint }>(items: T[]) =>
+    items.map((item) => item.id === id ? { ...item, labelPosition: { ...position } } : item);
+  return { ...state,
+    forces: kind === 'force' ? withPosition(state.forces) : state.forces,
+    moments: kind === 'moment' ? withPosition(state.moments) : state.moments,
+    dimensions: kind === 'dimension' ? withPosition(state.dimensions) : state.dimensions,
+    angles: kind === 'angle' ? withPosition(state.angles) : state.angles };
+}
+
+/** An explicit physical operation, never the consequence of dragging annotation text. */
+export function moveFBDForceApplication(state: FBDState, id: string, at: FBDPoint,
+  workspace: StaticsWorkspace): FBDState {
+  const force = state.forces.find((item) => item.id === id);
+  if (!force) throw new Error('Unknown FBD force.');
+  return editFBDForce(state, id, { at, angle: force.angle, label: force.label || '',
+    ...(force.magnitude === undefined ? {} : { magnitude: force.magnitude }) }, workspace);
+}
+
 const editTarget: FBDTarget = { kind: 'body', id: 'structure' };
 function replaceElement<T extends { id: string }>(items: T[], id: string, replacement: T): T[] {
   if (!items.some((item) => item.id === id)) throw new Error('Unknown FBD element.');
@@ -184,28 +209,36 @@ export function editFBDForce(state: FBDState, id: string, input: FBDForceInput,
   if (!state.forces.some((item) => item.id === id)) throw new Error('Unknown FBD force.');
   const valid = addFBDForce({ ...state, selectedTarget: editTarget,
     forces: state.forces.filter((item) => item.id !== id) }, input, workspace, id).forces.at(-1)!;
-  return { ...state, forces: replaceElement(state.forces, id, valid) };
+  const existing = state.forces.find((item) => item.id === id)!;
+  return { ...state, forces: replaceElement(state.forces, id,
+    existing.labelPosition ? { ...valid, labelPosition: { ...existing.labelPosition } } : valid) };
 }
 export function editFBDMoment(state: FBDState, id: string, input: FBDMomentInput,
   workspace: StaticsWorkspace): FBDState {
   if (!state.moments.some((item) => item.id === id)) throw new Error('Unknown FBD moment.');
   const valid = addFBDMoment({ ...state, selectedTarget: editTarget,
     moments: state.moments.filter((item) => item.id !== id) }, input, workspace, id).moments.at(-1)!;
-  return { ...state, moments: replaceElement(state.moments, id, valid) };
+  const existing = state.moments.find((item) => item.id === id)!;
+  return { ...state, moments: replaceElement(state.moments, id,
+    existing.labelPosition ? { ...valid, labelPosition: { ...existing.labelPosition } } : valid) };
 }
 export function editFBDDimension(state: FBDState, id: string, input: FBDDimensionInput,
   workspace: StaticsWorkspace): FBDState {
   if (!state.dimensions.some((item) => item.id === id)) throw new Error('Unknown FBD dimension.');
   const valid = addFBDDimension({ ...state, selectedTarget: editTarget,
     dimensions: state.dimensions.filter((item) => item.id !== id) }, input, workspace, id).dimensions.at(-1)!;
-  return { ...state, dimensions: replaceElement(state.dimensions, id, valid) };
+  const existing = state.dimensions.find((item) => item.id === id)!;
+  return { ...state, dimensions: replaceElement(state.dimensions, id,
+    existing.labelPosition ? { ...valid, labelPosition: { ...existing.labelPosition } } : valid) };
 }
 export function editFBDAngle(state: FBDState, id: string, input: FBDAngleInput,
   workspace: StaticsWorkspace): FBDState {
   if (!state.angles.some((item) => item.id === id)) throw new Error('Unknown FBD angle.');
   const valid = addFBDAngle({ ...state, selectedTarget: editTarget,
     angles: state.angles.filter((item) => item.id !== id) }, input, workspace, id).angles.at(-1)!;
-  return { ...state, angles: replaceElement(state.angles, id, valid) };
+  const existing = state.angles.find((item) => item.id === id)!;
+  return { ...state, angles: replaceElement(state.angles, id,
+    existing.labelPosition ? { ...valid, labelPosition: { ...existing.labelPosition } } : valid) };
 }
 export function editFBDLabel(state: FBDState, id: string, input: FBDLabelInput,
   workspace: StaticsWorkspace): FBDState {
@@ -278,15 +311,19 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
     version: 1, sourceStructureKey: id(root.sourceStructureKey), selectedTarget,
     forces: rows(root.forces, (row) => ({ id: id(row.id), at: point(row.at), angle: number(row.angle),
       ...(row.magnitude === undefined ? {} : { magnitude: number(row.magnitude) }),
-      ...(row.label === undefined ? {} : { label: label(row.label) }) })),
+      ...(row.label === undefined ? {} : { label: label(row.label) }),
+      ...(row.labelPosition === undefined ? {} : { labelPosition: point(row.labelPosition) }) })),
     moments: rows(root.moments, (row) => ({ id: id(row.id), at: point(row.at),
       clockwise: typeof row.clockwise === 'boolean' ? row.clockwise : fail(),
       ...(row.magnitude === undefined ? {} : { magnitude: number(row.magnitude) }),
-      ...(row.label === undefined ? {} : { label: label(row.label) }) })),
+      ...(row.label === undefined ? {} : { label: label(row.label) }),
+      ...(row.labelPosition === undefined ? {} : { labelPosition: point(row.labelPosition) }) })),
     dimensions: rows(root.dimensions, (row) => ({ id: id(row.id), start: point(row.start), end: point(row.end),
-      ...(row.label === undefined ? {} : { label: label(row.label) }) })),
+      ...(row.label === undefined ? {} : { label: label(row.label) }),
+      ...(row.labelPosition === undefined ? {} : { labelPosition: point(row.labelPosition) }) })),
     angles: rows(root.angles, (row) => ({ id: id(row.id), vertex: point(row.vertex),
-      from: point(row.from), to: point(row.to), ...(row.label === undefined ? {} : { label: label(row.label) }) })),
+      from: point(row.from), to: point(row.to), ...(row.label === undefined ? {} : { label: label(row.label) }),
+      ...(row.labelPosition === undefined ? {} : { labelPosition: point(row.labelPosition) }) })),
     labels: rows(root.labels, (row) => {
       const association = row.associatedWith === undefined ? undefined : object(row.associatedWith);
       const kind = association?.kind;
