@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback, lazy, Suspense } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, Paperclip, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Bot, Globe2, Search, Table, Pencil, Save } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Bot, Globe2, Search, Table, Pencil, Save } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -10,6 +10,7 @@ import { publicAnonKey } from '/utils/supabase/info';
 import { API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } from '/utils/api';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
+import { createStudentMessageInput, hasTransferredFiles } from './studentInput';
 import { AuthPage } from './components/AuthPage';
 import { StaticsWorkspaceProvider, type StaticsWorkspaceController } from './statics/StaticsWorkspaceProvider';
 import { executeEngineeringToolBatch, formatEngineeringToolBatch,
@@ -74,6 +75,8 @@ interface Message {
   provider?: ChatProvider;
   feedback?: string;
   attachments?: UploadedFile[];
+  inputModality?: 'text' | 'audio';
+  transcriptionSource?: 'browser-speech' | 'recorded-audio';
   isIncorrect?: boolean;
   isConflicting?: boolean;
   copyEvents?: CopyEvent[];
@@ -1247,7 +1250,9 @@ export default function App() {
   const [viewCommand, setViewCommand] = useState<{ view: EngineeringView; sequence: number }>();
   const staticsControllerRef = useRef<StaticsWorkspaceController | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
-  const [uploadedFiles, setUploadedFiles] = useState<Array<{ name: string; type: string; content: string; preview?: string }>>([]);
+  const [pendingInputModality, setPendingInputModality] = useState<'text' | 'audio'>('text');
+  const [transcriptionSource, setTranscriptionSource] = useState<'browser-speech' | 'recorded-audio' | undefined>();
+  const [isTranscribingAudio, setIsTranscribingAudio] = useState(false);
   const [showImageDialog, setShowImageDialog] = useState(false);
   const [imagePrompt, setImagePrompt] = useState('');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -1269,7 +1274,6 @@ export default function App() {
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [audioRecordingError, setAudioRecordingError] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const speechBaseInputRef = useRef('');
   const audioRecorderRef = useRef<{
@@ -1749,86 +1753,6 @@ export default function App() {
     return <AuthPage onAuthSuccess={handleAuthSuccess} />;
   }
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const newFiles: UploadedFile[] = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const fileType = file.type;
-      const fileName = file.name.toLowerCase();
-      const isPdf = fileType === 'application/pdf' || fileName.endsWith('.pdf');
-      
-      try {
-        if (fileType.startsWith('image/')) {
-          // Handle images - convert to base64
-          const reader = new FileReader();
-          const content = await new Promise<string>((resolve, reject) => {
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-          newFiles.push({ name: file.name, type: fileType, content, preview: content });
-        } else if (isPdf) {
-          const content = await blobToDataUrl(file);
-          newFiles.push({
-            name: file.name,
-            type: 'application/pdf',
-            content,
-          });
-        } else if (
-          fileType.startsWith('audio/') ||
-          fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        ) {
-          // Handle binary files - convert to base64
-          const content = await blobToDataUrl(file);
-          newFiles.push({ name: file.name, type: fileType, content });
-        } else if (
-          fileType.startsWith('text/') ||
-          fileType === 'application/json' ||
-          fileType === 'application/javascript' ||
-          fileType === 'application/x-python' ||
-          fileName.endsWith('.txt') ||
-          fileName.endsWith('.md') ||
-          fileName.endsWith('.csv') ||
-          fileName.endsWith('.py') ||
-          fileName.endsWith('.js') ||
-          fileName.endsWith('.java') ||
-          fileName.endsWith('.cpp') ||
-          fileName.endsWith('.c') ||
-          fileName.endsWith('.html') ||
-          fileName.endsWith('.css')
-        ) {
-          // Handle text files - read as text
-          const reader = new FileReader();
-          const content = await new Promise<string>((resolve, reject) => {
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsText(file);
-          });
-          newFiles.push({ name: file.name, type: fileType || 'text/plain', content });
-        } else {
-          alert(`File type "${fileType || 'unknown'}" for "${file.name}" is not supported. Please upload audio, images, PDFs, Word documents, or text files.`);
-        }
-      } catch (error) {
-        console.error(`Error reading file ${file.name}:`, error);
-        alert(`Failed to read file: ${file.name}`);
-      }
-    }
-
-    setUploadedFiles(prev => [...prev, ...newFiles]);
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
-  };
-
   const getPromptImageAction = (prompt: string): 'generate' | 'search' | null => {
     const normalized = prompt.toLowerCase().replace(/\s+/g, ' ').trim();
 
@@ -1864,14 +1788,13 @@ export default function App() {
     insertAfterMessageId?: string;
     comparisonResponse?: boolean;
   }) => {
+    if (isRecordingAudio || isTranscribingAudio) return;
     const displayInput = options?.displayInput ?? input;
     const requestInput = options?.requestInput ?? displayInput;
     const requestProvider = normalizeChatProvider(options?.provider) ?? selectedProviderRef.current;
-    const activeUploadedFiles = options?.requestInput ? [] : uploadedFiles;
+    if (!displayInput.trim()) return;
 
-    if (!displayInput.trim() && activeUploadedFiles.length === 0) return;
-
-    if (!options && activeUploadedFiles.length === 0) {
+    if (!options) {
       const imageAction = getPromptImageAction(displayInput);
 
       if (imageAction === 'generate') {
@@ -1889,82 +1812,33 @@ export default function App() {
       recognitionRef.current?.stop();
     }
 
-    const audioFiles = activeUploadedFiles.filter((file) => file.type.startsWith('audio/'));
-    const unsupportedAudioFile = audioFiles.find((file) => !isSupportedAudioInput(file));
-
-    if (unsupportedAudioFile) {
-      alert(`Audio file "${unsupportedAudioFile.name}" cannot be sent to the AI as audio. Please use WAV or MP3 audio.`);
-      return;
-    }
-
-    if (audioFiles.length > 0 && requestProvider === 'claude') {
-      alert('Claude does not currently support raw audio input through this app. Please select OpenAI or Google AI, or remove the audio attachment.');
-      return;
-    }
-
-    // Build message content with files
-    let messageContent = displayInput;
-    let requestContent = requestInput;
-    const fileContents: UploadedFile[] = [];
-    
-    if (activeUploadedFiles.length > 0) {
-      messageContent += '\n\n**Attached Files:**\n';
-      requestContent += '\n\n**Attached Files:**\n';
-      for (const [index, file] of activeUploadedFiles.entries()) {
-        if (file.type.startsWith('image/')) {
-          messageContent += `\n${index + 1}. Image: ${file.name}`;
-          requestContent += `\n${index + 1}. Image: ${file.name}`;
-          fileContents.push(await compressImageForAI(file));
-        } else if (file.type.startsWith('audio/')) {
-          messageContent += `\n${index + 1}. Audio: ${file.name}`;
-          requestContent += `\n${index + 1}. Audio: ${file.name}`;
-          fileContents.push({ name: file.name, type: file.type, content: file.content });
-        } else if (file.type.startsWith('text/') || file.type === 'application/json') {
-          messageContent += `\n${index + 1}. ${file.name}:\n\`\`\`\n${file.content}\n\`\`\``;
-          requestContent += `\n${index + 1}. ${file.name}:\n\`\`\`\n${file.content}\n\`\`\``;
-        } else if (file.type === 'application/pdf') {
-          messageContent += `\n${index + 1}. PDF Document: ${file.name}`;
-          requestContent += `\n${index + 1}. PDF Document: ${file.name}`;
-          if (file.extractedText) {
-            messageContent += `\nExtracted text:\n\`\`\`\n${file.extractedText}\n\`\`\``;
-            requestContent += `\nExtracted text:\n\`\`\`\n${file.extractedText}\n\`\`\``;
-          }
-          fileContents.push(file);
-        } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-          messageContent += `\n${index + 1}. Word Document: ${file.name}`;
-          requestContent += `\n${index + 1}. Word Document: ${file.name}`;
-          fileContents.push({ name: file.name, type: file.type, content: file.content });
-        } else {
-          messageContent += `\n${index + 1}. File: ${file.name}`;
-          requestContent += `\n${index + 1}. File: ${file.name}`;
-        }
-      }
-    }
+    const messageContent = displayInput;
+    const requestContent = requestInput;
+    const studentInput = createStudentMessageInput(messageContent, options ? 'text' : pendingInputModality, options ? undefined : transcriptionSource);
 
     const userMessage: Message | null = options?.skipUserMessage ? null : {
       id: Date.now().toString(),
       role: 'user',
-      content: messageContent,
+      content: studentInput.content,
       timestamp: new Date(),
+      inputModality: studentInput.inputModality,
+      transcriptionSource: studentInput.transcriptionSource,
       aiProvider: CHAT_PROVIDER_LABELS[requestProvider],
-      attachments: activeUploadedFiles.length > 0 ? activeUploadedFiles : undefined,
       provider: requestProvider
     };
 
     const currentInput = requestContent;
-    const currentFiles = fileContents;
     const conversationHistory = sanitizeConversationHistoryForChat(messages);
     const chatPayload = {
       message: currentInput,
       conversationHistory,
-      files: currentFiles,
       provider: requestProvider,
       engineeringState: staticsControllerRef.current?.getWorkspace(),
     };
     const maxGatewayPayloadBytes = 9_000_000;
 
     if (getApproxPayloadBytes(chatPayload) > maxGatewayPayloadBytes) {
-      alert('This file is too large to send through the current AWS API Gateway connection. Please try a smaller PDF/image, split the PDF, or compress the image before uploading.');
+      alert('This message is too large to send. Please shorten the text.');
       return;
     }
 
@@ -1991,7 +1865,8 @@ export default function App() {
       setMessages(prev => [...prev, userMessage]);
       saveMessage(userMessage);
       setInput('');
-      setUploadedFiles([]);
+      setPendingInputModality('text');
+      setTranscriptionSource(undefined);
     }
     setIsTyping(true);
     let engineeringBatch: EngineeringToolBatch | null = null;
@@ -2151,6 +2026,7 @@ ${data.response}` : data.response,
       const dictatedText = `${finalTranscript} ${interimTranscript}`.trim();
       const baseInput = speechBaseInputRef.current;
       setInput([baseInput, dictatedText].filter(Boolean).join(' '));
+      if (dictatedText) { setPendingInputModality('audio'); setTranscriptionSource('browser-speech'); }
     };
 
     recognition.onerror = (event) => {
@@ -2195,22 +2071,35 @@ ${data.response}` : data.response,
     }
 
     const wavBlob = encodeWav(samples, recorder.sampleRate);
-    const content = await blobToDataUrl(wavBlob);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    if (wavBlob.size > 6_000_000) {
+      setAudioRecordingError('Recording is too long. Please record a shorter voice message.');
+      return;
+    }
+    setIsTranscribingAudio(true);
+    try {
+      const content = await blobToDataUrl(wavBlob);
+      const response = await fetch(`${CHAT_API_BASE_URL}/transcribe`, {
+        method: 'POST', headers: buildApiHeaders(true),
+        body: JSON.stringify({ audio: content }),
+      });
+      const data = await response.json();
+      if (!response.ok || typeof data.text !== 'string' || !data.text.trim()) {
+        throw new Error(data.error || 'Audio could not be transcribed.');
+      }
+      setInput((previous) => [previous.trim(), data.text.trim()].filter(Boolean).join(' '));
+      setPendingInputModality('audio');
+      setTranscriptionSource('recorded-audio');
+      setAudioRecordingError('');
+    } catch (error) {
+      setAudioRecordingError(error instanceof Error ? error.message : 'Audio transcription failed.');
+    } finally {
+      setIsTranscribingAudio(false);
+    }
 
-    setUploadedFiles((prev) => [
-      ...prev,
-      {
-        name: `voice-recording-${timestamp}.wav`,
-        type: 'audio/wav',
-        content,
-      },
-    ]);
-    setAudioRecordingError('');
   };
 
   const startAudioRecording = async () => {
-    if (needsReflection || isRecordingAudio) {
+    if (needsReflection || isRecordingAudio || isTranscribingAudio) {
       return;
     }
 
@@ -2873,7 +2762,8 @@ ${data.response}` : data.response,
     setMessages((prev) => [...prev, userMessage]);
     void saveMessage(userMessage);
     setInput('');
-    setUploadedFiles([]);
+    setPendingInputModality('text');
+    setTranscriptionSource(undefined);
     setImagePrompt('');
     setShowImageDialog(false);
 
@@ -2962,7 +2852,8 @@ ${data.response}` : data.response,
     setMessages((prev) => [...prev, userMessage]);
     void saveMessage(userMessage);
     setInput('');
-    setUploadedFiles([]);
+    setPendingInputModality('text');
+    setTranscriptionSource(undefined);
     setImageSearchQuery('');
     setShowImageSearchDialog(false);
 
@@ -3044,7 +2935,7 @@ ${data.response}` : data.response,
     await runInternetImageSearch(imageSearchQuery, `**Pull Images from Internet**: ${imageSearchQuery.trim()}`);
   };
   const needsReflection = false;
-  const canSendMessage = !isRecordingAudio && (input.trim() || uploadedFiles.length > 0);
+  const canSendMessage = !isRecordingAudio && !isTranscribingAudio && Boolean(input.trim());
   const archiveEntries = buildArchiveEntries(archiveMessages);
   const archiveQueryCount = archiveEntries.length;
   const prepareAiComparisonPrompt = (
@@ -3153,7 +3044,20 @@ ${data.response}` : data.response,
 
   return (
     <StaticsWorkspaceProvider key={userId} userId={userId} ref={staticsControllerRef}>
-    <div className="h-screen bg-slate-50 flex">
+    <div className="h-screen bg-slate-50 flex"
+      onPasteCapture={(event) => {
+        if (hasTransferredFiles(event.clipboardData)) {
+          event.preventDefault();
+          setAudioRecordingError('File and image paste is disabled. Use text or voice.');
+        }
+      }}
+      onDragOverCapture={(event) => { if (hasTransferredFiles(event.dataTransfer)) event.preventDefault(); }}
+      onDropCapture={(event) => {
+        if (hasTransferredFiles(event.dataTransfer)) {
+          event.preventDefault();
+          setAudioRecordingError('File drop is disabled. Use text or voice.');
+        }
+      }}>
       <div className="w-full h-full bg-white flex flex-col">{/* Header */}
         <div className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white flex-shrink-0">
           <div className="flex items-center gap-3 justify-between">
@@ -3255,30 +3159,6 @@ ${data.response}` : data.response,
                 </div>
               )}
               
-              {/* File Previews */}
-              {uploadedFiles.length > 0 && (
-                <div className="mb-1.5 flex flex-wrap gap-1.5">
-                  {uploadedFiles.map((file, index) => (
-                    <div key={index} className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-md px-2 py-1.5">
-                      {file.type.startsWith('audio/') ? (
-                        <AudioLines className="size-4 text-blue-600" />
-                      ) : file.type.startsWith('image/') ? (
-                        <ImageIcon className="size-4 text-blue-600" />
-                      ) : (
-                        <FileIcon className="size-4 text-blue-600" />
-                      )}
-                      <span className="text-sm text-blue-900 max-w-[200px] truncate">{file.name}</span>
-                      <button
-                        onClick={() => removeFile(index)}
-                        className="size-5 rounded-full bg-blue-200 hover:bg-blue-300 flex items-center justify-center"
-                      >
-                        <X className="size-3 text-blue-900" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
               <div className="flex gap-1.5">
                 <div className="flex-1 flex flex-col gap-1.5">
                   <div className="relative">
@@ -3307,19 +3187,22 @@ ${data.response}` : data.response,
                     </Button>
                     <Textarea
                       value={input}
-                      onChange={(e) => setInput(e.target.value)}
+                      onChange={(e) => { setInput(e.target.value); if (!e.target.value.trim()) { setPendingInputModality('text'); setTranscriptionSource(undefined); } }}
+                      onPaste={(e) => { if (hasTransferredFiles(e.clipboardData)) { e.preventDefault(); setAudioRecordingError('File and image paste is disabled. Use text or voice.'); } }}
+                      onDrop={(e) => { if (hasTransferredFiles(e.dataTransfer)) { e.preventDefault(); setAudioRecordingError('File drop is disabled. Use text or voice.'); } }}
+                      onDragOver={(e) => { if (hasTransferredFiles(e.dataTransfer)) e.preventDefault(); }}
                       onKeyPress={handleKeyPress}
                       placeholder={needsReflection ? "Please complete the reflection above to continue..." : "Describe your problem or ask a question..."}
                       className="flex-1 min-h-[40px] pr-20 text-sm"
                       disabled={needsReflection}
                     />
                   </div>
-                  {(isRecordingAudio || audioRecordingError || isListening || speechError) && (
+                  {(isRecordingAudio || isTranscribingAudio || audioRecordingError || isListening || speechError) && (
                     <div className="flex flex-wrap items-center gap-1">
                       <span className="text-[11px] text-gray-500 min-w-0 flex-1 truncate">
                         {isRecordingAudio
-                          ? 'Recording audio... tap Stop Recording to attach it.'
-                          : audioRecordingError || (isListening
+                          ? 'Recording audio... tap Stop Recording to transcribe it.'
+                          : isTranscribingAudio ? 'Transcribing audio...' : audioRecordingError || (isListening
                             ? 'Listening... speak clearly, then tap the mic to stop.'
                             : speechError)}
                       </span>
@@ -3327,26 +3210,6 @@ ${data.response}` : data.response,
                   )}
 
                   <div className="flex flex-wrap items-center gap-1.5">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    onChange={handleFileUpload}
-                    accept="audio/*,image/*,.pdf,.docx,.txt,.md,.csv,.py,.js,.java,.cpp,.c,.html,.css,.json"
-                    className="hidden"
-                    disabled={needsReflection || isRecordingAudio}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="size-7 rounded-lg border-gray-300 bg-white text-gray-700 hover:border-purple-300 hover:text-purple-700"
-                    disabled={needsReflection || isRecordingAudio}
-                    title="Attach files"
-                  >
-                    <Paperclip className="size-3.5" />
-                  </Button>
                   <Button
                     type="button"
                     variant={isRecordingAudio ? 'default' : 'outline'}
@@ -3357,8 +3220,8 @@ ${data.response}` : data.response,
                         ? 'bg-red-600 text-white hover:bg-red-700'
                         : 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
                     }`}
-                    disabled={needsReflection}
-                    title={isRecordingAudio ? 'Stop recording and attach audio' : 'Record audio to attach to the prompt'}
+                    disabled={needsReflection || isTranscribingAudio}
+                    title={isRecordingAudio ? 'Stop recording and transcribe' : 'Record voice and transcribe to text'}
                   >
                     {isRecordingAudio ? <Square className="size-3.5" /> : <AudioLines className="size-3.5" />}
                   </Button>
