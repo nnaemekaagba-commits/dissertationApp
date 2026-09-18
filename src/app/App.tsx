@@ -17,7 +17,7 @@ import { executeEngineeringToolBatch, formatEngineeringToolBatch,
   type EngineeringToolBatch, type EngineeringToolCall, type EngineeringView } from './statics/engineeringTools';
 import { createToolResearchEvents, createVisualizationResearchEvent, getEngineeringSessionId,
   type EngineeringResearchEvent, type VisualizationAction } from './statics/researchLog';
-import type { FBDTarget } from './statics/fbdState';
+import type { FBDForce, FBDTarget } from './statics/fbdState';
 
 const EngineeringVisualizationPanel = lazy(() =>
   import('./statics/EngineeringVisualizationPanel').then(({ EngineeringVisualizationPanel }) => ({ default: EngineeringVisualizationPanel }))
@@ -1311,10 +1311,10 @@ export default function App() {
     if (!response.ok) throw new Error(`Research event was not saved (${response.status}).`);
   }, [buildApiHeaders]);
 
-  const recordVisualizationInteraction = useCallback((action: VisualizationAction, target?: FBDTarget) => {
+  const recordVisualizationInteraction = useCallback((action: VisualizationAction, target?: FBDTarget, force?: FBDForce) => {
     if (!userId) return;
     const event = createVisualizationResearchEvent(getEngineeringSessionId(sessionStorage, userId), action,
-      undefined, undefined, target);
+      undefined, undefined, target, force);
     void recordEngineeringEvent(event).catch((error) => console.warn('Visualization event logging failed.', error));
   }, [recordEngineeringEvent, userId]);
 

@@ -3,6 +3,7 @@ import type { StaticsWorkspace } from './model.ts';
 export type FBDTarget = { kind: 'body' | 'member' | 'joint'; id: string };
 export type FBDPoint = { x: number; y: number };
 export type FBDForce = { id: string; at: FBDPoint; angle: number; magnitude?: number; label?: string };
+export type FBDForceInput = { at: FBDPoint; angle: number; label: string; magnitude?: number };
 export type FBDMoment = { id: string; at: FBDPoint; clockwise: boolean; magnitude?: number; label?: string };
 export type FBDDimension = { id: string; start: FBDPoint; end: FBDPoint; label?: string };
 export type FBDAngle = { id: string; vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label?: string };
@@ -50,6 +51,24 @@ export function selectFBDTarget(state: FBDState, target: FBDTarget | null,
   if (target && !validTarget(target, workspace)) throw new Error('Unknown FBD body, member, or joint.');
   return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
     selectedTarget: target ? { ...target } : null };
+}
+
+/** Adds only student supplied values; this never changes the engineering model or calls a solver. */
+export function addFBDForce(state: FBDState, input: FBDForceInput, workspace: StaticsWorkspace,
+  forceId: string): FBDState {
+  if (!state.selectedTarget || !validTarget(state.selectedTarget, workspace))
+    throw new Error('Select a body, member, or joint before adding a force.');
+  if (!forceId.trim() || state.forces.some((force) => force.id === forceId))
+    throw new Error('Force ID must be unique.');
+  if (!Number.isFinite(input.at.x) || !Number.isFinite(input.at.y) || !Number.isFinite(input.angle) ||
+    !input.label.trim() || input.label.length > 80 ||
+    (input.magnitude !== undefined && (!Number.isFinite(input.magnitude) || input.magnitude < 0)))
+    throw new Error('Enter a valid point, label, direction, and optional nonnegative magnitude.');
+  const force: FBDForce = { id: forceId, at: { x: input.at.x, y: input.at.y },
+    angle: input.angle, label: input.label.trim(),
+    ...(input.magnitude === undefined ? {} : { magnitude: input.magnitude }) };
+  return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
+    forces: [...state.forces, force] };
 }
 
 export interface FBDHistory { present: FBDState; past: FBDState[]; future: FBDState[] }

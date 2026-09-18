@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Box, RotateCcw, X } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -9,7 +9,8 @@ import { calculatePlanarBeamReactions, type BeamReactionResult } from './calcula
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
 import { createEmptyFBDState, selectFBDTarget, visibleReactions,
-  type FBDState, type FBDTarget } from './fbdState';
+  addFBDForce, type FBDForce, type FBDState, type FBDTarget } from './fbdState';
+import { buildFBDForceArrow } from './fbdForceScene';
 
 type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
 const VIEW_BUTTONS: { label: string; mode: Exclude<ViewMode, 'free'> }[] = [
@@ -55,7 +56,7 @@ function addLine(group: THREE.Group, start: THREE.Vector3, end: THREE.Vector3, c
   group.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color })));
 }
 
-function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState) {
+function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState, selectedForceId: string | null) {
   const group = new THREE.Group();
   const nodes = new Map(workspace.nodes.map((node) => [node.id, node]));
   const points = workspace.nodes.map((node) => new THREE.Vector3(node.x, node.y, 0));
@@ -64,10 +65,8 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState) {
   const size = bounds.isEmpty() ? new THREE.Vector3(1, 1, 0) : bounds.getSize(new THREE.Vector3());
   const span = Math.max(size.x, size.y, 1);
   const target = fbdState.selectedTarget;
-  if (!target) return { group, center, span };
-
-  const selectedMembers = target.kind === 'body' ? workspace.members :
-    target.kind === 'member' ? workspace.members.filter((member) => member.id === target.id) : [];
+  const selectedMembers = target?.kind === 'body' ? workspace.members :
+    target?.kind === 'member' ? workspace.members.filter((member) => member.id === target.id) : [];
   const selectedNodeIds = new Set<string>();
   for (const member of selectedMembers) {
     const start = nodes.get(member.startNodeId);
@@ -84,7 +83,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState) {
     beam.position.copy(from).add(to).multiplyScalar(0.5);
     group.add(beam);
   }
-  if (target.kind === 'joint') selectedNodeIds.add(target.id);
+  if (target?.kind === 'joint') selectedNodeIds.add(target.id);
   for (const nodeId of selectedNodeIds) {
     const node = nodes.get(nodeId);
     if (!node) continue;
@@ -95,12 +94,25 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState) {
     const label = textSprite(node.label || node.id);
     if (label) { label.position.set(node.x, node.y + Math.max(0.28, span * 0.07), 0.1); group.add(label); }
   }
+  for (const force of fbdState.forces) {
+    const arrow = buildFBDForceArrow(force, span, force.id === selectedForceId);
+    group.add(arrow);
+    const radians = force.angle * Math.PI / 180;
+    const length = Math.max(0.65, span * 0.27);
+    const labelText = `${force.label || 'F'}${force.magnitude === undefined ? '' : ` = ${force.magnitude} ${workspace.units.force}`}`;
+    const label = textSprite(labelText, force.id === selectedForceId ? '#c2410c' : '#b91c1c', 0.42);
+    if (label) {
+      label.position.set(force.at.x + Math.cos(radians) * (length + 0.32),
+        force.at.y + Math.sin(radians) * (length + 0.32), 0.2);
+      group.add(label);
+    }
+  }
   return { group, center, span };
 }
 
 function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult | null,
-  showFbd: boolean, fbdState: FBDState) {
-  if (showFbd) return buildFBDModel(workspace, fbdState);
+  showFbd: boolean, fbdState: FBDState, selectedForceId: string | null) {
+  if (showFbd) return buildFBDModel(workspace, fbdState, selectedForceId);
   const group = new THREE.Group();
   const sceneData = selectSceneData(workspace);
   const nodes = new Map(sceneData.nodes.map((node) => [node.id, node]));
@@ -370,7 +382,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   viewCommand?: { view: EngineeringView; sequence: number };
   showFbd: boolean;
   onFbdChange: (visible: boolean) => void;
-  onVisualizationInteraction: (action: VisualizationAction, target?: FBDTarget) => void;
+  onVisualizationInteraction: (action: VisualizationAction, target?: FBDTarget, force?: FBDForce) => void;
 }) {
   const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd } = useStaticsWorkspace();
   const reactionState = useMemo(() => visibleReactions(showFbd, workspace, calculatePlanarBeamReactions),
@@ -389,6 +401,36 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   const [viewMode, setViewMode] = useState<ViewMode>('free');
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
+  const [forceFormOpen, setForceFormOpen] = useState(false);
+  const [forceDraft, setForceDraft] = useState({ x: '0', y: '0', label: 'F', angle: '-90', magnitude: '' });
+  const [forceError, setForceError] = useState('');
+  const [selectedForceId, setSelectedForceId] = useState<string | null>(null);
+  useEffect(() => {
+    if (selectedForceId && !fbdState.forces.some((force) => force.id === selectedForceId))
+      setSelectedForceId(null);
+  }, [fbdState.forces, selectedForceId]);
+  const canvasClickRef = useRef<(event: MouseEvent) => void>(() => {});
+  canvasClickRef.current = (event) => {
+    if (!showFbd || !rendererRef.current || !cameraRef.current) return;
+    const rect = rendererRef.current.domElement.getBoundingClientRect();
+    const pointer = new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1,
+      -((event.clientY - rect.top) / rect.height * 2 - 1));
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(pointer, cameraRef.current);
+    if (forceFormOpen) {
+      const point = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
+      if (point) setForceDraft((current) => ({ ...current, x: point.x.toFixed(2), y: point.y.toFixed(2) }));
+      return;
+    }
+    for (const hit of raycaster.intersectObjects(modelRef.current?.children || [], true)) {
+      let object: THREE.Object3D | null = hit.object;
+      while (object && !object.userData.fbdForceId) object = object.parent;
+      if (object?.userData.fbdForceId) {
+        setSelectedForceId(object.userData.fbdForceId as string);
+        return;
+      }
+    }
+  };
 
   const frameModel = (center: THREE.Vector3, span: number, mode: ViewMode | 'reset') => {
     const camera = cameraRef.current;
@@ -432,6 +474,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     scene.add(light);
     const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
     const controls = new OrbitControls(camera, renderer.domElement);
+    const handleCanvasClick = (event: MouseEvent) => canvasClickRef.current(event);
+    renderer.domElement.addEventListener('click', handleCanvasClick);
     const recordOrbit = () => onInteractionRef.current('orbit');
     controls.addEventListener('end', recordOrbit);
     controls.enableDamping = true;
@@ -465,6 +509,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       observer.disconnect();
       controls.dispose();
       controls.removeEventListener('end', recordOrbit);
+      renderer.domElement.removeEventListener('click', handleCanvasClick);
       if (modelRef.current) {
         scene.remove(modelRef.current);
         disposeGroup(modelRef.current);
@@ -489,7 +534,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       scene.remove(modelRef.current);
       disposeGroup(modelRef.current);
     }
-    const model = buildModel(workspace, reactionState.result, showFbd, fbdState);
+    const model = buildModel(workspace, reactionState.result, showFbd, fbdState, selectedForceId);
     modelRef.current = model.group;
     viewBoundsRef.current = { center: model.center, span: model.span };
     scene.add(model.group);
@@ -498,7 +543,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       framedRef.current = true;
       framedSpanRef.current = model.span;
     }
-  }, [ready, workspace, reactionState, showFbd, fbdState]);
+  }, [ready, workspace, reactionState, showFbd, fbdState, selectedForceId]);
 
   const resetView = () => {
     const bounds = viewBoundsRef.current;
@@ -533,6 +578,37 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     setFbdState((current) => selectFBDTarget(current, target, workspace));
     if (target) onVisualizationInteraction('fbd_select', target);
     else onVisualizationInteraction('fbd_delete');
+  };
+  const openForceForm = () => {
+    if (!fbdState.selectedTarget) return;
+    const target = fbdState.selectedTarget;
+    const joint = target.kind === 'joint' ? workspace.nodes.find((node) => node.id === target.id) : null;
+    const member = target.kind === 'member' ? workspace.members.find((item) => item.id === target.id) : null;
+    const start = member ? workspace.nodes.find((node) => node.id === member.startNodeId) : null;
+    const end = member ? workspace.nodes.find((node) => node.id === member.endNodeId) : null;
+    const x = joint?.x ?? (start && end ? (start.x + end.x) / 2 : 0);
+    const y = joint?.y ?? (start && end ? (start.y + end.y) / 2 : 0);
+    setForceDraft({ x: String(x), y: String(y), label: 'F', angle: '-90', magnitude: '' });
+    setForceError('');
+    setForceFormOpen(true);
+  };
+  const submitForce = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      const forceId = crypto.randomUUID();
+      const input = { at: { x: Number(forceDraft.x), y: Number(forceDraft.y) },
+        label: forceDraft.label, angle: Number(forceDraft.angle),
+        ...(forceDraft.magnitude.trim() ? { magnitude: Number(forceDraft.magnitude) } : {}) };
+      const next = addFBDForce(fbdState, input, workspace, forceId);
+      const force = next.forces[next.forces.length - 1];
+      setFbdState(next);
+      setSelectedForceId(force.id);
+      setForceFormOpen(false);
+      setForceError('');
+      onVisualizationInteraction('fbd_force_add', undefined, force);
+    } catch (caught) {
+      setForceError(caught instanceof Error ? caught.message : 'Could not add force.');
+    }
   };
 
   return (
@@ -571,7 +647,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       </div>
       <div ref={containerRef} className="relative min-h-0 flex-1 bg-slate-50 touch-none">
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
-        {showFbd && !fbdState.selectedTarget && !error &&
+        {showFbd && !fbdState.selectedTarget && fbdState.forces.length === 0 && !error &&
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
             Select a body, member, or joint to begin your free-body diagram.
           </div>}
@@ -590,18 +666,54 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             {targetOptions.map(({ label, target }) =>
               <option key={`${target.kind}:${target.id}`} value={JSON.stringify(target)}>{label}</option>)}
           </select>
-          {['Add Force', 'Add Moment', 'Add Dimension', 'Add Angle', 'Add Label'].map((label) =>
+          <button type="button" disabled={!fbdState.selectedTarget} onClick={openForceForm}
+            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Force</button>
+          {['Add Moment', 'Add Dimension', 'Add Angle', 'Add Label'].map((label) =>
             <button key={label} type="button" disabled title="Drawing tools are coming in the next phase"
               className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-400">{label}</button>)}
-          <button type="button" disabled={!fbdState.selectedTarget} onClick={() => selectTarget(null)}
+          <button type="button" disabled={!selectedForceId && !fbdState.selectedTarget} onClick={() => {
+            if (selectedForceId) {
+              setFbdState((current) => ({ ...current, forces: current.forces.filter((force) => force.id !== selectedForceId) }));
+              setSelectedForceId(null);
+              onVisualizationInteraction('fbd_delete');
+            } else selectTarget(null);
+          }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Delete</button>
           <button type="button" disabled={!canUndoFbd} onClick={() => { undoFbd(); onVisualizationInteraction('fbd_undo'); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Undo</button>
           <button type="button" disabled={!canRedoFbd} onClick={() => { redoFbd(); onVisualizationInteraction('fbd_redo'); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Redo</button>
-          <button type="button" onClick={() => { setFbdState(createEmptyFBDState(workspace)); onVisualizationInteraction('fbd_reset'); }}
+          <button type="button" onClick={() => { setFbdState(createEmptyFBDState(workspace)); setSelectedForceId(null); setForceFormOpen(false); onVisualizationInteraction('fbd_reset'); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs">Reset FBD</button>
         </div>
+        {forceFormOpen && <form onSubmit={submitForce} className="mt-2 grid grid-cols-2 gap-2 text-xs" aria-label="Add force details">
+          <p className="col-span-2 text-slate-600">Choose the application point on the canvas or enter its coordinates.</p>
+          <label>Point X ({workspace.units.length})<input required type="number" step="any" value={forceDraft.x}
+            onChange={(event) => setForceDraft({ ...forceDraft, x: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <label>Point Y ({workspace.units.length})<input required type="number" step="any" value={forceDraft.y}
+            onChange={(event) => setForceDraft({ ...forceDraft, y: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <label>Force label<input required maxLength={80} value={forceDraft.label}
+            onChange={(event) => setForceDraft({ ...forceDraft, label: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <label>Direction (degrees from +X)<input required type="number" step="any" list="fbd-force-angles" value={forceDraft.angle}
+            onChange={(event) => setForceDraft({ ...forceDraft, angle: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" />
+            <datalist id="fbd-force-angles"><option value="0" /><option value="90" /><option value="180" /><option value="-90" /></datalist></label>
+          <label>Magnitude ({workspace.units.force}, optional)<input type="number" min="0" step="any" value={forceDraft.magnitude}
+            onChange={(event) => setForceDraft({ ...forceDraft, magnitude: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <div className="flex items-end gap-2"><button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Add force</button>
+            <button type="button" onClick={() => setForceFormOpen(false)} className="rounded bg-slate-100 px-2 py-1">Cancel</button></div>
+          {forceError && <p className="col-span-2 text-red-700" role="alert">{forceError}</p>}
+        </form>}
+        {fbdState.forces.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD forces">
+          {fbdState.forces.map((force) => <button key={force.id} type="button" aria-pressed={selectedForceId === force.id}
+            onClick={() => setSelectedForceId(force.id)}
+            className={`rounded px-2 py-1 text-xs ${selectedForceId === force.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
+            {force.label || 'F'} ({force.at.x}, {force.at.y})</button>)}
+        </div>}
       </div>}
       {!showFbd && reactionState.error && (
         <p className="border-t border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" role="status">
