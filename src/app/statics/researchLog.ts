@@ -1,6 +1,6 @@
 import type { EngineeringToolBatch } from './engineeringTools.ts';
 import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
-  FBDElement, FBDElementKind, FBDTarget } from './fbdState.ts';
+  FBDElement, FBDElementKind, FBDState, FBDTarget } from './fbdState.ts';
 
 export type VisualizationAction = 'front' | 'top' | 'right' | 'isometric' | 'reset' | 'free' | 'orbit' | 'fbd' |
   'fbd_enter' | 'fbd_exit' | 'fbd_select' | 'fbd_delete' | 'fbd_undo' | 'fbd_redo' | 'fbd_reset' | 'fbd_force_add' | 'fbd_moment_add' | 'fbd_dimension_add' | 'fbd_angle_add' | 'fbd_label_add' | 'fbd_label_move' | 'fbd_element_edit' | 'fbd_element_delete' | 'fbd_element_drag' | 'fbd_element_reposition';
@@ -14,6 +14,7 @@ export type EngineeringResearchEvent = {
   target?: FBDTarget; force?: FBDForce; moment?: FBDMoment; dimension?: FBDDimension; angle?: FBDAngle; label?: FBDLabel;
   elementKind?: FBDElementKind; elementId?: string; before?: FBDElement; after?: FBDElement | null;
   dragTarget?: 'label' | 'application';
+  fbdBefore?: FBDState; fbdAfter?: FBDState;
 };
 
 export function getEngineeringSessionId(storage: Pick<Storage, 'getItem' | 'setItem'>,
@@ -46,9 +47,10 @@ export function createVisualizationResearchEvent(sessionId: string, action: Visu
   target?: FBDTarget, force?: FBDForce, moment?: FBDMoment,
   dimension?: FBDDimension, angle?: FBDAngle, label?: FBDLabel,
   change?: { elementKind: FBDElementKind; elementId: string; before: FBDElement;
-    after: FBDElement | null; dragTarget?: 'label' | 'application' }): EngineeringResearchEvent {
+    after: FBDElement | null; dragTarget?: 'label' | 'application' },
+  history?: { before: FBDState; after: FBDState }): EngineeringResearchEvent {
   return { kind: 'visualization', eventId: newId(), sessionId, timestamp: now(), action,
     ...(target ? { target } : {}), ...(force ? { force } : {}), ...(moment ? { moment } : {}),
     ...(dimension ? { dimension } : {}), ...(angle ? { angle } : {}), ...(label ? { label } : {}),
-    ...(change || {}) };
+    ...(change || {}), ...(history ? { fbdBefore: history.before, fbdAfter: history.after } : {}) };
 }

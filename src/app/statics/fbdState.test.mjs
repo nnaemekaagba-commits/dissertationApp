@@ -59,6 +59,73 @@ test('selection supports undo, redo, and reset without changing EngineeringState
   assert.equal(workspace.nodes[0].id, 'A');
 });
 
+test('multi-step FBD history undoes and redoes adds, edits, deletion, and repositioning', () => {
+  const engineeringBefore = JSON.stringify(workspace);
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const changes = [
+    (state) => addFBDForce(state, { at: { x: 1, y: 0 }, angle: -90, label: 'P', magnitude: 10 }, workspace, 'force-1'),
+    (state) => addFBDMoment(state, { at: { x: 2, y: 0 }, clockwise: true, label: 'M' }, workspace, 'moment-1'),
+    (state) => addFBDDimension(state, { start: { x: 0, y: 0 }, end: { x: 2, y: 0 }, label: '2 m' }, workspace, 'dimension-1'),
+    (state) => addFBDAngle(state, { vertex: { x: 0, y: 0 }, from: { x: 1, y: 0 },
+      to: { x: 0, y: 1 }, label: '30°' }, workspace, 'angle-1'),
+    (state) => addFBDLabel(state, { at: { x: 1, y: 1 }, text: 'Given' }, workspace, 'label-1'),
+    (state) => editFBDForce(state, 'force-1', { at: { x: 1, y: 0 }, angle: 45, label: 'Q' }, workspace),
+    (state) => deleteFBDElement(state, 'moment', 'moment-1'),
+    (state) => repositionFBDLabel(state, 'dimension', 'dimension-1', { x: 3, y: 2 }),
+    (state) => moveFBDForceApplication(state, 'force-1', { x: 2, y: 0 }, workspace),
+  ];
+  let history = createFBDHistory(selected);
+  const snapshots = [selected];
+  for (const change of changes) {
+    history = applyFBDChange(history, change(history.present));
+    snapshots.push(history.present);
+  }
+  assert.equal(history.past.length, changes.length);
+  assert.deepEqual(history.present.forces[0].at, { x: 2, y: 0 });
+  assert.deepEqual(history.present.dimensions[0].labelPosition, { x: 3, y: 2 });
+  for (let index = changes.length - 1; index >= 0; index--) {
+    const before = history.present;
+    history = undoFBDChange(history);
+    assert.deepEqual(history.present, snapshots[index]);
+    assert.equal(history.future[0], before);
+  }
+  assert.equal(history.past.length, 0);
+  assert.equal(history.future.length, changes.length);
+  const unchanged = undoFBDChange(history);
+  assert.deepEqual(unchanged, history);
+  for (let index = 1; index <= changes.length; index++) {
+    history = redoFBDChange(history);
+    assert.deepEqual(history.present, snapshots[index]);
+  }
+  assert.equal(history.future.length, 0);
+  assert.deepEqual(redoFBDChange(history), history);
+  assert.equal(JSON.stringify(workspace), engineeringBefore);
+  let solverCalls = 0;
+  assert.equal(visibleReactions(true, workspace, () => { solverCalls++; return {}; }).result, null);
+  assert.equal(solverCalls, 0);
+});
+
+test('a new FBD action after undo clears redo, and history logging records exact snapshots', () => {
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const first = applyFBDChange(createFBDHistory(selected), addFBDLabel(selected,
+    { at: { x: 1, y: 0 }, text: 'A' }, workspace, 'label-1'));
+  const second = applyFBDChange(first, addFBDForce(first.present,
+    { at: { x: 2, y: 0 }, angle: -90, label: 'P' }, workspace, 'force-1'));
+  const undone = undoFBDChange(second);
+  const event = createVisualizationResearchEvent('session-1', 'fbd_undo',
+    () => 'event-1', () => '2026-09-18T12:00:00.000Z', undefined, undefined, undefined,
+    undefined, undefined, undefined, undefined, { before: second.present, after: undone.present });
+  assert.deepEqual(event.fbdBefore, second.present);
+  assert.deepEqual(event.fbdAfter, undone.present);
+  assert.equal(event.sessionId, 'session-1');
+  const revised = applyFBDChange(undone, editFBDLabel(undone.present, 'label-1',
+    { at: { x: 2, y: 1 }, text: 'B' }, workspace));
+  assert.equal(revised.future.length, 0);
+  assert.deepEqual(redoFBDChange(revised), revised);
+  assert.deepEqual(revised.present.labels[0].text, 'B');
+  assert.deepEqual(revised.present.forces, []);
+});
+
 test('entering Build FBD Mode never invokes the solver', () => {
   let calls = 0;
   const solver = () => { calls += 1; return { reactions: [] }; };

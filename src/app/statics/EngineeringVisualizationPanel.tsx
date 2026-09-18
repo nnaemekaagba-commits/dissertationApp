@@ -470,7 +470,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension, angle?: FBDAngle,
     label?: FBDLabel,
     change?: { elementKind: FBDElementKind; elementId: string; before: FBDElement;
-      after: FBDElement | null; dragTarget?: 'label' | 'application' }) => void;
+      after: FBDElement | null; dragTarget?: 'label' | 'application' },
+    history?: { before: FBDState; after: FBDState }) => void;
 }) {
   const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd } = useStaticsWorkspace();
   const reactionState = useMemo(() => visibleReactions(showFbd, workspace, calculatePlanarBeamReactions),
@@ -1230,9 +1231,13 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Label</button>
           <button type="button" disabled={!selectedElement} onClick={deleteSelected}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Delete Selected</button>
-          <button type="button" disabled={!canUndoFbd} onClick={() => { undoFbd(); onVisualizationInteraction('fbd_undo'); }}
+          <button type="button" disabled={!canUndoFbd} onClick={() => { const transition = undoFbd();
+            if (transition) onVisualizationInteraction('fbd_undo', undefined, undefined, undefined,
+              undefined, undefined, undefined, undefined, transition); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Undo</button>
-          <button type="button" disabled={!canRedoFbd} onClick={() => { redoFbd(); onVisualizationInteraction('fbd_redo'); }}
+          <button type="button" disabled={!canRedoFbd} onClick={() => { const transition = redoFbd();
+            if (transition) onVisualizationInteraction('fbd_redo', undefined, undefined, undefined,
+              undefined, undefined, undefined, undefined, transition); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Redo</button>
           <button type="button" onClick={() => { setFbdState(createEmptyFBDState(workspace)); setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null); setSelectedLabelId(null); setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false); setAngleFormOpen(false); setLabelFormOpen(false); setLabelMoveMode(false); onVisualizationInteraction('fbd_reset'); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs">Reset FBD</button>

@@ -5,13 +5,15 @@ import { applyFBDChange, associateFBDState, createFBDHistory, loadFBDState,
   parseFBDState, redoFBDChange, saveFBDState, undoFBDChange,
   type FBDHistory, type FBDState } from './fbdState';
 
+export type FBDHistoryTransition = { before: FBDState; after: FBDState };
+
 interface StaticsWorkspaceContextValue {
   workspace: StaticsWorkspace;
   setWorkspace: (next: StaticsWorkspace | ((current: StaticsWorkspace) => StaticsWorkspace)) => void;
   fbdState: FBDState;
   setFbdState: (next: FBDState | ((current: FBDState) => FBDState)) => void;
-  undoFbd: () => void;
-  redoFbd: () => void;
+  undoFbd: () => FBDHistoryTransition | null;
+  redoFbd: () => FBDHistoryTransition | null;
   canUndoFbd: boolean;
   canRedoFbd: boolean;
 }
@@ -50,14 +52,20 @@ function StaticsWorkspaceProvider({ userId, children }, controllerRef) {
     setFbdHistory(updated);
   };
   const undoFbd = () => {
-    const updated = undoFBDChange(fbdHistoryRef.current);
+    const current = fbdHistoryRef.current;
+    if (!current.past.length) return null;
+    const updated = undoFBDChange(current);
     fbdHistoryRef.current = updated;
     setFbdHistory(updated);
+    return { before: current.present, after: updated.present };
   };
   const redoFbd = () => {
-    const updated = redoFBDChange(fbdHistoryRef.current);
+    const current = fbdHistoryRef.current;
+    if (!current.future.length) return null;
+    const updated = redoFBDChange(current);
     fbdHistoryRef.current = updated;
     setFbdHistory(updated);
+    return { before: current.present, after: updated.present };
   };
 
   // Chat runs in the parent App; this controller points at the same provider state.
