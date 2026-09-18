@@ -672,8 +672,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   };
 
   return (
-    <aside className="absolute inset-0 z-20 flex flex-col border-l border-slate-200 bg-white md:relative md:inset-auto md:z-auto md:w-[min(40vw,480px)] md:flex-shrink-0" aria-label="Engineering visualization">
-      <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
+    <aside className="absolute inset-0 z-20 flex h-full max-h-full min-h-0 flex-col overflow-hidden border-l border-slate-200 bg-white md:relative md:inset-auto md:z-auto md:w-[min(40vw,480px)] md:flex-shrink-0" aria-label="Engineering visualization">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <Box className="size-4 text-blue-600" />
           <div className="min-w-0">
@@ -685,7 +685,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
           <button type="button" onClick={onClose} className="rounded p-1.5 text-slate-600 hover:bg-slate-100" title="Close visualization" aria-label="Close visualization"><X className="size-4" /></button>
         </div>
       </div>
-      <div className="flex gap-1 overflow-x-auto border-b border-slate-200 px-2 py-2" aria-label={showFbd ? 'Build FBD mode' : 'Camera views'}>
+      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200 px-2 py-2" aria-label={showFbd ? 'Build FBD mode' : 'Camera views'}>
         {!showFbd && VIEW_BUTTONS.map(({ label, mode }) => (
           <button key={mode} type="button" onClick={() => selectView(mode)} aria-pressed={viewMode === mode}
             className={`shrink-0 rounded px-2 py-1 text-xs ${viewMode === mode ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
@@ -705,14 +705,14 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
           {showFbd ? 'Return to Structure' : 'FBD'}
         </button>
       </div>
-      <div ref={containerRef} className="relative min-h-0 flex-1 bg-slate-50 touch-none">
+      <div ref={containerRef} className="relative min-h-0 basis-0 flex-1 bg-slate-50 touch-none">
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
         {showFbd && !fbdState.selectedTarget && fbdState.forces.length === 0 && fbdState.moments.length === 0 && !error &&
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
             Select a body, member, or joint to begin your free-body diagram.
           </div>}
       </div>
-      {showFbd && <div className="border-t border-slate-200 px-3 py-2" aria-label="FBD construction toolbar">
+      {showFbd && <div className="max-h-[45%] min-h-0 shrink-0 overflow-y-auto border-t border-slate-200 px-3 py-2" aria-label="FBD construction toolbar">
         <div className="flex flex-wrap items-center gap-1.5">
           <label className="text-xs font-medium text-slate-700" htmlFor="fbd-target-select">Select Body/Member/Joint</label>
           <select id="fbd-target-select" aria-label="Select Body/Member/Joint"
