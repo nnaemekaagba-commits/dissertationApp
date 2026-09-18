@@ -17,6 +17,7 @@ import { executeEngineeringToolBatch, formatEngineeringToolBatch,
   type EngineeringToolBatch, type EngineeringToolCall, type EngineeringView } from './statics/engineeringTools';
 import { createToolResearchEvents, createVisualizationResearchEvent, getEngineeringSessionId,
   type EngineeringResearchEvent, type VisualizationAction } from './statics/researchLog';
+import type { FBDTarget } from './statics/fbdState';
 
 const EngineeringVisualizationPanel = lazy(() =>
   import('./statics/EngineeringVisualizationPanel').then(({ EngineeringVisualizationPanel }) => ({ default: EngineeringVisualizationPanel }))
@@ -1245,6 +1246,7 @@ export default function App() {
   const [showArchive, setShowArchive] = useState(false);
   const [showEngineeringPanel, setShowEngineeringPanel] = useState(() => window.innerWidth >= 768);
   const [showFbd, setShowFbd] = useState(false);
+  const previousFbdModeRef = useRef(false);
   const [viewCommand, setViewCommand] = useState<{ view: EngineeringView; sequence: number }>();
   const staticsControllerRef = useRef<StaticsWorkspaceController | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -1309,11 +1311,18 @@ export default function App() {
     if (!response.ok) throw new Error(`Research event was not saved (${response.status}).`);
   }, [buildApiHeaders]);
 
-  const recordVisualizationInteraction = useCallback((action: VisualizationAction) => {
+  const recordVisualizationInteraction = useCallback((action: VisualizationAction, target?: FBDTarget) => {
     if (!userId) return;
-    const event = createVisualizationResearchEvent(getEngineeringSessionId(sessionStorage, userId), action);
+    const event = createVisualizationResearchEvent(getEngineeringSessionId(sessionStorage, userId), action,
+      undefined, undefined, target);
     void recordEngineeringEvent(event).catch((error) => console.warn('Visualization event logging failed.', error));
   }, [recordEngineeringEvent, userId]);
+
+  useEffect(() => {
+    if (previousFbdModeRef.current === showFbd) return;
+    previousFbdModeRef.current = showFbd;
+    recordVisualizationInteraction(showFbd ? 'fbd_enter' : 'fbd_exit');
+  }, [showFbd, recordVisualizationInteraction]);
 
   const loadLocalArchive = useCallback((currentUserId: string) => {
     try {

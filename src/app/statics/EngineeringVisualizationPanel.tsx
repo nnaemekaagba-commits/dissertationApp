@@ -8,6 +8,8 @@ import type { VisualizationAction } from './researchLog';
 import { calculatePlanarBeamReactions, type BeamReactionResult } from './calculations';
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
+import { createEmptyFBDState, selectFBDTarget, visibleReactions,
+  type FBDState, type FBDTarget } from './fbdState';
 
 type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
 const VIEW_BUTTONS: { label: string; mode: Exclude<ViewMode, 'free'> }[] = [
@@ -53,7 +55,52 @@ function addLine(group: THREE.Group, start: THREE.Vector3, end: THREE.Vector3, c
   group.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color })));
 }
 
-function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult | null, showFbd: boolean) {
+function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState) {
+  const group = new THREE.Group();
+  const nodes = new Map(workspace.nodes.map((node) => [node.id, node]));
+  const points = workspace.nodes.map((node) => new THREE.Vector3(node.x, node.y, 0));
+  const bounds = new THREE.Box3().setFromPoints(points);
+  const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
+  const size = bounds.isEmpty() ? new THREE.Vector3(1, 1, 0) : bounds.getSize(new THREE.Vector3());
+  const span = Math.max(size.x, size.y, 1);
+  const target = fbdState.selectedTarget;
+  if (!target) return { group, center, span };
+
+  const selectedMembers = target.kind === 'body' ? workspace.members :
+    target.kind === 'member' ? workspace.members.filter((member) => member.id === target.id) : [];
+  const selectedNodeIds = new Set<string>();
+  for (const member of selectedMembers) {
+    const start = nodes.get(member.startNodeId);
+    const end = nodes.get(member.endNodeId);
+    if (!start || !end) continue;
+    selectedNodeIds.add(start.id);
+    selectedNodeIds.add(end.id);
+    const from = new THREE.Vector3(start.x, start.y, 0);
+    const to = new THREE.Vector3(end.x, end.y, 0);
+    const vector = to.clone().sub(from);
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, vector.length(), 12),
+      new THREE.MeshStandardMaterial({ color: 0x2563eb }));
+    beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), vector.normalize());
+    beam.position.copy(from).add(to).multiplyScalar(0.5);
+    group.add(beam);
+  }
+  if (target.kind === 'joint') selectedNodeIds.add(target.id);
+  for (const nodeId of selectedNodeIds) {
+    const node = nodes.get(nodeId);
+    if (!node) continue;
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10),
+      new THREE.MeshStandardMaterial({ color: 0x0f172a }));
+    marker.position.set(node.x, node.y, 0.04);
+    group.add(marker);
+    const label = textSprite(node.label || node.id);
+    if (label) { label.position.set(node.x, node.y + Math.max(0.28, span * 0.07), 0.1); group.add(label); }
+  }
+  return { group, center, span };
+}
+
+function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult | null,
+  showFbd: boolean, fbdState: FBDState) {
+  if (showFbd) return buildFBDModel(workspace, fbdState);
   const group = new THREE.Group();
   const sceneData = selectSceneData(workspace);
   const nodes = new Map(sceneData.nodes.map((node) => [node.id, node]));
@@ -323,16 +370,11 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   viewCommand?: { view: EngineeringView; sequence: number };
   showFbd: boolean;
   onFbdChange: (visible: boolean) => void;
-  onVisualizationInteraction: (action: VisualizationAction) => void;
+  onVisualizationInteraction: (action: VisualizationAction, target?: FBDTarget) => void;
 }) {
-  const { workspace } = useStaticsWorkspace();
-  const reactionState = useMemo(() => {
-    try {
-      return { result: calculatePlanarBeamReactions(workspace), error: '' };
-    } catch (error) {
-      return { result: null, error: error instanceof Error ? error.message : 'Cannot calculate reactions.' };
-    }
-  }, [workspace]);
+  const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd } = useStaticsWorkspace();
+  const reactionState = useMemo(() => visibleReactions(showFbd, workspace, calculatePlanarBeamReactions),
+    [workspace, showFbd]);
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -447,7 +489,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       scene.remove(modelRef.current);
       disposeGroup(modelRef.current);
     }
-    const model = buildModel(workspace, reactionState.result, showFbd);
+    const model = buildModel(workspace, reactionState.result, showFbd, fbdState);
     modelRef.current = model.group;
     viewBoundsRef.current = { center: model.center, span: model.span };
     scene.add(model.group);
@@ -456,7 +498,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       framedRef.current = true;
       framedSpanRef.current = model.span;
     }
-  }, [ready, workspace, reactionState, showFbd]);
+  }, [ready, workspace, reactionState, showFbd, fbdState]);
 
   const resetView = () => {
     const bounds = viewBoundsRef.current;
@@ -480,6 +522,19 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     else selectView(viewCommand.view);
   }, [ready, viewCommand?.sequence]);
 
+  const targetOptions: { label: string; target: FBDTarget }[] = [
+    { label: 'Body · Entire structure', target: { kind: 'body', id: 'structure' } },
+    ...workspace.members.map((member) => ({ label: `Member · ${member.label || member.id}`,
+      target: { kind: 'member' as const, id: member.id } })),
+    ...workspace.nodes.map((node) => ({ label: `Joint · ${node.label || node.id}`,
+      target: { kind: 'joint' as const, id: node.id } })),
+  ];
+  const selectTarget = (target: FBDTarget | null) => {
+    setFbdState((current) => selectFBDTarget(current, target, workspace));
+    if (target) onVisualizationInteraction('fbd_select', target);
+    else onVisualizationInteraction('fbd_delete');
+  };
+
   return (
     <aside className="absolute inset-0 z-20 flex flex-col border-l border-slate-200 bg-white md:relative md:inset-auto md:z-auto md:w-[min(40vw,480px)] md:flex-shrink-0" aria-label="Engineering visualization">
       <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
@@ -494,37 +549,69 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
           <button type="button" onClick={onClose} className="rounded p-1.5 text-slate-600 hover:bg-slate-100" title="Close visualization" aria-label="Close visualization"><X className="size-4" /></button>
         </div>
       </div>
-      <div className="flex gap-1 overflow-x-auto border-b border-slate-200 px-2 py-2" aria-label="Camera views">
-        {VIEW_BUTTONS.map(({ label, mode }) => (
+      <div className="flex gap-1 overflow-x-auto border-b border-slate-200 px-2 py-2" aria-label={showFbd ? 'Build FBD mode' : 'Camera views'}>
+        {!showFbd && VIEW_BUTTONS.map(({ label, mode }) => (
           <button key={mode} type="button" onClick={() => selectView(mode)} aria-pressed={viewMode === mode}
             className={`shrink-0 rounded px-2 py-1 text-xs ${viewMode === mode ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
             {label}
           </button>
         ))}
-        <button type="button" onClick={resetView} className="flex shrink-0 items-center gap-1 rounded bg-slate-100 px-2 py-1 text-xs text-slate-700 hover:bg-slate-200">
+        {!showFbd && <button type="button" onClick={resetView} className="flex shrink-0 items-center gap-1 rounded bg-slate-100 px-2 py-1 text-xs text-slate-700 hover:bg-slate-200">
           <RotateCcw className="size-3" /> Reset View
-        </button>
-        <button type="button" onClick={() => selectView('free')} aria-pressed={viewMode === 'free'}
+        </button>}
+        {!showFbd && <button type="button" onClick={() => selectView('free')} aria-pressed={viewMode === 'free'}
           className={`shrink-0 rounded px-2 py-1 text-xs ${viewMode === 'free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
           Free Orbit
-        </button>
-        <button type="button" onClick={() => { onFbdChange(!showFbd); onVisualizationInteraction('fbd'); }} aria-pressed={showFbd}
+        </button>}
+        {showFbd && <span className="self-center px-2 text-xs font-medium text-emerald-800">Build FBD Mode</span>}
+        <button type="button" onClick={() => onFbdChange(!showFbd)} aria-pressed={showFbd}
           className={`shrink-0 rounded px-2 py-1 text-xs ${showFbd ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
-          FBD
+          {showFbd ? 'Return to Structure' : 'FBD'}
         </button>
       </div>
       <div ref={containerRef} className="relative min-h-0 flex-1 bg-slate-50 touch-none">
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
+        {showFbd && !fbdState.selectedTarget && !error &&
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
+            Select a body, member, or joint to begin your free-body diagram.
+          </div>}
       </div>
-      {reactionState.error && (
+      {showFbd && <div className="border-t border-slate-200 px-3 py-2" aria-label="FBD construction toolbar">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <label className="text-xs font-medium text-slate-700" htmlFor="fbd-target-select">Select Body/Member/Joint</label>
+          <select id="fbd-target-select" aria-label="Select Body/Member/Joint"
+            className="max-w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+            value={fbdState.selectedTarget ? JSON.stringify(fbdState.selectedTarget) : ''}
+            onChange={(event) => {
+              const option = targetOptions.find((item) => JSON.stringify(item.target) === event.target.value);
+              selectTarget(option?.target || null);
+            }}>
+            <option value="">Select a body, member, or joint</option>
+            {targetOptions.map(({ label, target }) =>
+              <option key={`${target.kind}:${target.id}`} value={JSON.stringify(target)}>{label}</option>)}
+          </select>
+          {['Add Force', 'Add Moment', 'Add Dimension', 'Add Angle', 'Add Label'].map((label) =>
+            <button key={label} type="button" disabled title="Drawing tools are coming in the next phase"
+              className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-400">{label}</button>)}
+          <button type="button" disabled={!fbdState.selectedTarget} onClick={() => selectTarget(null)}
+            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Delete</button>
+          <button type="button" disabled={!canUndoFbd} onClick={() => { undoFbd(); onVisualizationInteraction('fbd_undo'); }}
+            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Undo</button>
+          <button type="button" disabled={!canRedoFbd} onClick={() => { redoFbd(); onVisualizationInteraction('fbd_redo'); }}
+            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Redo</button>
+          <button type="button" onClick={() => { setFbdState(createEmptyFBDState(workspace)); onVisualizationInteraction('fbd_reset'); }}
+            className="rounded bg-slate-100 px-2 py-1 text-xs">Reset FBD</button>
+        </div>
+      </div>}
+      {!showFbd && reactionState.error && (
         <p className="border-t border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" role="status">
           Reactions unavailable: {reactionState.error}
         </p>
       )}
-      <div className="border-t border-slate-200 px-3 py-2 text-[11px] text-slate-500">
+      {!showFbd && <div className="border-t border-slate-200 px-3 py-2 text-[11px] text-slate-500">
         <p>Ask the chat to move or add loads, change supports, or resize the beam.</p>
         <p>{viewMode === 'free' ? 'Drag to rotate' : 'Free Orbit enables rotation'} · Scroll to zoom · Right drag to pan · Length: {workspace.units.length} · Force: {workspace.units.force}</p>
-      </div>
+      </div>}
     </aside>
   );
 }

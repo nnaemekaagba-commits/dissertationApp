@@ -1,0 +1,139 @@
+import type { StaticsWorkspace } from './model.ts';
+
+export type FBDTarget = { kind: 'body' | 'member' | 'joint'; id: string };
+export type FBDPoint = { x: number; y: number };
+export type FBDForce = { id: string; at: FBDPoint; angle: number; magnitude?: number; label?: string };
+export type FBDMoment = { id: string; at: FBDPoint; clockwise: boolean; magnitude?: number; label?: string };
+export type FBDDimension = { id: string; start: FBDPoint; end: FBDPoint; label?: string };
+export type FBDAngle = { id: string; vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label?: string };
+export type FBDLabel = { id: string; at: FBDPoint; text: string };
+
+/** Student-created diagram data. EngineeringState is never copied or edited here. */
+export interface FBDState {
+  version: 1;
+  sourceStructureKey: string;
+  selectedTarget: FBDTarget | null;
+  forces: FBDForce[];
+  moments: FBDMoment[];
+  dimensions: FBDDimension[];
+  angles: FBDAngle[];
+  labels: FBDLabel[];
+}
+
+export interface FBDStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+export function engineeringStructureKey(workspace: StaticsWorkspace): string {
+  const text = JSON.stringify(workspace);
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = Math.imul(hash ^ text.charCodeAt(index), 16777619);
+  }
+  return `structure-${(hash >>> 0).toString(16)}`;
+}
+
+export function createEmptyFBDState(workspace: StaticsWorkspace): FBDState {
+  return { version: 1, sourceStructureKey: engineeringStructureKey(workspace), selectedTarget: null,
+    forces: [], moments: [], dimensions: [], angles: [], labels: [] };
+}
+
+function validTarget(target: FBDTarget, workspace: StaticsWorkspace): boolean {
+  return target.kind === 'body' ? target.id === 'structure' :
+    target.kind === 'member' ? workspace.members.some((member) => member.id === target.id) :
+      target.kind === 'joint' && workspace.nodes.some((node) => node.id === target.id);
+}
+
+export function selectFBDTarget(state: FBDState, target: FBDTarget | null,
+  workspace: StaticsWorkspace): FBDState {
+  if (target && !validTarget(target, workspace)) throw new Error('Unknown FBD body, member, or joint.');
+  return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
+    selectedTarget: target ? { ...target } : null };
+}
+
+export interface FBDHistory { present: FBDState; past: FBDState[]; future: FBDState[] }
+export const createFBDHistory = (present: FBDState): FBDHistory => ({ present, past: [], future: [] });
+export function applyFBDChange(history: FBDHistory, next: FBDState): FBDHistory {
+  if (JSON.stringify(history.present) === JSON.stringify(next)) return history;
+  return { present: next, past: [...history.past, history.present].slice(-50), future: [] };
+}
+export function undoFBDChange(history: FBDHistory): FBDHistory {
+  if (!history.past.length) return history;
+  return { present: history.past[history.past.length - 1], past: history.past.slice(0, -1),
+    future: [history.present, ...history.future] };
+}
+export function redoFBDChange(history: FBDHistory): FBDHistory {
+  if (!history.future.length) return history;
+  return { present: history.future[0], past: [...history.past, history.present].slice(-50),
+    future: history.future.slice(1) };
+}
+
+export function associateFBDState(state: FBDState, workspace: StaticsWorkspace): FBDState {
+  return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
+    selectedTarget: state.selectedTarget && validTarget(state.selectedTarget, workspace)
+      ? state.selectedTarget : null };
+}
+
+export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDState {
+  const fail = (): never => { throw new Error('Invalid FBD state.'); };
+  const object = (value: unknown): Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : fail();
+  const id = (value: unknown): string => typeof value === 'string' && value.trim() ? value : fail();
+  const number = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) ? value : fail();
+  const point = (value: unknown): FBDPoint => { const row = object(value); return { x: number(row.x), y: number(row.y) }; };
+  const label = (value: unknown): string | undefined => value === undefined ? undefined : typeof value === 'string' ? value : fail();
+  const rows = <T>(value: unknown, read: (item: Record<string, unknown>) => T): T[] =>
+    Array.isArray(value) ? value.map((item) => read(object(item))) : fail();
+  const root = object(input);
+  if (root.version !== 1) fail();
+  const target = root.selectedTarget === null ? null : object(root.selectedTarget);
+  const selectedTarget: FBDTarget | null = target ? {
+    kind: target.kind === 'body' || target.kind === 'member' || target.kind === 'joint' ? target.kind : fail(),
+    id: id(target.id),
+  } : null;
+  const output: FBDState = {
+    version: 1, sourceStructureKey: id(root.sourceStructureKey), selectedTarget,
+    forces: rows(root.forces, (row) => ({ id: id(row.id), at: point(row.at), angle: number(row.angle),
+      ...(row.magnitude === undefined ? {} : { magnitude: number(row.magnitude) }),
+      ...(row.label === undefined ? {} : { label: label(row.label) }) })),
+    moments: rows(root.moments, (row) => ({ id: id(row.id), at: point(row.at),
+      clockwise: typeof row.clockwise === 'boolean' ? row.clockwise : fail(),
+      ...(row.magnitude === undefined ? {} : { magnitude: number(row.magnitude) }),
+      ...(row.label === undefined ? {} : { label: label(row.label) }) })),
+    dimensions: rows(root.dimensions, (row) => ({ id: id(row.id), start: point(row.start), end: point(row.end),
+      ...(row.label === undefined ? {} : { label: label(row.label) }) })),
+    angles: rows(root.angles, (row) => ({ id: id(row.id), vertex: point(row.vertex),
+      from: point(row.from), to: point(row.to), ...(row.label === undefined ? {} : { label: label(row.label) }) })),
+    labels: rows(root.labels, (row) => ({ id: id(row.id), at: point(row.at), text: id(row.text) })),
+  };
+  for (const key of ['forces', 'moments', 'dimensions', 'angles', 'labels'] as const) {
+    if (new Set(output[key].map((item) => item.id)).size !== output[key].length) fail();
+  }
+  return associateFBDState(output, workspace);
+}
+
+export const fbdStorageKey = (userId: string) => `mydis-fbd:v1:${encodeURIComponent(userId)}`;
+export function loadFBDState(storage: FBDStorage, userId: string, workspace: StaticsWorkspace): FBDState {
+  if (!userId.trim()) throw new Error('User ID is required.');
+  try {
+    const saved = storage.getItem(fbdStorageKey(userId));
+    return saved ? parseFBDState(JSON.parse(saved), workspace) : createEmptyFBDState(workspace);
+  } catch (error) {
+    console.warn('Could not restore FBD state; starting empty.', error);
+    return createEmptyFBDState(workspace);
+  }
+}
+export function saveFBDState(storage: FBDStorage, userId: string, state: FBDState,
+  workspace: StaticsWorkspace): void {
+  if (!userId.trim()) throw new Error('User ID is required.');
+  storage.setItem(fbdStorageKey(userId), JSON.stringify(parseFBDState(state, workspace)));
+}
+
+/** Viewer calls this only for Structure Mode; Build FBD Mode cannot invoke the solver. */
+export function visibleReactions<T>(buildFbdMode: boolean, workspace: StaticsWorkspace,
+  solve: (value: StaticsWorkspace) => T): { result: T | null; error: string } {
+  if (buildFbdMode) return { result: null, error: '' };
+  try { return { result: solve(workspace), error: '' }; }
+  catch (error) { return { result: null, error: error instanceof Error ? error.message : 'Cannot calculate reactions.' }; }
+}
