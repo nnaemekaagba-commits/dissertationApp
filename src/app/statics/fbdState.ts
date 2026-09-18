@@ -9,6 +9,7 @@ export type FBDMomentInput = { at: FBDPoint; clockwise: boolean; label: string; 
 export type FBDDimension = { id: string; start: FBDPoint; end: FBDPoint; label?: string };
 export type FBDDimensionInput = { start: FBDPoint; end: FBDPoint; label: string };
 export type FBDAngle = { id: string; vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label?: string };
+export type FBDAngleInput = { vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label: string };
 export type FBDLabel = { id: string; at: FBDPoint; text: string };
 
 /** Student-created diagram data. EngineeringState is never copied or edited here. */
@@ -107,6 +108,31 @@ export function addFBDDimension(state: FBDState, input: FBDDimensionInput,
     start: { x: start.x, y: start.y }, end: { x: end.x, y: end.y }, label: input.label.trim() };
   return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
     dimensions: [...state.dimensions, dimension] };
+}
+
+/** Stores two student-chosen reference rays and their text without finding an angle value. */
+export function addFBDAngle(state: FBDState, input: FBDAngleInput,
+  workspace: StaticsWorkspace, angleId: string): FBDState {
+  if (!state.selectedTarget || !validTarget(state.selectedTarget, workspace))
+    throw new Error('Select a body, member, or joint before adding an angle.');
+  if (!angleId.trim() || state.angles.some((angle) => angle.id === angleId))
+    throw new Error('Angle ID must be unique.');
+  const { vertex, from, to } = input;
+  if (![vertex.x, vertex.y, from.x, from.y, to.x, to.y].every(Number.isFinite) ||
+    !input.label.trim() || input.label.length > 120)
+    throw new Error('Enter a vertex, two reference directions, and angle text.');
+  const first = { x: from.x - vertex.x, y: from.y - vertex.y };
+  const second = { x: to.x - vertex.x, y: to.y - vertex.y };
+  const firstLength = Math.hypot(first.x, first.y);
+  const secondLength = Math.hypot(second.x, second.y);
+  if (firstLength < 1e-9 || secondLength < 1e-9 ||
+    (Math.abs(first.x * second.y - first.y * second.x) / (firstLength * secondLength) < 1e-9 &&
+      first.x * second.x + first.y * second.y > 0))
+    throw new Error('Choose two distinct reference directions from the vertex.');
+  const angle: FBDAngle = { id: angleId,
+    vertex: { x: vertex.x, y: vertex.y }, from: { x: from.x, y: from.y },
+    to: { x: to.x, y: to.y }, label: input.label.trim() };
+  return { ...state, sourceStructureKey: engineeringStructureKey(workspace), angles: [...state.angles, angle] };
 }
 
 export interface FBDHistory { present: FBDState; past: FBDState[]; future: FBDState[] }

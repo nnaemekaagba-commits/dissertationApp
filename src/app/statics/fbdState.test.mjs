@@ -4,12 +4,13 @@ import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { createEmptyFBDState, engineeringStructureKey, fbdStorageKey, loadFBDState,
-  saveFBDState, selectFBDTarget, addFBDForce, addFBDMoment, addFBDDimension,
+  saveFBDState, selectFBDTarget, addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle,
   visibleReactions, createFBDHistory, applyFBDChange,
   undoFBDChange, redoFBDChange } from './fbdState.ts';
 import { buildFBDForceArrow } from './fbdForceScene.ts';
 import { buildFBDMomentArrow, momentArcPoints } from './fbdMomentScene.ts';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene.ts';
+import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene.ts';
 import { createVisualizationResearchEvent } from './researchLog.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
@@ -257,4 +258,64 @@ test('dimension addition does not calculate a value or invoke the solver and is 
   assert.equal(event.sessionId, 'session-1');
   assert.equal(event.timestamp, '2026-09-18T12:00:00.000Z');
   assert.deepEqual(event.dimension, added.dimensions[0]);
+});
+
+test('student angle persists exact text and chosen references without changing EngineeringState', () => {
+  const before = JSON.stringify(workspace);
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'member', id: 'AB' }, workspace);
+  const input = { vertex: { x: 1, y: 0 }, from: { x: 2, y: 0 },
+    to: { x: 1, y: 2 }, label: '30°' };
+  const added = addFBDAngle(selected, input, workspace, 'angle-1');
+  assert.deepEqual(added.angles, [{ id: 'angle-1', ...input }]);
+  assert.equal(JSON.stringify(workspace), before);
+  const records = new Map();
+  const storage = { getItem: (key) => records.get(key) ?? null, setItem: (key, value) => records.set(key, value) };
+  saveFBDState(storage, 'angle-student', added, workspace);
+  assert.deepEqual(loadFBDState(storage, 'angle-student', workspace), added);
+});
+
+test('angle creation requires a target, text, unique ID, finite points, and distinct rays', () => {
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+  const input = { vertex: { x: 0, y: 0 }, from: { x: 1, y: 0 },
+    to: { x: 0, y: 1 }, label: 'θ' };
+  const added = addFBDAngle(selected, input, workspace, 'angle-1');
+  assert.throws(() => addFBDAngle(added, input, workspace, 'angle-1'), /unique/);
+  assert.throws(() => addFBDAngle(selected, { ...input, label: ' ' }, workspace, 'angle-2'), /angle text/);
+  assert.throws(() => addFBDAngle(selected, { ...input, from: input.vertex }, workspace, 'angle-2'), /distinct/);
+  assert.throws(() => addFBDAngle(selected, { ...input, to: { x: 2, y: 0 } }, workspace, 'angle-2'), /distinct/);
+  assert.throws(() => addFBDAngle(selected, { ...input, to: { x: Infinity, y: 1 } }, workspace, 'angle-2'), /angle text/);
+  assert.throws(() => addFBDAngle(createEmptyFBDState(workspace), input, workspace, 'angle-2'), /Select/);
+});
+
+test('angle scene renders an arc between reference rays with a selectable student label', () => {
+  const angle = { id: 'angle-1', vertex: { x: 1, y: 2 }, from: { x: 2, y: 2 },
+    to: { x: 1, y: 3 }, label: '30°' };
+  const layout = angleArcLayout(angle, 4);
+  assert.ok(Math.abs(layout.sweep - Math.PI / 2) < 1e-9);
+  assert.equal(layout.points.length, 33);
+  assert.ok(layout.labelPosition.x > angle.vertex.x);
+  assert.ok(layout.labelPosition.y > angle.vertex.y);
+  const group = buildFBDAngleArc(angle, 4, true);
+  assert.equal(group.userData.fbdAngleId, angle.id);
+  assert.equal(group.children.length, 3);
+  assert.ok(group.children.every((child) => child.type === 'Line'));
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /textSprite\(angle\.label \|\| ''/);
+  assert.match(panel, /angleArcLayout\(angle, span\)\.labelPosition/);
+  assert.match(panel, /setSelectedAngleId\(object\.userData\.fbdAngleId/);
+});
+
+test('adding an angle never calculates its text or runs the solver and logs the student input', () => {
+  let calls = 0;
+  const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'joint', id: 'A' }, workspace);
+  const added = addFBDAngle(selected, { vertex: { x: 0, y: 0 }, from: { x: 1, y: 0 },
+    to: { x: 1, y: 1 }, label: 'given 30°' }, workspace, 'angle-1');
+  assert.equal(added.angles[0].label, 'given 30°');
+  assert.equal(visibleReactions(true, workspace, () => { calls += 1; return {}; }).result, null);
+  assert.equal(calls, 0);
+  const event = createVisualizationResearchEvent('session-1', 'fbd_angle_add',
+    () => 'event-1', () => '2026-09-18T12:00:00.000Z', undefined, undefined, undefined, undefined, added.angles[0]);
+  assert.equal(event.sessionId, 'session-1');
+  assert.equal(event.timestamp, '2026-09-18T12:00:00.000Z');
+  assert.deepEqual(event.angle, added.angles[0]);
 });

@@ -9,11 +9,12 @@ import { calculatePlanarBeamReactions, type BeamReactionResult } from './calcula
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
 import { createEmptyFBDState, selectFBDTarget, visibleReactions,
-  addFBDForce, addFBDMoment, addFBDDimension,
-  type FBDForce, type FBDMoment, type FBDDimension, type FBDState, type FBDTarget } from './fbdState';
+  addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle,
+  type FBDForce, type FBDMoment, type FBDDimension, type FBDAngle, type FBDState, type FBDTarget } from './fbdState';
 import { buildFBDForceArrow } from './fbdForceScene';
 import { buildFBDMomentArrow } from './fbdMomentScene';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene';
+import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene';
 
 type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
 const VIEW_BUTTONS: { label: string; mode: Exclude<ViewMode, 'free'> }[] = [
@@ -60,7 +61,8 @@ function addLine(group: THREE.Group, start: THREE.Vector3, end: THREE.Vector3, c
 }
 
 function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
-  selectedForceId: string | null, selectedMomentId: string | null, selectedDimensionId: string | null) {
+  selectedForceId: string | null, selectedMomentId: string | null,
+  selectedDimensionId: string | null, selectedAngleId: string | null) {
   const group = new THREE.Group();
   const nodes = new Map(workspace.nodes.map((node) => [node.id, node]));
   const points = workspace.nodes.map((node) => new THREE.Vector3(node.x, node.y, 0));
@@ -129,13 +131,22 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       group.add(label);
     }
   }
+  for (const angle of fbdState.angles) {
+    group.add(buildFBDAngleArc(angle, span, angle.id === selectedAngleId));
+    const label = textSprite(angle.label || '', angle.id === selectedAngleId ? '#c2410c' : '#0f766e', 0.42);
+    if (label) {
+      label.position.copy(angleArcLayout(angle, span).labelPosition);
+      group.add(label);
+    }
+  }
   return { group, center, span };
 }
 
 function buildModel(workspace: StaticsWorkspace, reactions: BeamReactionResult | null,
   showFbd: boolean, fbdState: FBDState, selectedForceId: string | null,
-  selectedMomentId: string | null, selectedDimensionId: string | null) {
-  if (showFbd) return buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId, selectedDimensionId);
+  selectedMomentId: string | null, selectedDimensionId: string | null, selectedAngleId: string | null) {
+  if (showFbd) return buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId,
+    selectedDimensionId, selectedAngleId);
   const group = new THREE.Group();
   const sceneData = selectSceneData(workspace);
   const nodes = new Map(sceneData.nodes.map((node) => [node.id, node]));
@@ -406,7 +417,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   showFbd: boolean;
   onFbdChange: (visible: boolean) => void;
   onVisualizationInteraction: (action: VisualizationAction, target?: FBDTarget,
-    force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension) => void;
+    force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension, angle?: FBDAngle) => void;
 }) {
   const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd } = useStaticsWorkspace();
   const reactionState = useMemo(() => visibleReactions(showFbd, workspace, calculatePlanarBeamReactions),
@@ -439,6 +450,12 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
   const [dimensionPick, setDimensionPick] = useState<'start' | 'end'>('start');
   const [dimensionError, setDimensionError] = useState('');
   const [selectedDimensionId, setSelectedDimensionId] = useState<string | null>(null);
+  const [angleFormOpen, setAngleFormOpen] = useState(false);
+  const [angleDraft, setAngleDraft] = useState({ vertexChoice: 'custom', fromChoice: 'custom', toChoice: 'custom',
+    vertexX: '0', vertexY: '0', fromX: '1', fromY: '0', toX: '0', toY: '1', label: '' });
+  const [anglePick, setAnglePick] = useState<'vertex' | 'from' | 'to'>('vertex');
+  const [angleError, setAngleError] = useState('');
+  const [selectedAngleId, setSelectedAngleId] = useState<string | null>(null);
   useEffect(() => {
     if (selectedForceId && !fbdState.forces.some((force) => force.id === selectedForceId))
       setSelectedForceId(null);
@@ -451,6 +468,10 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     if (selectedDimensionId && !fbdState.dimensions.some((dimension) => dimension.id === selectedDimensionId))
       setSelectedDimensionId(null);
   }, [fbdState.dimensions, selectedDimensionId]);
+  useEffect(() => {
+    if (selectedAngleId && !fbdState.angles.some((angle) => angle.id === selectedAngleId))
+      setSelectedAngleId(null);
+  }, [fbdState.angles, selectedAngleId]);
   const canvasClickRef = useRef<(event: MouseEvent) => void>(() => {});
   canvasClickRef.current = (event) => {
     if (!showFbd || !rendererRef.current || !cameraRef.current) return;
@@ -459,36 +480,49 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       -((event.clientY - rect.top) / rect.height * 2 - 1));
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(pointer, cameraRef.current);
-    if (forceFormOpen || momentFormOpen || dimensionFormOpen) {
+    if (forceFormOpen || momentFormOpen || dimensionFormOpen || angleFormOpen) {
       const point = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
       if (point && forceFormOpen) setForceDraft((current) => ({ ...current, x: point.x.toFixed(2), y: point.y.toFixed(2) }));
       if (point && momentFormOpen) setMomentDraft((current) => ({ ...current, x: point.x.toFixed(2), y: point.y.toFixed(2) }));
       if (point && dimensionFormOpen) setDimensionDraft((current) => dimensionPick === 'start'
         ? { ...current, startChoice: 'custom', startX: point.x.toFixed(2), startY: point.y.toFixed(2) }
         : { ...current, endChoice: 'custom', endX: point.x.toFixed(2), endY: point.y.toFixed(2) });
+      if (point && angleFormOpen) setAngleDraft((current) => ({ ...current,
+        [`${anglePick}Choice`]: 'custom', [`${anglePick}X`]: point.x.toFixed(2),
+        [`${anglePick}Y`]: point.y.toFixed(2) }));
       return;
     }
     raycaster.params.Line.threshold = Math.max(0.08, (viewBoundsRef.current?.span || 1) * 0.018);
     for (const hit of raycaster.intersectObjects(modelRef.current?.children || [], true)) {
       let object: THREE.Object3D | null = hit.object;
       while (object && !object.userData.fbdForceId && !object.userData.fbdMomentId &&
-        !object.userData.fbdDimensionId) object = object.parent;
+        !object.userData.fbdDimensionId && !object.userData.fbdAngleId) object = object.parent;
       if (object?.userData.fbdForceId) {
         setSelectedForceId(object.userData.fbdForceId as string);
         setSelectedMomentId(null);
         setSelectedDimensionId(null);
+        setSelectedAngleId(null);
         return;
       }
       if (object?.userData.fbdMomentId) {
         setSelectedMomentId(object.userData.fbdMomentId as string);
         setSelectedForceId(null);
         setSelectedDimensionId(null);
+        setSelectedAngleId(null);
         return;
       }
       if (object?.userData.fbdDimensionId) {
         setSelectedDimensionId(object.userData.fbdDimensionId as string);
         setSelectedForceId(null);
         setSelectedMomentId(null);
+        setSelectedAngleId(null);
+        return;
+      }
+      if (object?.userData.fbdAngleId) {
+        setSelectedAngleId(object.userData.fbdAngleId as string);
+        setSelectedForceId(null);
+        setSelectedMomentId(null);
+        setSelectedDimensionId(null);
         return;
       }
     }
@@ -598,7 +632,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       disposeGroup(modelRef.current);
     }
     const model = buildModel(workspace, reactionState.result, showFbd, fbdState,
-      selectedForceId, selectedMomentId, selectedDimensionId);
+      selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId);
     modelRef.current = model.group;
     viewBoundsRef.current = { center: model.center, span: model.span };
     scene.add(model.group);
@@ -607,7 +641,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       framedRef.current = true;
       framedSpanRef.current = model.span;
     }
-  }, [ready, workspace, reactionState, showFbd, fbdState, selectedForceId, selectedMomentId, selectedDimensionId]);
+  }, [ready, workspace, reactionState, showFbd, fbdState, selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId]);
 
   const resetView = () => {
     const bounds = viewBoundsRef.current;
@@ -670,6 +704,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     setForceError('');
     setMomentFormOpen(false);
     setDimensionFormOpen(false);
+    setAngleFormOpen(false);
     setForceFormOpen(true);
   };
   const submitForce = (event: FormEvent<HTMLFormElement>) => {
@@ -685,6 +720,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       setSelectedForceId(force.id);
       setSelectedMomentId(null);
       setSelectedDimensionId(null);
+      setSelectedAngleId(null);
       setForceFormOpen(false);
       setForceError('');
       onVisualizationInteraction('fbd_force_add', undefined, force);
@@ -699,6 +735,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     setMomentError('');
     setForceFormOpen(false);
     setDimensionFormOpen(false);
+    setAngleFormOpen(false);
     setMomentFormOpen(true);
   };
   const submitMoment = (event: FormEvent<HTMLFormElement>) => {
@@ -714,6 +751,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       setSelectedMomentId(moment.id);
       setSelectedForceId(null);
       setSelectedDimensionId(null);
+      setSelectedAngleId(null);
       setMomentFormOpen(false);
       setMomentError('');
       onVisualizationInteraction('fbd_moment_add', undefined, undefined, moment);
@@ -736,6 +774,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
     setDimensionError('');
     setForceFormOpen(false);
     setMomentFormOpen(false);
+    setAngleFormOpen(false);
     setDimensionFormOpen(true);
   };
   const submitDimension = (event: FormEvent<HTMLFormElement>) => {
@@ -751,11 +790,50 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       setSelectedDimensionId(dimension.id);
       setSelectedForceId(null);
       setSelectedMomentId(null);
+      setSelectedAngleId(null);
       setDimensionFormOpen(false);
       setDimensionError('');
       onVisualizationInteraction('fbd_dimension_add', undefined, undefined, undefined, dimension);
     } catch (caught) {
       setDimensionError(caught instanceof Error ? caught.message : 'Could not add dimension.');
+    }
+  };
+  const openAngleForm = () => {
+    if (!fbdState.selectedTarget) return;
+    const vertex = selectedTargetPoint();
+    const vertexChoice = fbdState.selectedTarget.kind === 'joint'
+      ? `node:${fbdState.selectedTarget.id}` : 'custom';
+    setAngleDraft({ vertexChoice, fromChoice: 'custom', toChoice: 'custom',
+      vertexX: String(vertex.x), vertexY: String(vertex.y),
+      fromX: String(vertex.x + 1), fromY: String(vertex.y),
+      toX: String(vertex.x), toY: String(vertex.y + 1), label: '' });
+    setAnglePick('vertex');
+    setAngleError('');
+    setForceFormOpen(false);
+    setMomentFormOpen(false);
+    setDimensionFormOpen(false);
+    setAngleFormOpen(true);
+  };
+  const submitAngle = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      const angleId = crypto.randomUUID();
+      const input = { vertex: { x: Number(angleDraft.vertexX), y: Number(angleDraft.vertexY) },
+        from: { x: Number(angleDraft.fromX), y: Number(angleDraft.fromY) },
+        to: { x: Number(angleDraft.toX), y: Number(angleDraft.toY) },
+        label: angleDraft.label };
+      const next = addFBDAngle(fbdState, input, workspace, angleId);
+      const angle = next.angles[next.angles.length - 1];
+      setFbdState(next);
+      setSelectedAngleId(angle.id);
+      setSelectedForceId(null);
+      setSelectedMomentId(null);
+      setSelectedDimensionId(null);
+      setAngleFormOpen(false);
+      setAngleError('');
+      onVisualizationInteraction('fbd_angle_add', undefined, undefined, undefined, undefined, angle);
+    } catch (caught) {
+      setAngleError(caught instanceof Error ? caught.message : 'Could not add angle.');
     }
   };
 
@@ -796,7 +874,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
       <div ref={containerRef} className="relative min-h-0 basis-0 flex-1 bg-slate-50 touch-none">
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
         {showFbd && !fbdState.selectedTarget && fbdState.forces.length === 0 &&
-          fbdState.moments.length === 0 && fbdState.dimensions.length === 0 && !error &&
+          fbdState.moments.length === 0 && fbdState.dimensions.length === 0 && fbdState.angles.length === 0 && !error &&
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
             Select a body, member, or joint to begin your free-body diagram.
           </div>}
@@ -821,11 +899,16 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Moment</button>
           <button type="button" disabled={!fbdState.selectedTarget} onClick={openDimensionForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Dimension</button>
-          {['Add Angle', 'Add Label'].map((label) =>
-            <button key={label} type="button" disabled title="Drawing tools are coming in the next phase"
-              className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-400">{label}</button>)}
-          <button type="button" disabled={!selectedForceId && !selectedMomentId && !selectedDimensionId && !fbdState.selectedTarget} onClick={() => {
-            if (selectedDimensionId) {
+          <button type="button" disabled={!fbdState.selectedTarget} onClick={openAngleForm}
+            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Angle</button>
+          <button type="button" disabled title="Drawing tool is coming in the next phase"
+            className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-400">Add Label</button>
+          <button type="button" disabled={!selectedForceId && !selectedMomentId && !selectedDimensionId && !selectedAngleId && !fbdState.selectedTarget} onClick={() => {
+            if (selectedAngleId) {
+              setFbdState((current) => ({ ...current, angles: current.angles.filter((angle) => angle.id !== selectedAngleId) }));
+              setSelectedAngleId(null);
+              onVisualizationInteraction('fbd_delete');
+            } else if (selectedDimensionId) {
               setFbdState((current) => ({ ...current, dimensions: current.dimensions.filter((dimension) => dimension.id !== selectedDimensionId) }));
               setSelectedDimensionId(null);
               onVisualizationInteraction('fbd_delete');
@@ -844,7 +927,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Undo</button>
           <button type="button" disabled={!canRedoFbd} onClick={() => { redoFbd(); onVisualizationInteraction('fbd_redo'); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Redo</button>
-          <button type="button" onClick={() => { setFbdState(createEmptyFBDState(workspace)); setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false); onVisualizationInteraction('fbd_reset'); }}
+          <button type="button" onClick={() => { setFbdState(createEmptyFBDState(workspace)); setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null); setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false); setAngleFormOpen(false); onVisualizationInteraction('fbd_reset'); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs">Reset FBD</button>
         </div>
         {forceFormOpen && <form onSubmit={submitForce} className="mt-2 grid grid-cols-2 gap-2 text-xs" aria-label="Add force details">
@@ -940,23 +1023,66 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, showFbd, o
             <button type="button" onClick={() => setDimensionFormOpen(false)} className="rounded bg-slate-100 px-2 py-1">Cancel</button></div>
           {dimensionError && <p className="col-span-2 text-red-700" role="alert">{dimensionError}</p>}
         </form>}
+        {angleFormOpen && <form onSubmit={submitAngle} className="mt-2 grid grid-cols-2 gap-2 text-xs" aria-label="Add angle details">
+          <p className="col-span-2 text-slate-600">Choose a vertex and two reference points or entities. The angle text is entered by you; no angle is calculated.</p>
+          {(['vertex', 'from', 'to'] as const).map((part) => <div key={part} className="col-span-2 grid grid-cols-2 gap-2">
+            <label className="col-span-2">{part === 'vertex' ? 'Vertex' : part === 'from' ? 'First reference direction/entity' : 'Second reference direction/entity'}
+              <select value={angleDraft[`${part}Choice`]}
+                onChange={(event) => {
+                  const choice = dimensionChoices.find((item) => item.value === event.target.value);
+                  setAngleDraft((current) => ({ ...current, [`${part}Choice`]: event.target.value,
+                    [`${part}X`]: choice ? String(choice.point.x) : current[`${part}X`],
+                    [`${part}Y`]: choice ? String(choice.point.y) : current[`${part}Y`] }));
+                }} className="block w-full rounded border border-slate-300 bg-white px-2 py-1">
+                <option value="custom">Custom point/direction</option>
+                {dimensionChoices.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
+              </select>
+            </label>
+            <label>{part === 'vertex' ? 'Vertex' : part === 'from' ? 'First reference' : 'Second reference'} X ({workspace.units.length})
+              <input required type="number" step="any" value={angleDraft[`${part}X`]}
+                onChange={(event) => setAngleDraft((current) => ({ ...current, [`${part}Choice`]: 'custom', [`${part}X`]: event.target.value }))}
+                className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+            <label>{part === 'vertex' ? 'Vertex' : part === 'from' ? 'First reference' : 'Second reference'} Y ({workspace.units.length})
+              <input required type="number" step="any" value={angleDraft[`${part}Y`]}
+                onChange={(event) => setAngleDraft((current) => ({ ...current, [`${part}Choice`]: 'custom', [`${part}Y`]: event.target.value }))}
+                className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          </div>)}
+          <div className="col-span-2 flex flex-wrap gap-2">
+            {(['vertex', 'from', 'to'] as const).map((part) => <button key={part} type="button"
+              aria-pressed={anglePick === part} onClick={() => setAnglePick(part)}
+              className={`rounded px-2 py-1 ${anglePick === part ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}>
+              Pick {part === 'from' ? 'first reference' : part === 'to' ? 'second reference' : 'vertex'} on canvas</button>)}
+          </div>
+          <label className="col-span-2">Angle text<input required maxLength={120} value={angleDraft.label}
+            placeholder="e.g. 30°" onChange={(event) => setAngleDraft({ ...angleDraft, label: event.target.value })}
+            className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <div className="col-span-2 flex gap-2"><button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Add angle</button>
+            <button type="button" onClick={() => setAngleFormOpen(false)} className="rounded bg-slate-100 px-2 py-1">Cancel</button></div>
+          {angleError && <p className="col-span-2 text-red-700" role="alert">{angleError}</p>}
+        </form>}
         {fbdState.forces.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD forces">
           {fbdState.forces.map((force) => <button key={force.id} type="button" aria-pressed={selectedForceId === force.id}
-            onClick={() => { setSelectedForceId(force.id); setSelectedMomentId(null); setSelectedDimensionId(null); }}
+            onClick={() => { setSelectedForceId(force.id); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null); }}
             className={`rounded px-2 py-1 text-xs ${selectedForceId === force.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
             {force.label || 'F'} ({force.at.x}, {force.at.y})</button>)}
         </div>}
         {fbdState.moments.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD moments">
           {fbdState.moments.map((moment) => <button key={moment.id} type="button" aria-pressed={selectedMomentId === moment.id}
-            onClick={() => { setSelectedMomentId(moment.id); setSelectedForceId(null); setSelectedDimensionId(null); }}
+            onClick={() => { setSelectedMomentId(moment.id); setSelectedForceId(null); setSelectedDimensionId(null); setSelectedAngleId(null); }}
             className={`rounded px-2 py-1 text-xs ${selectedMomentId === moment.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
             {moment.label || 'M'} · {moment.clockwise ? 'CW' : 'CCW'} ({moment.at.x}, {moment.at.y})</button>)}
         </div>}
         {fbdState.dimensions.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD dimensions">
           {fbdState.dimensions.map((dimension) => <button key={dimension.id} type="button" aria-pressed={selectedDimensionId === dimension.id}
-            onClick={() => { setSelectedDimensionId(dimension.id); setSelectedForceId(null); setSelectedMomentId(null); }}
+            onClick={() => { setSelectedDimensionId(dimension.id); setSelectedForceId(null); setSelectedMomentId(null); setSelectedAngleId(null); }}
             className={`rounded px-2 py-1 text-xs ${selectedDimensionId === dimension.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
             {dimension.label || 'Dimension'} ({dimension.start.x}, {dimension.start.y})–({dimension.end.x}, {dimension.end.y})</button>)}
+        </div>}
+        {fbdState.angles.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD angles">
+          {fbdState.angles.map((angle) => <button key={angle.id} type="button" aria-pressed={selectedAngleId === angle.id}
+            onClick={() => { setSelectedAngleId(angle.id); setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); }}
+            className={`rounded px-2 py-1 text-xs ${selectedAngleId === angle.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
+            {angle.label} ({angle.vertex.x}, {angle.vertex.y})</button>)}
         </div>}
       </div>}
       {!showFbd && reactionState.error && (
