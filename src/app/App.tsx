@@ -15,7 +15,9 @@ import { AuthPage } from './components/AuthPage';
 import { StaticsWorkspaceProvider, type StaticsWorkspaceController } from './statics/StaticsWorkspaceProvider';
 import { executeEngineeringToolBatch, formatEngineeringToolBatch,
   type EngineeringToolBatch, type EngineeringToolCall, type EngineeringView } from './statics/engineeringTools';
-import { createToolResearchEvents, createVisualizationResearchEvent, getEngineeringSessionId,
+import { executeFBDChatToolBatch, formatFBDChatToolBatch, FBD_CHAT_TOOL_NAMES,
+  type FBDChatBatch, type FBDChatToolCall } from './statics/fbdChatTools';
+import { createFBDToolResearchEvents, createToolResearchEvents, createVisualizationResearchEvent, getEngineeringSessionId,
   type EngineeringResearchEvent, type VisualizationAction } from './statics/researchLog';
 import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
   FBDElement, FBDElementKind, FBDState, FBDTarget } from './statics/fbdState';
@@ -1847,6 +1849,7 @@ export default function App() {
       conversationHistory,
       provider: requestProvider,
       engineeringState: staticsControllerRef.current?.getWorkspace(),
+      fbdState: staticsControllerRef.current?.getFbdState(),
     };
     const maxGatewayPayloadBytes = 9_000_000;
 
@@ -1883,6 +1886,7 @@ export default function App() {
     }
     setIsTyping(true);
     let engineeringBatch: EngineeringToolBatch | null = null;
+    let fbdBatch: FBDChatBatch | null = null;
 
     try {
       const response = await fetch(`${CHAT_API_BASE_URL}/chat`, {
@@ -1907,22 +1911,35 @@ export default function App() {
       if (data.toolCalls !== undefined) {
         const controller = staticsControllerRef.current;
         if (!controller) throw new Error('Engineering workspace is not available.');
-        const batch = executeEngineeringToolBatch(controller.getWorkspace(),
-          data.toolCalls as EngineeringToolCall[], controller.setWorkspace);
-        engineeringBatch = batch;
-        if (batch.structureChanged) setShowEngineeringPanel(true);
-        for (const action of batch.uiActions) {
-          if (action.kind === 'view') {
-            const view = action.view;
+        const calls = data.toolCalls as FBDChatToolCall[];
+        const fbdCalls = calls.filter((call) => FBD_CHAT_TOOL_NAMES.includes(call.name as typeof FBD_CHAT_TOOL_NAMES[number]));
+        if (fbdCalls.length && fbdCalls.length !== calls.length) throw new Error('Mixed FBD and structural tool calls are not supported.');
+        if (fbdCalls.length) {
+          fbdBatch = executeFBDChatToolBatch(controller.getWorkspace(), controller.getFbdState(),
+            fbdCalls, currentInput, controller.setFbdState);
+          if (fbdBatch.results.some((result) => result.success)) {
             setShowEngineeringPanel(true);
-            setViewCommand((previous) => ({ view, sequence: (previous?.sequence ?? 0) + 1 }));
-          } else {
-            setDisplayMode(action.visible ? 'fbd' : 'structure');
-            if (action.visible) setShowEngineeringPanel(true);
+            setDisplayMode((current) => current === 'structure' ? 'fbd' : current);
           }
+          data = { ...data, response: formatFBDChatToolBatch(fbdBatch) };
+        } else {
+          const batch = executeEngineeringToolBatch(controller.getWorkspace(),
+            calls as EngineeringToolCall[], controller.setWorkspace);
+          engineeringBatch = batch;
+          if (batch.structureChanged) setShowEngineeringPanel(true);
+          for (const action of batch.uiActions) {
+            if (action.kind === 'view') {
+              const view = action.view;
+              setShowEngineeringPanel(true);
+              setViewCommand((previous) => ({ view, sequence: (previous?.sequence ?? 0) + 1 }));
+            } else {
+              setDisplayMode(action.visible ? 'fbd' : 'structure');
+              if (action.visible) setShowEngineeringPanel(true);
+            }
+          }
+          // Every structural reply is derived from validated results and the solver.
+          data = { ...data, response: formatEngineeringToolBatch(batch) };
         }
-        // Every tool reply is generated from executed results; the model cannot replace solver values.
-        data = { ...data, response: formatEngineeringToolBatch(batch) };
       }
       const isConflicting = Boolean(data.isConflicting ?? data.isIncorrect);
       console.log('Received from API:', {
@@ -1957,6 +1974,13 @@ ${data.response}` : data.response,
           });
         } catch (error) { console.warn('Engineering event logging failed.', error); }
       }
+      if (fbdBatch && userId) {
+        try {
+          const events = createFBDToolResearchEvents(getEngineeringSessionId(sessionStorage, userId),
+            currentInput, fbdBatch, assistantMessage.content);
+          await Promise.allSettled(events.map(recordEngineeringEvent));
+        } catch (error) { console.warn('FBD tool event logging failed.', error); }
+      }
       
       insertAssistantMessage(assistantMessage);
     } catch (error) {
@@ -1977,6 +2001,13 @@ ${data.response}` : data.response,
             getEngineeringSessionId(sessionStorage, userId), currentInput, engineeringBatch, assistantMessage.content);
           await Promise.allSettled(events.map(recordEngineeringEvent));
         } catch (loggingError) { console.warn('Engineering event logging failed.', loggingError); }
+      }
+      if (fbdBatch && userId) {
+        try {
+          const events = createFBDToolResearchEvents(getEngineeringSessionId(sessionStorage, userId),
+            currentInput, fbdBatch, assistantMessage.content);
+          await Promise.allSettled(events.map(recordEngineeringEvent));
+        } catch (loggingError) { console.warn('FBD tool event logging failed.', loggingError); }
       }
       insertAssistantMessage(assistantMessage);
     } finally {

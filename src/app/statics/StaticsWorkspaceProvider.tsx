@@ -23,6 +23,8 @@ const StaticsWorkspaceContext = createContext<StaticsWorkspaceContextValue | nul
 export interface StaticsWorkspaceController {
   getWorkspace: () => StaticsWorkspace;
   setWorkspace: StaticsWorkspaceContextValue['setWorkspace'];
+  getFbdState: () => FBDState;
+  setFbdState: StaticsWorkspaceContextValue['setFbdState'];
 }
 
 /** Mount with key={userId} so a different account never inherits the prior account's state. */
@@ -69,7 +71,8 @@ function StaticsWorkspaceProvider({ userId, children }, controllerRef) {
   };
 
   // Chat runs in the parent App; this controller points at the same provider state.
-  useImperativeHandle(controllerRef, () => ({ getWorkspace: () => workspaceRef.current, setWorkspace }));
+  useImperativeHandle(controllerRef, () => ({ getWorkspace: () => workspaceRef.current, setWorkspace,
+    getFbdState: () => fbdHistoryRef.current.present, setFbdState }));
 
   useEffect(() => {
     try {

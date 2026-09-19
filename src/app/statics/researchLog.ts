@@ -1,4 +1,5 @@
 import type { EngineeringToolBatch } from './engineeringTools.ts';
+import type { FBDChatBatch } from './fbdChatTools.ts';
 import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
   FBDElement, FBDElementKind, FBDState, FBDTarget } from './fbdState.ts';
 
@@ -11,6 +12,11 @@ export type EngineeringResearchEvent = {
   studentMessage: string; toolName: string; toolArguments: unknown;
   stateBefore: EngineeringToolBatch['workspace']; stateAfter: EngineeringToolBatch['workspace'];
   solverResult?: unknown; aiResponse: string; succeeded: boolean; error?: string;
+} | {
+  kind: 'fbd_tool'; eventId: string; sessionId: string; timestamp: string;
+  studentMessage: string; toolName: string; toolArguments: unknown;
+  stateBefore: FBDState; stateAfter: FBDState;
+  aiResponse: string; succeeded: boolean; error?: string;
 } | {
   kind: 'visualization'; eventId: string; sessionId: string; timestamp: string; action: VisualizationAction;
   target?: FBDTarget; force?: FBDForce; moment?: FBDMoment; dimension?: FBDDimension; angle?: FBDAngle; label?: FBDLabel;
@@ -39,6 +45,18 @@ export function createToolResearchEvents(sessionId: string, studentMessage: stri
     stateBefore: interaction.before, stateAfter: interaction.after,
     ...(interaction.calculation ? { solverResult: interaction.calculation } :
       interaction.calculationError ? { solverResult: { error: interaction.calculationError } } : {}),
+    aiResponse, succeeded: interaction.result.success,
+    ...(interaction.result.error ? { error: interaction.result.error } : {}),
+  }));
+}
+
+export function createFBDToolResearchEvents(sessionId: string, studentMessage: string,
+  batch: FBDChatBatch, aiResponse: string,
+  newId = () => crypto.randomUUID(), now = () => new Date().toISOString()): EngineeringResearchEvent[] {
+  return batch.interactions.map((interaction) => ({
+    kind: 'fbd_tool', eventId: newId(), sessionId, timestamp: now(), studentMessage,
+    toolName: interaction.call.name, toolArguments: interaction.call.arguments,
+    stateBefore: interaction.before, stateAfter: interaction.after,
     aiResponse, succeeded: interaction.result.success,
     ...(interaction.result.error ? { error: interaction.result.error } : {}),
   }));
