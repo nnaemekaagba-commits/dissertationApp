@@ -63,7 +63,7 @@ test('tool arguments reject unknown fields, wrong types, missing entities, and u
   assert.throws(() => call(workspace, 'move_load', '{bad'), /valid JSON/);
 });
 
-test('multiple edits use the final model for one deterministic solver result', () => {
+test('multiple edits update the model without invoking or reporting the solver', () => {
   const before = initial();
   const batch = executeEngineeringToolBatch(before, [
     { id: 'magnitude', name: 'change_load_magnitude', arguments: { loadId: 'load-C', magnitude: 12 } },
@@ -73,9 +73,9 @@ test('multiple edits use the final model for one deterministic solver result', (
   assert.equal(batch.outcome.structure, batch.workspace);
   assert.equal(batch.outcome.structure.loads[0].magnitude, 12);
   assert.equal(batch.outcome.structure.nodes.find(({ id }) => id === 'C').x, 3);
-  assert.deepEqual(batch.outcome.calculation.reactions.map(({ vertical }) => vertical), [3, 9]);
-  assert.match(formatEngineeringToolBatch(batch), /A: Fx = 0 kN, Fy = 3 kN/);
-  assert.match(formatEngineeringToolBatch(batch), /B: Fx = 0 kN, Fy = 9 kN/);
+  assert.equal(batch.outcome.calculation, undefined);
+  assert.ok(batch.interactions.every((item) => item.calculation === undefined));
+  assert.doesNotMatch(formatEngineeringToolBatch(batch), /Support reactions|Fy =/);
   assert.match(formatEngineeringToolBatch(batch), /load-C magnitude to 12 kN/);
   assert.equal(before.loads[0].magnitude, 10);
 });
@@ -108,14 +108,18 @@ test('member dimensions and load additions/removals are validated state changes'
   assert.throws(() => call(loaded, 'change_member_dimension', { memberId: 'AB', value: 3 }), /outside the resized beam/);
 });
 
-test('unsupported edited structure reports solver failure without made-up reactions', () => {
+test('unsupported edited structure is not solved until the student requests calculation', () => {
   const batch = executeEngineeringToolBatch(initial(), [
     { id: 'remove', name: 'change_support', arguments: { nodeId: 'B', kind: 'none' } },
   ]);
   assert.equal(batch.structureChanged, true);
-  assert.ok(batch.outcome.calculationError);
-  assert.match(formatEngineeringToolBatch(batch), /Reactions could not be calculated/);
+  assert.equal(batch.outcome.calculationError, undefined);
+  assert.equal(batch.interactions[0].calculationError, undefined);
   assert.doesNotMatch(formatEngineeringToolBatch(batch), /Fy =/);
+  const requested = executeEngineeringToolBatch(batch.workspace, [
+    { id: 'solve', name: 'calculate_reactions', arguments: {} },
+  ], undefined, 'Calculate the reactions.');
+  assert.equal(requested.results[0].success, false);
 });
 
 test('invalid edit does not mutate the structure or report a solver result', () => {
@@ -146,10 +150,8 @@ test('each valid edit publishes state that the scene selector renders', () => {
   assert.equal(selectSceneData(published[1]).loads[0].magnitude, 12);
   assert.equal(selectSceneData(published[2]).supports.find(({ nodeId }) => nodeId === 'B').kind, 'pin');
   assert.equal(selectSceneData(batch.workspace).loads, batch.workspace.loads);
-  assert.equal(batch.interactions[0].calculation.reactions[1].vertical, 7.5);
-  assert.equal(batch.interactions[1].calculation.reactions[1].vertical, 9);
-  assert.ok(batch.interactions[2].calculationError);
-  assert.match(formatEngineeringToolBatch(batch), /Reactions could not be calculated/);
+  assert.ok(batch.interactions.every((item) => item.calculation === undefined && item.calculationError === undefined));
+  assert.doesNotMatch(formatEngineeringToolBatch(batch), /Reactions could not be calculated|Fy =/);
 });
 
 test('failed edits publish no state and cannot generate a success confirmation', () => {
@@ -163,7 +165,7 @@ test('failed edits publish no state and cannot generate a success confirmation',
   assert.doesNotMatch(formatEngineeringToolBatch(batch), /Moved load/);
 });
 
-test('research records each tool with before/after state, solver output, and actual reply', () => {
+test('research records edit state without invented solver output', () => {
   const batch = executeEngineeringToolBatch(initial(), [
     { id: 'good', name: 'move_load', arguments: { loadId: 'load-C', position: 3 } },
     { id: 'bad', name: 'change_support', arguments: { nodeId: 'missing', kind: 'pin' } },
@@ -175,7 +177,7 @@ test('research records each tool with before/after state, solver output, and act
   assert.equal(events[0].sessionId, 'session-1');
   assert.equal(events[0].stateBefore.nodes.find(({ id }) => id === 'C').x, 2);
   assert.equal(events[0].stateAfter.nodes.find(({ id }) => id === 'C').x, 3);
-  assert.equal(events[0].solverResult.reactions[1].vertical, 7.5);
+  assert.equal(events[0].solverResult, undefined);
   assert.equal(events[0].aiResponse, reply);
   assert.equal(events[1].succeeded, false);
   assert.equal(events[1].stateBefore, events[1].stateAfter);

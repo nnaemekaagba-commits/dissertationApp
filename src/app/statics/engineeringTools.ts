@@ -1,4 +1,5 @@
 import { calculatePlanarBeamReactions, type BeamReactionResult } from './calculations.ts';
+import { explicitlyRequestsCalculation } from './calculationPolicy.ts';
 import { readBeamControls, updateBeamWorkspace } from './beamControls.ts';
 import { parseStaticsWorkspace, type StaticsSupport, type StaticsWorkspace } from './model.ts';
 
@@ -44,7 +45,7 @@ const STRUCTURE_MUTATIONS = new Set<EngineeringToolName>([
 ]);
 
 export function executeEngineeringToolBatch(workspace: StaticsWorkspace, calls: EngineeringToolCall[],
-  onWorkspaceChange?: (next: StaticsWorkspace) => void): EngineeringToolBatch {
+  onWorkspaceChange?: (next: StaticsWorkspace) => void, studentMessage?: string): EngineeringToolBatch {
   if (!Array.isArray(calls) || calls.length < 1 || calls.length > 8) {
     throw new Error('The chatbot returned an invalid number of engineering tool calls.');
   }
@@ -62,6 +63,9 @@ export function executeEngineeringToolBatch(workspace: StaticsWorkspace, calls: 
     seenIds.add(call.id);
     const before = current;
     try {
+      if (call.name === 'calculate_reactions' && studentMessage !== undefined &&
+        !explicitlyRequestsCalculation(studentMessage))
+        throw new Error('Reaction calculation requires an explicit student request.');
       const execution = executeEngineeringTool(current, call);
       if (STRUCTURE_MUTATIONS.has(call.name as EngineeringToolName) && execution.workspace !== current) {
         onWorkspaceChange?.(execution.workspace);
@@ -72,10 +76,7 @@ export function executeEngineeringToolBatch(workspace: StaticsWorkspace, calls: 
       const result = { id: call.id, name: call.name, success: true, result: execution.result };
       results.push(result);
       const interaction: EngineeringToolBatch['interactions'][number] = { call, result, before, after: current };
-      if (STRUCTURE_MUTATIONS.has(call.name as EngineeringToolName)) {
-        try { interaction.calculation = calculatePlanarBeamReactions(current); }
-        catch (error) { interaction.calculationError = error instanceof Error ? error.message : 'The solver could not calculate reactions.'; }
-      } else if (call.name === 'calculate_reactions') {
+      if (call.name === 'calculate_reactions') {
         interaction.calculation = execution.result.calculation as BeamReactionResult;
       }
       interactions.push(interaction);
@@ -87,15 +88,11 @@ export function executeEngineeringToolBatch(workspace: StaticsWorkspace, calls: 
     }
   }
   if (!structureChanged) return { workspace: current, results, interactions, uiActions, structureChanged };
-  const outcome: NonNullable<EngineeringToolBatch['outcome']> = { structure: current };
-  const finalSolver = [...interactions].reverse().find((interaction) =>
-    interaction.result.success && STRUCTURE_MUTATIONS.has(interaction.call.name as EngineeringToolName));
-  outcome.calculation = finalSolver?.calculation;
-  outcome.calculationError = finalSolver?.calculationError;
-  return { workspace: current, results, interactions, uiActions, structureChanged, outcome };
+  return { workspace: current, results, interactions, uiActions, structureChanged,
+    outcome: { structure: current } };
 }
 
-/** Build the post-edit reply entirely from executed tools and the deterministic solver. */
+/** Numerical reactions appear only for an explicitly executed calculate_reactions tool. */
 export function formatEngineeringToolBatch(batch: EngineeringToolBatch): string {
   const lines: string[] = [];
   for (const item of batch.results) {
@@ -127,7 +124,7 @@ export function formatEngineeringToolBatch(batch: EngineeringToolBatch): string 
     if (item.name === 'show_view') lines.push(`- Showing the ${result.view} view.`);
     if (item.name === 'show_fbd') lines.push(`- Free-body diagram ${result.fbdVisible ? 'shown' : 'hidden'}.`);
   }
-  const calculation = batch.outcome?.calculation || (batch.results.find((item) =>
+  const calculation = (batch.results.find((item) =>
     item.success && item.name === 'calculate_reactions')?.result?.calculation as BeamReactionResult | undefined);
   if (calculation) {
     const number = (value: number) => Number(value.toPrecision(8)).toString();
@@ -138,8 +135,6 @@ export function formatEngineeringToolBatch(batch: EngineeringToolBatch): string 
       if (reaction.kind === 'fixed') components.push(`M = ${number(reaction.moment)} ${calculation.momentUnit}`);
       lines.push(`- ${reaction.nodeId}: ${components.join(', ')}.`);
     }
-  } else if (batch.outcome?.calculationError) {
-    lines.push('', `Reactions could not be calculated: ${batch.outcome.calculationError}`);
   }
   return lines.join('\n') || 'No engineering change was made.';
 }

@@ -10,7 +10,7 @@ import { createEmptyFBDState, hasStudentFBDElements, resetStudentFBDElements, is
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
   deleteFBDElement, getFBDElement,
   repositionFBDLabel, moveFBDForceApplication,
-  visibleReactions, createFBDHistory, applyFBDChange,
+  createFBDHistory, applyFBDChange,
   undoFBDChange, redoFBDChange } from './fbdState.ts';
 import { buildFBDForceArrow } from './fbdForceScene.ts';
 import { buildFBDMomentArrow, momentArcPoints } from './fbdMomentScene.ts';
@@ -78,8 +78,8 @@ test('given toggles change only the scene projection; given elements are non-dra
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
   assert.match(panel, /<fieldset[^>]+aria-label="Given problem display"/);
   assert.match(panel, /setGivenVisibility\(\(current\) => \(\{ \.\.\.current, \[key\]: visible \}\)\)/);
-  assert.match(panel, /visibleReactions\(false, workspace, calculatePlanarBeamReactions\),\s*\[workspace\]/);
-  assert.match(panel, /<StructurePreview workspace=\{workspace\} reactions=\{null\} \/>/);
+  assert.doesNotMatch(panel, /calculatePlanarBeamReactions/);
+  assert.match(panel, /<StructurePreview workspace=\{workspace\} reactions=\{reactionResult\} \/>/);
 });
 
 test('given load layer includes stated point, distributed, and moment loads only', () => {
@@ -266,9 +266,7 @@ test('multi-step FBD history undoes and redoes adds, edits, deletion, and reposi
   assert.equal(history.future.length, 0);
   assert.deepEqual(redoFBDChange(history), history);
   assert.equal(JSON.stringify(workspace), engineeringBefore);
-  let solverCalls = 0;
-  assert.equal(visibleReactions(true, workspace, () => { solverCalls++; return {}; }).result, null);
-  assert.equal(solverCalls, 0);
+  assert.equal(JSON.stringify(workspace), engineeringBefore);
 });
 
 test('a new FBD action after undo clears redo, and history logging records exact snapshots', () => {
@@ -293,12 +291,9 @@ test('a new FBD action after undo clears redo, and history logging records exact
 });
 
 test('entering Build FBD Mode never invokes the solver', () => {
-  let calls = 0;
-  const solver = () => { calls += 1; return { reactions: [] }; };
-  assert.deepEqual(visibleReactions(true, workspace, solver), { result: null, error: '' });
-  assert.equal(calls, 0);
-  visibleReactions(false, workspace, solver);
-  assert.equal(calls, 1);
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(panel, /calculatePlanarBeamReactions/);
+  assert.match(panel, /visibleCalculation\(workspace, requestedVisualCalculation\)/);
 });
 
 test('FBD mode uses the existing visualization component and same canvas', () => {
@@ -347,10 +342,10 @@ test('Structure, FBD, and Split View preserve both states without solving on vie
   }
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
   assert.match(panel, /displayMode === 'split' && <div/);
-  assert.match(panel, /<StructurePreview workspace=\{workspace\} reactions=\{null\} \/>/);
+  assert.match(panel, /<StructurePreview workspace=\{workspace\} reactions=\{reactionResult\} \/>/);
   assert.match(panel, /showFbd\s*\? buildFBDModel/);
-  assert.match(panel, /: buildStructureModel\(workspace, reactionState\.result\)/);
-  assert.match(panel, /visibleReactions\(false, workspace, calculatePlanarBeamReactions\),\s*\[workspace\]/);
+  assert.match(panel, /: buildStructureModel\(workspace, reactionResult\)/);
+  assert.doesNotMatch(panel, /calculatePlanarBeamReactions/);
 });
 
 test('student force is stored only in FBDState and survives a storage reload', () => {
@@ -391,12 +386,8 @@ test('Three.js force arrow starts at the chosen point and follows the chosen ang
 });
 
 test('adding a force does not invoke the solver in FBD mode', () => {
-  let calls = 0;
   const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
   const added = addFBDForce(selected, { at: { x: 2, y: 0 }, angle: -90, label: 'P' }, workspace, 'force-1');
-  const result = visibleReactions(true, workspace, () => { calls += 1; return {}; });
-  assert.equal(calls, 0);
-  assert.equal(result.result, null);
   assert.equal(added.forces.length, 1);
 });
 
@@ -452,12 +443,9 @@ test('curved moment arrows wind clockwise and counterclockwise around their appl
 });
 
 test('adding moments leaves the FBD solver path inactive and logs chosen values', () => {
-  let calls = 0;
   const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
   const added = addFBDMoment(selected, { at: { x: 2, y: 0 }, clockwise: false,
     label: 'C' }, workspace, 'moment-1');
-  assert.equal(visibleReactions(true, workspace, () => { calls += 1; return {}; }).result, null);
-  assert.equal(calls, 0);
   const event = createVisualizationResearchEvent('session-1', 'fbd_moment_add',
     () => 'event-1', () => '2026-09-17T12:00:00.000Z', undefined, undefined, added.moments[0]);
   assert.equal(event.sessionId, 'session-1');
@@ -511,13 +499,10 @@ test('dimension scene renders line, two extension lines, ticks, and student text
 });
 
 test('dimension addition does not calculate a value or invoke the solver and is logged', () => {
-  let calls = 0;
   const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
   const added = addFBDDimension(selected, { start: { x: 0, y: 0 }, end: { x: 1, y: 0 },
     label: '4 ft' }, workspace, 'dimension-1');
   assert.equal(added.dimensions[0].label, '4 ft');
-  assert.equal(visibleReactions(true, workspace, () => { calls += 1; return {}; }).result, null);
-  assert.equal(calls, 0);
   const event = createVisualizationResearchEvent('session-1', 'fbd_dimension_add',
     () => 'event-1', () => '2026-09-18T12:00:00.000Z', undefined, undefined, undefined, added.dimensions[0]);
   assert.equal(event.sessionId, 'session-1');
@@ -571,13 +556,10 @@ test('angle scene renders an arc between reference rays with a selectable studen
 });
 
 test('adding an angle never calculates its text or runs the solver and logs the student input', () => {
-  let calls = 0;
   const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'joint', id: 'A' }, workspace);
   const added = addFBDAngle(selected, { vertex: { x: 0, y: 0 }, from: { x: 1, y: 0 },
     to: { x: 1, y: 1 }, label: 'given 30°' }, workspace, 'angle-1');
   assert.equal(added.angles[0].label, 'given 30°');
-  assert.equal(visibleReactions(true, workspace, () => { calls += 1; return {}; }).result, null);
-  assert.equal(calls, 0);
   const event = createVisualizationResearchEvent('session-1', 'fbd_angle_add',
     () => 'event-1', () => '2026-09-18T12:00:00.000Z', undefined, undefined, undefined, undefined, added.angles[0]);
   assert.equal(event.sessionId, 'session-1');
@@ -629,9 +611,6 @@ test('FBD panel renders selectable labels and supports moving on canvas without 
   assert.match(panel, /sprite\.userData\.fbdLabelId = item\.id/);
   assert.match(panel, /setSelectedLabelId\(object\.userData\.fbdLabelId/);
   assert.match(panel, /moveFBDLabel\(fbdState, selectedLabelId/);
-  let solverCalls = 0;
-  assert.equal(visibleReactions(true, workspace, () => { solverCalls++; return {}; }).result, null);
-  assert.equal(solverCalls, 0);
   const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
   const added = addFBDLabel(selected, { at: { x: 1, y: 1 }, text: 'Given' }, workspace, 'label-1');
   const event = createVisualizationResearchEvent('session-1', 'fbd_label_add',
@@ -673,9 +652,6 @@ test('editing and deleting every FBD element preserves EngineeringState and neve
     assert.equal(removed[item.collection].length, 0);
     assert.equal(JSON.stringify(workspace), beforeStructure);
   }
-  let calls = 0;
-  assert.equal(visibleReactions(true, workspace, () => { calls++; return {}; }).result, null);
-  assert.equal(calls, 0);
 });
 
 test('invalid FBD edits and deletes fail without changing state; deleting an associated element detaches its label', () => {
@@ -743,9 +719,6 @@ test('dragging every FBD annotation label changes display coordinates without ch
   const storage = { getItem: (key) => records.get(key) ?? null, setItem: (key, value) => records.set(key, value) };
   saveFBDState(storage, 'drag-student', state, workspace);
   assert.deepEqual(loadFBDState(storage, 'drag-student', workspace), state);
-  let calls = 0;
-  assert.equal(visibleReactions(true, workspace, () => { calls++; return {}; }).result, null);
-  assert.equal(calls, 0);
 });
 
 test('force application moves only through explicit operation and retains a separately placed label', () => {

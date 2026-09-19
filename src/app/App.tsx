@@ -18,6 +18,9 @@ import { executeEngineeringToolBatch, formatEngineeringToolBatch,
 import { executeFBDChatToolBatch, formatFBDChatToolBatch, FBD_CHAT_TOOL_NAMES,
   type FBDChatBatch, type FBDChatToolCall } from './statics/fbdChatTools';
 import { checkStudentFBD, explicitlyRequestsFBDCheck, formatFBDCheckFeedback } from './statics/checkFBD';
+import { explicitlyRequestsVisualCalculation, visualCalculationForRequest,
+  type RequestedVisualCalculation } from './statics/calculationPolicy';
+import type { BeamReactionResult } from './statics/calculations';
 import { createFBDCheckResearchEvent, createFBDToolResearchEvents, createToolResearchEvents,
   createVisualizationResearchEvent, getEngineeringSessionId,
   type EngineeringResearchEvent, type VisualizationAction } from './statics/researchLog';
@@ -1254,6 +1257,7 @@ export default function App() {
   const [displayMode, setDisplayMode] = useState<EngineeringDisplayMode>('structure');
   const previousDisplayModeRef = useRef<EngineeringDisplayMode>('structure');
   const [viewCommand, setViewCommand] = useState<{ view: EngineeringView; sequence: number }>();
+  const [requestedVisualCalculation, setRequestedVisualCalculation] = useState<RequestedVisualCalculation | null>(null);
   const staticsControllerRef = useRef<StaticsWorkspaceController | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [pendingInputModality, setPendingInputModality] = useState<'text' | 'audio'>('text');
@@ -1761,6 +1765,7 @@ export default function App() {
     setUserName('');
     setUserEmail('');
     setUserId('');
+    setRequestedVisualCalculation(null);
     setMessages([]);
     setArchiveMessages([]);
   };
@@ -1946,9 +1951,21 @@ export default function App() {
           data = { ...data, response: formatFBDChatToolBatch(fbdBatch) };
         } else {
           const batch = executeEngineeringToolBatch(controller.getWorkspace(),
-            calls as EngineeringToolCall[], controller.setWorkspace);
+            calls as EngineeringToolCall[], controller.setWorkspace, currentInput);
           engineeringBatch = batch;
-          if (batch.structureChanged) setShowEngineeringPanel(true);
+          if (batch.structureChanged) {
+            setShowEngineeringPanel(true);
+            setRequestedVisualCalculation(null);
+          }
+          const explicitCalculation = batch.results.find((item) =>
+            item.name === 'calculate_reactions' && item.success)?.result?.calculation as BeamReactionResult | undefined;
+          if (explicitCalculation) {
+            setRequestedVisualCalculation(visualCalculationForRequest(currentInput, batch.workspace, explicitCalculation));
+            if (explicitlyRequestsVisualCalculation(currentInput)) {
+              setShowEngineeringPanel(true);
+              setDisplayMode((current) => current === 'fbd' ? 'split' : current);
+            }
+          }
           for (const action of batch.uiActions) {
             if (action.kind === 'view') {
               const view = action.view;
@@ -3343,6 +3360,7 @@ ${data.response}` : data.response,
             <Suspense fallback={<div className="w-[min(40vw,480px)] border-l bg-slate-50 p-4 text-sm text-slate-500">Loading 3D view...</div>}>
               <EngineeringVisualizationPanel onClose={() => setShowEngineeringPanel(false)}
                 viewCommand={viewCommand} displayMode={displayMode} onDisplayModeChange={setDisplayMode}
+                requestedVisualCalculation={requestedVisualCalculation}
                 onCheckFBD={() => { if (!isTyping) void handleSend({
                   displayInput: 'Check My FBD', requestInput: 'Check My FBD', preserveDraft: true,
                 }); }}

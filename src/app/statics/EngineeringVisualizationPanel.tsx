@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Box, RotateCcw, X } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useStaticsWorkspace } from './StaticsWorkspaceProvider';
 import { selectSceneData } from './sceneData';
 import type { VisualizationAction } from './researchLog';
-import { calculatePlanarBeamReactions, type BeamReactionResult } from './calculations';
+import type { BeamReactionResult } from './calculations';
+import { visibleCalculation, type RequestedVisualCalculation } from './calculationPolicy';
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
 import { DISPLAY_MODES, displayModeLayout, type EngineeringDisplayMode } from './displayMode';
-import { hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget, isolatedFBDGeometry, visibleReactions,
+import { hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget, isolatedFBDGeometry,
   addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
   deleteFBDElement, getFBDElement, repositionFBDLabel, moveFBDForceApplication,
@@ -517,12 +518,14 @@ function StructurePreview({ workspace, reactions }: {
 }
 
 export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMode, onDisplayModeChange, onCheckFBD,
+  requestedVisualCalculation,
   onVisualizationInteraction }: {
   onClose: () => void;
   viewCommand?: { view: EngineeringView; sequence: number };
   displayMode: EngineeringDisplayMode;
   onDisplayModeChange: (mode: EngineeringDisplayMode) => void;
   onCheckFBD: () => void;
+  requestedVisualCalculation: RequestedVisualCalculation | null;
   onVisualizationInteraction: (action: VisualizationAction, target?: FBDTarget,
     force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension, angle?: FBDAngle,
     label?: FBDLabel,
@@ -531,10 +534,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     history?: { before: FBDState; after: FBDState }) => void;
 }) {
   const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd } = useStaticsWorkspace();
-  const { showFbd, showStructure } = displayModeLayout(displayMode);
-  // View selection only changes rendering; solve again only when EngineeringState changes.
-  const reactionState = useMemo(() => visibleReactions(false, workspace, calculatePlanarBeamReactions),
-    [workspace]);
+  const { showFbd } = displayModeLayout(displayMode);
+  const reactionResult = visibleCalculation(workspace, requestedVisualCalculation);
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -889,7 +890,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     const model = showFbd
       ? buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId,
         selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility)
-      : buildStructureModel(workspace, reactionState.result);
+      : buildStructureModel(workspace, reactionResult);
     modelRef.current = model.group;
     viewBoundsRef.current = { center: model.center, span: model.span };
     scene.add(model.group);
@@ -898,7 +899,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       framedRef.current = true;
       framedSpanRef.current = model.span;
     }
-  }, [ready, workspace, reactionState, showFbd, fbdState, selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility]);
+  }, [ready, workspace, reactionResult, showFbd, fbdState, selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility]);
 
   const resetView = () => {
     const bounds = viewBoundsRef.current;
@@ -1279,7 +1280,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       <div className={`min-h-0 basis-0 flex-1 ${displayMode === 'split' ? 'flex flex-col' : ''}`}>
         {displayMode === 'split' && <div className="relative flex min-h-0 flex-1 flex-col border-b border-slate-300">
           <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">Structure</span>
-          <StructurePreview workspace={workspace} reactions={null} />
+          <StructurePreview workspace={workspace} reactions={reactionResult} />
         </div>}
         <div ref={containerRef} className={`relative min-h-0 bg-slate-50 touch-none ${displayMode === 'split' ? 'flex-1' : 'h-full'}`} aria-label={showFbd ? 'FBD canvas' : 'Structure canvas'}>
         {displayMode === 'split' && <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">FBD</span>}
@@ -1629,11 +1630,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             {item.text} ({item.at.x.toFixed(2)}, {item.at.y.toFixed(2)})</button>)}
         </div>}
       </div>}
-      {showStructure && reactionState.error && (
-        <p className="border-t border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" role="status">
-          Reactions unavailable: {reactionState.error}
-        </p>
-      )}
       {!showFbd && <div className="border-t border-slate-200 px-3 py-2 text-[11px] text-slate-500">
         <p>Ask the chat to move or add loads, change supports, or resize the beam.</p>
         <p>{viewMode === 'free' ? 'Drag to rotate' : 'Free Orbit enables rotation'} · Scroll to zoom · Right drag to pan · Length: {workspace.units.length} · Force: {workspace.units.force}</p>

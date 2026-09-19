@@ -384,11 +384,3 @@ export function saveFBDState(storage: FBDStorage, userId: string, state: FBDStat
   if (!userId.trim()) throw new Error('User ID is required.');
   storage.setItem(fbdStorageKey(userId), JSON.stringify(parseFBDState(state, workspace)));
 }
-
-/** Viewer calls this only for Structure Mode; Build FBD Mode cannot invoke the solver. */
-export function visibleReactions<T>(buildFbdMode: boolean, workspace: StaticsWorkspace,
-  solve: (value: StaticsWorkspace) => T): { result: T | null; error: string } {
-  if (buildFbdMode) return { result: null, error: '' };
-  try { return { result: solve(workspace), error: '' }; }
-  catch (error) { return { result: null, error: error instanceof Error ? error.message : 'Cannot calculate reactions.' }; }
-}
