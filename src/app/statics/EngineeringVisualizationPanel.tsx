@@ -516,12 +516,13 @@ function StructurePreview({ workspace, reactions }: {
   </div>;
 }
 
-export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMode, onDisplayModeChange,
+export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMode, onDisplayModeChange, onCheckFBD,
   onVisualizationInteraction }: {
   onClose: () => void;
   viewCommand?: { view: EngineeringView; sequence: number };
   displayMode: EngineeringDisplayMode;
   onDisplayModeChange: (mode: EngineeringDisplayMode) => void;
+  onCheckFBD: () => void;
   onVisualizationInteraction: (action: VisualizationAction, target?: FBDTarget,
     force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension, angle?: FBDAngle,
     label?: FBDLabel,
@@ -1343,6 +1344,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Redo</button>
           <button type="button" disabled={!hasStudentFBDElements(fbdState)} onClick={() => { setPendingTarget(undefined); setResetPending(true); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Reset FBD</button>
+          <button type="button" onClick={onCheckFBD}
+            className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white">Check My FBD</button>
         </div>
         {pendingTarget !== undefined && <div role="group" aria-label="Confirm isolated object change"
           className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs">

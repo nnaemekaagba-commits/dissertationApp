@@ -1,5 +1,6 @@
 import type { EngineeringToolBatch } from './engineeringTools.ts';
 import type { FBDChatBatch } from './fbdChatTools.ts';
+import type { FBDCheckResult } from './checkFBD.ts';
 import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
   FBDElement, FBDElementKind, FBDState, FBDTarget } from './fbdState.ts';
 
@@ -17,6 +18,10 @@ export type EngineeringResearchEvent = {
   studentMessage: string; toolName: string; toolArguments: unknown;
   stateBefore: FBDState; stateAfter: FBDState;
   aiResponse: string; succeeded: boolean; error?: string;
+} | {
+  kind: 'fbd_check'; eventId: string; sessionId: string; timestamp: string;
+  studentMessage: string; fbdState: FBDState;
+  comparisonResult: FBDCheckResult; feedback: string;
 } | {
   kind: 'visualization'; eventId: string; sessionId: string; timestamp: string; action: VisualizationAction;
   target?: FBDTarget; force?: FBDForce; moment?: FBDMoment; dimension?: FBDDimension; angle?: FBDAngle; label?: FBDLabel;
@@ -60,6 +65,13 @@ export function createFBDToolResearchEvents(sessionId: string, studentMessage: s
     aiResponse, succeeded: interaction.result.success,
     ...(interaction.result.error ? { error: interaction.result.error } : {}),
   }));
+}
+
+export function createFBDCheckResearchEvent(sessionId: string, studentMessage: string,
+  fbdState: FBDState, comparisonResult: FBDCheckResult, feedback: string,
+  newId = () => crypto.randomUUID(), now = () => new Date().toISOString()): EngineeringResearchEvent {
+  return { kind: 'fbd_check', eventId: newId(), sessionId, timestamp: now(),
+    studentMessage, fbdState, comparisonResult, feedback };
 }
 
 export function createVisualizationResearchEvent(sessionId: string, action: VisualizationAction,

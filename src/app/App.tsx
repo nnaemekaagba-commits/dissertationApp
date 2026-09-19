@@ -17,7 +17,9 @@ import { executeEngineeringToolBatch, formatEngineeringToolBatch,
   type EngineeringToolBatch, type EngineeringToolCall, type EngineeringView } from './statics/engineeringTools';
 import { executeFBDChatToolBatch, formatFBDChatToolBatch, FBD_CHAT_TOOL_NAMES,
   type FBDChatBatch, type FBDChatToolCall } from './statics/fbdChatTools';
-import { createFBDToolResearchEvents, createToolResearchEvents, createVisualizationResearchEvent, getEngineeringSessionId,
+import { checkStudentFBD, explicitlyRequestsFBDCheck, formatFBDCheckFeedback } from './statics/checkFBD';
+import { createFBDCheckResearchEvent, createFBDToolResearchEvents, createToolResearchEvents,
+  createVisualizationResearchEvent, getEngineeringSessionId,
   type EngineeringResearchEvent, type VisualizationAction } from './statics/researchLog';
 import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
   FBDElement, FBDElementKind, FBDState, FBDTarget } from './statics/fbdState';
@@ -1802,6 +1804,7 @@ export default function App() {
     skipUserMessage?: boolean;
     insertAfterMessageId?: string;
     comparisonResponse?: boolean;
+    preserveDraft?: boolean;
   }) => {
     if (isRecordingAudio || isTranscribingAudio) return;
     const displayInput = options?.displayInput ?? input;
@@ -1880,9 +1883,28 @@ export default function App() {
     if (userMessage) {
       setMessages(prev => [...prev, userMessage]);
       saveMessage(userMessage);
-      setInput('');
+      if (!options?.preserveDraft) setInput('');
       setPendingInputModality('text');
       setTranscriptionSource(undefined);
+    }
+    if (explicitlyRequestsFBDCheck(currentInput)) {
+      const controller = staticsControllerRef.current;
+      const fbd = controller?.getFbdState();
+      const comparison = controller && fbd ? checkStudentFBD(controller.getWorkspace(), fbd) : null;
+      const feedback = comparison ? formatFBDCheckFeedback(comparison) :
+        'I could not check your FBD because the engineering workspace is unavailable. I did not change it.';
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(), role: 'assistant', content: feedback,
+        timestamp: new Date(), aiProvider: 'FBD Checker', provider: requestProvider,
+      };
+      if (comparison && fbd && userId) {
+        try {
+          await recordEngineeringEvent(createFBDCheckResearchEvent(
+            getEngineeringSessionId(sessionStorage, userId), currentInput, fbd, comparison, feedback));
+        } catch (error) { console.warn('FBD check event logging failed.', error); }
+      }
+      insertAssistantMessage(assistantMessage);
+      return;
     }
     setIsTyping(true);
     let engineeringBatch: EngineeringToolBatch | null = null;
@@ -3321,6 +3343,9 @@ ${data.response}` : data.response,
             <Suspense fallback={<div className="w-[min(40vw,480px)] border-l bg-slate-50 p-4 text-sm text-slate-500">Loading 3D view...</div>}>
               <EngineeringVisualizationPanel onClose={() => setShowEngineeringPanel(false)}
                 viewCommand={viewCommand} displayMode={displayMode} onDisplayModeChange={setDisplayMode}
+                onCheckFBD={() => { if (!isTyping) void handleSend({
+                  displayInput: 'Check My FBD', requestInput: 'Check My FBD', preserveDraft: true,
+                }); }}
                 onVisualizationInteraction={recordVisualizationInteraction} />
             </Suspense>
           )}
