@@ -32,8 +32,8 @@ test('an isolated target alone does not draw an FBD member; student work starts 
   assert.equal(hasStudentFBDElements(withForce), true);
   assert.equal(hasStudentFBDElements(resetStudentFBDElements(withForce)), false);
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
-  assert.match(panel, /const isolated = hasStudentFBDElements\(fbdState\)/);
-  assert.match(panel, /if \(hasStudentFBDElements\(fbdState\)\)\s*group\.add\(buildGivenFBDOverlay/);
+  assert.match(panel, /Only student-created FBDState is drawn/);
+  assert.doesNotMatch(panel, /group\.add\(buildGivenFBDOverlay/);
   assert.match(panel, /md:w-\[64vw\]/);
 });
 
@@ -90,10 +90,10 @@ test('given toggles change only the scene projection; given elements are non-dra
   assert.equal(JSON.stringify(workspace), structureBefore);
   assert.equal(JSON.stringify(selected), fbdBefore);
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
-  assert.match(panel, /<fieldset[^>]+aria-label="Given problem display"/);
-  assert.match(panel, /setGivenVisibility\(\(current\) => \(\{ \.\.\.current, \[key\]: visible \}\)\)/);
+  assert.doesNotMatch(panel, /aria-label="Given problem display"/);
+  assert.match(panel, /Nothing is copied from the engineering problem into this canvas/);
   assert.doesNotMatch(panel, /calculatePlanarBeamReactions/);
-  assert.match(panel, /<StructurePreview workspace=\{workspace\} reactions=\{reactionResult\} \/>/);
+  assert.match(panel, /<StructurePreview workspace=\{workspace\} fbdState=\{fbdState\} \/>/);
 });
 
 test('given load layer includes stated point, distributed, and moment loads only', () => {
@@ -213,8 +213,8 @@ test('changing an isolated object clears only its annotations after confirmation
   assert.match(panel, /Confirm isolated object change/);
   assert.match(panel, /hasStudentFBDElements\(fbdState\).*setPendingTarget\(target\)/);
   assert.match(panel, /Isolated: /);
-  assert.match(panel, /isolatedFBDGeometry\(fbdState, workspace\)/);
-  assert.match(panel, /RingGeometry\(0\.13, 0\.18, 24\)/);
+  assert.doesNotMatch(panel, /isolatedFBDGeometry\(fbdState, workspace\)/);
+  assert.doesNotMatch(panel, /RingGeometry\(0\.13, 0\.18, 24\)/);
   assert.equal(JSON.stringify(workspace), engineeringBefore);
 });
 
@@ -307,7 +307,7 @@ test('a new FBD action after undo clears redo, and history logging records exact
 test('entering Build FBD Mode never invokes the solver', () => {
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(panel, /calculatePlanarBeamReactions/);
-  assert.match(panel, /visibleCalculation\(workspace, requestedVisualCalculation\)/);
+  assert.doesNotMatch(panel, /visibleCalculation\(workspace, requestedVisualCalculation\)/);
 });
 
 test('FBD mode uses the existing visualization component and same canvas', () => {
@@ -356,9 +356,9 @@ test('Structure, FBD, and Split View preserve both states without solving on vie
   }
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
   assert.match(panel, /displayMode === 'split' && <div/);
-  assert.match(panel, /<StructurePreview workspace=\{workspace\} reactions=\{reactionResult\} \/>/);
-  assert.match(panel, /showFbd\s*\? buildFBDModel/);
-  assert.match(panel, /: buildStructureModel\(workspace, reactionResult\)/);
+  assert.match(panel, /<StructurePreview workspace=\{workspace\} fbdState=\{fbdState\} \/>/);
+  assert.match(panel, /const model = buildFBDModel\(workspace, fbdState/);
+  assert.doesNotMatch(panel, /: buildStructureModel\(workspace, reactionResult\)/);
   assert.doesNotMatch(panel, /calculatePlanarBeamReactions/);
 });
 
@@ -384,7 +384,7 @@ test('force input accepts unknown magnitude and rejects invalid or duplicate dat
   assert.throws(() => addFBDForce(added, input, workspace, 'force-1'), /unique/);
   assert.throws(() => addFBDForce(selected, { ...input, angle: Infinity }, workspace, 'force-2'), /valid point/);
   assert.throws(() => addFBDForce(selected, { ...input, magnitude: -1 }, workspace, 'force-2'), /valid point/);
-  assert.throws(() => addFBDForce(createEmptyFBDState(workspace), input, workspace, 'force-2'), /Select/);
+  assert.equal(addFBDForce(createEmptyFBDState(workspace), input, workspace, 'force-2').forces.length, 1);
 });
 
 test('Three.js force arrow starts at the chosen point and follows the chosen angle', () => {
@@ -439,7 +439,7 @@ test('moment creation validates point, direction, label, magnitude, and unique I
   assert.throws(() => addFBDMoment(selected, { ...input, clockwise: 'yes' }, workspace, 'moment-2'), /valid point/);
   assert.throws(() => addFBDMoment(selected, { ...input, at: { x: Infinity, y: 0 } }, workspace, 'moment-2'), /valid point/);
   assert.throws(() => addFBDMoment(selected, { ...input, magnitude: -2 }, workspace, 'moment-2'), /valid point/);
-  assert.throws(() => addFBDMoment(createEmptyFBDState(workspace), input, workspace, 'moment-2'), /Select/);
+  assert.equal(addFBDMoment(createEmptyFBDState(workspace), input, workspace, 'moment-2').moments.length, 1);
 });
 
 test('curved moment arrows wind clockwise and counterclockwise around their application points', () => {
@@ -489,7 +489,7 @@ test('dimension creation rejects missing text, duplicate IDs, and coincident or 
   assert.throws(() => addFBDDimension(selected, { ...input, label: ' ' }, workspace, 'dimension-2'), /distinct/);
   assert.throws(() => addFBDDimension(selected, { ...input, end: input.start }, workspace, 'dimension-2'), /distinct/);
   assert.throws(() => addFBDDimension(selected, { ...input, end: { x: Infinity, y: 0 } }, workspace, 'dimension-2'), /distinct/);
-  assert.throws(() => addFBDDimension(createEmptyFBDState(workspace), input, workspace, 'dimension-2'), /Select/);
+  assert.equal(addFBDDimension(createEmptyFBDState(workspace), input, workspace, 'dimension-2').dimensions.length, 1);
 });
 
 test('dimension scene renders line, two extension lines, ticks, and student text position', () => {
@@ -548,7 +548,7 @@ test('angle creation requires a target, text, unique ID, finite points, and dist
   assert.throws(() => addFBDAngle(selected, { ...input, from: input.vertex }, workspace, 'angle-2'), /distinct/);
   assert.throws(() => addFBDAngle(selected, { ...input, to: { x: 2, y: 0 } }, workspace, 'angle-2'), /distinct/);
   assert.throws(() => addFBDAngle(selected, { ...input, to: { x: Infinity, y: 1 } }, workspace, 'angle-2'), /angle text/);
-  assert.throws(() => addFBDAngle(createEmptyFBDState(workspace), input, workspace, 'angle-2'), /Select/);
+  assert.equal(addFBDAngle(createEmptyFBDState(workspace), input, workspace, 'angle-2').angles.length, 1);
 });
 
 test('angle scene renders an arc between reference rays with a selectable student label', () => {
@@ -614,7 +614,7 @@ test('labels validate text, position, association, and movement', () => {
   assert.throws(() => addFBDLabel(selected, { ...input, at: { x: Infinity, y: 0 } }, workspace, 'label-2'), /valid label/);
   assert.throws(() => addFBDLabel(selected, { ...input,
     associatedWith: { kind: 'force', id: 'missing' } }, workspace, 'label-2'), /association/);
-  assert.throws(() => addFBDLabel(createEmptyFBDState(workspace), input, workspace, 'label-2'), /Select/);
+  assert.equal(addFBDLabel(createEmptyFBDState(workspace), input, workspace, 'label-2').labels.length, 1);
   assert.throws(() => moveFBDLabel(added, 'missing', { x: 1, y: 2 }), /Unknown/);
   assert.throws(() => moveFBDLabel(added, 'label-1', { x: NaN, y: 2 }), /finite/);
 });

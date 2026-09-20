@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "test:statics": "node --test src/app/statics/model.test.mjs src/app/statics/calculations.test.mjs src/app/statics/engineeringTools.test.mjs src/app/statics/dynamicStructures.test.mjs src/app/statics/fbdState.test.mjs src/app/statics/fbdChatTools.test.mjs src/app/statics/checkFBD.test.mjs src/app/statics/fbdDevelopmentFixtures.test.mjs src/app/statics/calculationPolicy.test.mjs src/app/statics/fbdResearchLog.test.mjs src/app/statics/fbdReplay.test.mjs src/app/StudentFBDArchive.test.mjs"
+    "test:statics": "node --test src/app/statics/model.test.mjs src/app/statics/calculations.test.mjs src/app/statics/engineeringTools.test.mjs src/app/statics/dynamicStructures.test.mjs src/app/statics/fbdState.test.mjs src/app/statics/scratchFBD.test.mjs src/app/statics/fbdChatTools.test.mjs src/app/statics/checkFBD.test.mjs src/app/statics/fbdDevelopmentFixtures.test.mjs src/app/statics/calculationPolicy.test.mjs src/app/statics/fbdResearchLog.test.mjs src/app/statics/fbdReplay.test.mjs src/app/StudentFBDArchive.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

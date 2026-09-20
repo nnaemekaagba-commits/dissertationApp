@@ -4,10 +4,12 @@ import type { FBDCheckResult } from './checkFBD.ts';
 import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
   FBDElement, FBDElementKind, FBDState, FBDTarget } from './fbdState.ts';
 
-export type VisualizationAction = 'front' | 'top' | 'right' | 'isometric' | 'reset' | 'free' | 'orbit' | 'fbd' |
+export type VisualizationAction = FBDBaseVisualizationAction | 'front' | 'top' | 'right' | 'isometric' | 'reset' | 'free' | 'orbit' | 'fbd' |
   'structure_view' | 'fbd_view' | 'split_view' |
   `fbd_given_${'loads' | 'dimensions' | 'angles' | 'labels'}_${'on' | 'off'}` |
   'fbd_enter' | 'fbd_exit' | 'fbd_select' | 'fbd_delete' | 'fbd_undo' | 'fbd_redo' | 'fbd_reset' | 'fbd_force_add' | 'fbd_moment_add' | 'fbd_dimension_add' | 'fbd_angle_add' | 'fbd_label_add' | 'fbd_label_move' | 'fbd_element_edit' | 'fbd_element_delete' | 'fbd_element_drag' | 'fbd_element_reposition';
+export type FBDBaseVisualizationAction = 'fbd_blank_workspace' |
+  `fbd_${'body' | 'joint' | 'member'}_${'add' | 'edit' | 'move' | 'delete'}`;
 export type FBDResearchContext = {
   problemId: string; isolatedObject: FBDTarget | null; actionType: string;
   elementType: FBDElementKind | null; elementId: string | null;
@@ -51,6 +53,9 @@ export function nextFBDResearchSequence(storage: Pick<Storage, 'getItem' | 'setI
 
 export function fbdActionForVisualization(action: VisualizationAction,
   kind?: FBDElementKind): string {
+  if (action === 'fbd_blank_workspace') return 'enter_blank_workspace';
+  const base = /^fbd_(body|joint|member)_(add|edit|move|delete)$/.exec(action);
+  if (base) return `${base[2]}_${base[1]}`;
   if (action === 'fbd_enter') return 'enter_fbd_mode';
   if (action === 'fbd_exit') return 'exit_fbd_mode';
   if (action === 'fbd_select' || action === 'fbd_delete') return 'select_body';
@@ -84,13 +89,13 @@ export function fbdToolElement(before: FBDState, after: FBDState,
   if (typeof args === 'string') {
     try { args = JSON.parse(args); } catch { args = null; }
   }
-  const match = /^fbd_(add|edit)_(force|moment|dimension|angle|label)$/.exec(toolName);
+  const match = /^fbd_(add|edit)_(body|joint|member|force|moment|dimension|angle|label)$/.exec(toolName);
   const argumentKind = args && typeof args === 'object' && !Array.isArray(args)
     ? (args as { kind?: unknown }).kind : null;
   const elementType = (match?.[2] ||
-    (['force', 'moment', 'dimension', 'angle', 'label'].includes(String(argumentKind))
+    (['body', 'joint', 'member', 'force', 'moment', 'dimension', 'angle', 'label'].includes(String(argumentKind))
       ? argumentKind : null)) as FBDElementKind | null;
-  const collection = elementType ? `${elementType}s` as keyof FBDState : null;
+  const collection = elementType ? (elementType === 'body' ? 'bodies' : `${elementType}s`) as keyof FBDState : null;
   const beforeIds = collection ? new Set((before[collection] as { id: string }[]).map((item) => item.id)) : null;
   const afterIds = collection ? (after[collection] as { id: string }[]).map((item) => item.id) : [];
   const argId = args && typeof args === 'object' && !Array.isArray(args) &&
@@ -100,6 +105,7 @@ export function fbdToolElement(before: FBDState, after: FBDState,
   const actionType = match ? `${match[1]}_${elementType}` :
     toolName === 'fbd_remove_element' ? `delete_${elementType}` :
     toolName === 'fbd_move_label' ? 'move_label' :
+    toolName === 'fbd_move_primitive' ? `move_${elementType}` :
     toolName === 'fbd_select_object' ? 'select_body' : 'request_ai_help';
   return { actionType, elementType, elementId };
 }

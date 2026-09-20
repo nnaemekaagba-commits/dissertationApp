@@ -1,10 +1,14 @@
 import type { StaticsWorkspace } from './model.ts';
 import { addFBDAngle, addFBDDimension, addFBDForce, addFBDLabel, addFBDMoment,
+  addFBDBody, addFBDJoint, addFBDMember, editFBDPrimitive,
   deleteFBDElement, editFBDAngle, editFBDDimension, editFBDForce, editFBDLabel,
   editFBDMoment, getFBDElement, repositionFBDLabel, selectFBDTarget,
+  type FBDBody, type FBDJoint, type FBDMember, type FBDPrimitiveKind,
   type FBDElementKind, type FBDState } from './fbdState.ts';
 
 export const FBD_CHAT_TOOL_NAMES = [
+  'fbd_add_body', 'fbd_add_joint', 'fbd_add_member',
+  'fbd_edit_body', 'fbd_edit_joint', 'fbd_edit_member', 'fbd_move_primitive',
   'fbd_add_force', 'fbd_add_moment', 'fbd_add_dimension', 'fbd_add_angle', 'fbd_add_label',
   'fbd_edit_force', 'fbd_edit_moment', 'fbd_edit_dimension', 'fbd_edit_angle', 'fbd_edit_label',
   'fbd_remove_element', 'fbd_move_label', 'fbd_select_object',
@@ -21,7 +25,7 @@ export function explicitlyRequestsFBDModification(message: string): boolean {
   const text = message.trim();
   if (/^(what|why|how|explain|describe|teach|am i|should i|is there|do i|can i)\b/i.test(text)) return false;
   return /\b(add|draw|place|insert|remove|delete|erase|edit|change|move|reposition|rename|replace|select|isolate|set)\b/i.test(text) &&
-    /\b(fbd|free[ -]?body|diagram|arrow|annotation|force label|moment label|my force|my moment|my label)\b/i.test(text);
+    /\b(fbd|free[ -]?body|diagram|body|point|line|arrow|annotation|force label|moment label|my force|my moment|my label)\b/i.test(text);
 }
 
 function args(value: unknown, allowed: string[], required: string[] = []): Record<string, unknown> {
@@ -56,6 +60,52 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
   newId: () => string): FBDState {
   const name = call.name;
   const value = call.arguments;
+  if (/^fbd_(add|edit)_(body|joint|member)$/.test(name)) {
+    const [, operation, kind] = /^fbd_(add|edit)_(body|joint|member)$/.exec(name)!;
+    const editing = operation === 'edit';
+    const geometry = kind === 'body' ? ['x', 'y', 'width', 'height'] :
+      kind === 'joint' ? ['x', 'y'] : ['startX', 'startY', 'endX', 'endY'];
+    const row = args(value, [...(editing ? ['id'] : []), ...geometry, 'label'],
+      editing ? ['id'] : geometry);
+    const id = editing ? str(row, 'id', 128) : newId();
+    const old = editing ? getFBDElement(state, kind as FBDPrimitiveKind, id) : undefined;
+    if (editing && !old) throw new Error(`Unknown FBD ${kind}.`);
+    if (editing) patch(row, 'id');
+    const coordinate = (key: string, fallback: number) => row[key] === undefined ? fallback : num(row, key);
+    const label = row.label === undefined ? old && 'label' in old ? old.label : undefined : str(row, 'label');
+    const withLabel = label ? { label } : {};
+    const item = kind === 'body' ? { id, origin: {
+      x: coordinate('x', (old as FBDBody | undefined)?.origin.x ?? 0),
+      y: coordinate('y', (old as FBDBody | undefined)?.origin.y ?? 0) },
+      width: coordinate('width', (old as FBDBody | undefined)?.width ?? 0),
+      height: coordinate('height', (old as FBDBody | undefined)?.height ?? 0), ...withLabel } :
+      kind === 'joint' ? { id, at: {
+        x: coordinate('x', (old as FBDJoint | undefined)?.at.x ?? 0),
+        y: coordinate('y', (old as FBDJoint | undefined)?.at.y ?? 0) }, ...withLabel } :
+        { id, start: {
+          x: coordinate('startX', (old as FBDMember | undefined)?.start.x ?? 0),
+          y: coordinate('startY', (old as FBDMember | undefined)?.start.y ?? 0) }, end: {
+          x: coordinate('endX', (old as FBDMember | undefined)?.end.x ?? 0),
+          y: coordinate('endY', (old as FBDMember | undefined)?.end.y ?? 0) }, ...withLabel };
+    return editing ? editFBDPrimitive(state, kind as FBDPrimitiveKind, id, item) :
+      kind === 'body' ? addFBDBody(state, item as FBDBody) :
+        kind === 'joint' ? addFBDJoint(state, item as FBDJoint) : addFBDMember(state, item as FBDMember);
+  }
+  if (name === 'fbd_move_primitive') {
+    const row = args(value, ['kind', 'id', 'dx', 'dy'], ['kind', 'id', 'dx', 'dy']);
+    const kind = str(row, 'kind') as FBDPrimitiveKind;
+    if (!['body', 'joint', 'member'].includes(kind)) throw new Error('Invalid FBD base kind.');
+    const id = str(row, 'id', 128);
+    const old = getFBDElement(state, kind, id);
+    if (!old) throw new Error('Unknown FBD base element.');
+    const dx = num(row, 'dx'); const dy = num(row, 'dy');
+    if (dx === 0 && dy === 0) throw new Error('Movement must be nonzero.');
+    const shift = (point: { x: number; y: number }) => ({ x: point.x + dx, y: point.y + dy });
+    const item = kind === 'body' ? { ...(old as FBDBody), origin: shift((old as FBDBody).origin) } :
+      kind === 'joint' ? { ...(old as FBDJoint), at: shift((old as FBDJoint).at) } :
+        { ...(old as FBDMember), start: shift((old as FBDMember).start), end: shift((old as FBDMember).end) };
+    return editFBDPrimitive(state, kind, id, item);
+  }
   if (name === 'fbd_add_force' || name === 'fbd_edit_force') {
     const editing = name === 'fbd_edit_force';
     const row = args(value, editing ? ['id', 'x', 'y', 'angle', 'label', 'magnitude'] : ['x', 'y', 'angle', 'label', 'magnitude'], editing ? ['id'] : ['x', 'y', 'angle', 'label']);
@@ -133,7 +183,9 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
     const row = args(value, name === 'fbd_remove_element' ? ['kind', 'id'] : ['kind', 'id', 'x', 'y'],
       name === 'fbd_remove_element' ? ['kind', 'id'] : ['kind', 'id', 'x', 'y']);
     const kind = str(row, 'kind') as FBDElementKind;
-    if (!['force', 'moment', 'dimension', 'angle', 'label'].includes(kind)) throw new Error('Invalid FBD element kind.');
+    if (!['body', 'joint', 'member', 'force', 'moment', 'dimension', 'angle', 'label'].includes(kind)) throw new Error('Invalid FBD element kind.');
+    if (name === 'fbd_move_label' && ['body', 'joint', 'member'].includes(kind))
+      throw new Error('Use fbd_move_primitive to move a body, joint, or member.');
     const id = str(row, 'id', 128);
     return name === 'fbd_remove_element' ? deleteFBDElement(state, kind, id) :
       repositionFBDLabel(state, kind, id, { x: num(row, 'x'), y: num(row, 'y') });
@@ -142,7 +194,7 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
     const row = args(value, ['kind', 'id'], ['kind', 'id']);
     const kind = str(row, 'kind');
     if (!['body', 'member', 'joint'].includes(kind)) throw new Error('Invalid FBD object kind.');
-    if (state.forces.length || state.moments.length || state.dimensions.length || state.angles.length || state.labels.length)
+    if (state.bodies.length || state.joints.length || state.members.length || state.forces.length || state.moments.length || state.dimensions.length || state.angles.length || state.labels.length)
       throw new Error('The current FBD has student work. Choose the object in the FBD toolbar and confirm replacement.');
     return selectFBDTarget(state, { kind: kind as 'body' | 'member' | 'joint', id: str(row, 'id', 128) }, workspace);
   }

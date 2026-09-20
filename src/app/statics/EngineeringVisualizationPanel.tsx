@@ -11,11 +11,13 @@ import { visibleCalculation, type RequestedVisualCalculation } from './calculati
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
 import { DISPLAY_MODES, displayModeLayout, type EngineeringDisplayMode } from './displayMode';
-import { hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget, isolatedFBDGeometry,
+import { hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget,
+  addFBDBody, addFBDJoint, addFBDMember, editFBDPrimitive,
   addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
   deleteFBDElement, getFBDElement, repositionFBDLabel, moveFBDForceApplication,
   type FBDForce, type FBDMoment, type FBDDimension, type FBDAngle, type FBDLabel,
+  type FBDBody, type FBDJoint, type FBDMember, type FBDPrimitiveKind,
   type FBDElement, type FBDElementKind, type FBDLabelAssociation, type FBDState, type FBDTarget } from './fbdState';
 import { buildFBDForceArrow } from './fbdForceScene';
 import { buildFBDMomentArrow } from './fbdMomentScene';
@@ -102,45 +104,74 @@ function fbdLabelPosition(kind: FBDElementKind, item: FBDElement, span: number):
 function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   selectedForceId: string | null, selectedMomentId: string | null,
   selectedDimensionId: string | null, selectedAngleId: string | null, selectedLabelId: string | null,
-  givenVisibility: GivenVisibility) {
+  givenVisibility: GivenVisibility, baseOnly = false,
+  selectedPrimitive: { kind: FBDPrimitiveKind; id: string } | null = null) {
   const group = new THREE.Group();
-  const nodes = new Map(workspace.nodes.map((node) => [node.id, node]));
-  const points = workspace.nodes.map((node) => new THREE.Vector3(node.x, node.y, 0));
+  const pointData = [
+    ...fbdState.bodies.flatMap((item) => [item.origin,
+      { x: item.origin.x + item.width, y: item.origin.y + item.height }]),
+    ...fbdState.joints.map((item) => item.at),
+    ...fbdState.members.flatMap((item) => [item.start, item.end]),
+    ...(!baseOnly ? [
+      ...fbdState.forces.map((item) => item.at), ...fbdState.moments.map((item) => item.at),
+      ...fbdState.dimensions.flatMap((item) => [item.start, item.end]),
+      ...fbdState.angles.flatMap((item) => [item.vertex, item.from, item.to]),
+      ...fbdState.labels.map((item) => item.at),
+    ] : []),
+  ];
+  const points = pointData.map((point) => new THREE.Vector3(point.x, point.y, 0));
   const bounds = new THREE.Box3().setFromPoints(points);
   const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
   const size = bounds.isEmpty() ? new THREE.Vector3(1, 1, 0) : bounds.getSize(new THREE.Vector3());
   const span = Math.max(size.x, size.y, 1);
-  // Selecting an object sets the FBD context; drawing begins only after the
-  // student creates an annotation. This keeps an untouched FBD canvas empty.
-  const isolated = hasStudentFBDElements(fbdState)
-    ? isolatedFBDGeometry(fbdState, workspace) : { members: [], nodes: [] };
-  for (const member of isolated.members) {
-    const start = nodes.get(member.startNodeId);
-    const end = nodes.get(member.endNodeId);
-    if (!start || !end) continue;
-    const from = new THREE.Vector3(start.x, start.y, 0);
-    const to = new THREE.Vector3(end.x, end.y, 0);
+  // Only student-created FBDState is drawn. EngineeringState remains problem data.
+  for (const body of fbdState.bodies) {
+    const outline = new THREE.Group();
+    outline.userData.fbdPrimitive = { kind: 'body', id: body.id };
+    const corners = [
+      new THREE.Vector3(body.origin.x, body.origin.y, 0),
+      new THREE.Vector3(body.origin.x + body.width, body.origin.y, 0),
+      new THREE.Vector3(body.origin.x + body.width, body.origin.y + body.height, 0),
+      new THREE.Vector3(body.origin.x, body.origin.y + body.height, 0),
+      new THREE.Vector3(body.origin.x, body.origin.y, 0),
+    ];
+    for (let index = 0; index < 4; index++) addLine(outline,
+      corners[index], corners[index + 1], selectedPrimitive?.kind === 'body' && selectedPrimitive.id === body.id ? 0xc2410c : 0x059669);
+    if (body.label) {
+      const label = textSprite(body.label, '#047857', 0.42);
+      if (label) { label.position.set(body.origin.x + body.width / 2, body.origin.y + body.height / 2, 0.2); outline.add(label); }
+    }
+    group.add(outline);
+  }
+  for (const member of fbdState.members) {
+    const from = new THREE.Vector3(member.start.x, member.start.y, 0);
+    const to = new THREE.Vector3(member.end.x, member.end.y, 0);
     const vector = to.clone().sub(from);
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, vector.length(), 12),
-      new THREE.MeshStandardMaterial({ color: 0x059669 }));
+      new THREE.MeshStandardMaterial({ color: selectedPrimitive?.kind === 'member' && selectedPrimitive.id === member.id ? 0xc2410c : 0x059669 }));
     beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), vector.normalize());
     beam.position.copy(from).add(to).multiplyScalar(0.5);
+    beam.userData.fbdPrimitive = { kind: 'member', id: member.id };
     group.add(beam);
-  }
-  for (const node of isolated.nodes) {
-    const marker = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10),
-      new THREE.MeshStandardMaterial({ color: 0x047857 }));
-    marker.position.set(node.x, node.y, 0.04);
-    group.add(marker);
-    if (fbdState.selectedTarget?.kind === 'joint') {
-      const halo = new THREE.Mesh(new THREE.RingGeometry(0.13, 0.18, 24),
-        new THREE.MeshBasicMaterial({ color: 0x10b981, side: THREE.DoubleSide }));
-      halo.position.set(node.x, node.y, 0.03);
-      group.add(halo);
+    if (member.label) {
+      const label = textSprite(member.label, '#047857', 0.42);
+      if (label) { label.position.copy(beam.position).add(new THREE.Vector3(0, 0.24, 0.2));
+        label.userData.fbdPrimitive = { kind: 'member', id: member.id }; group.add(label); }
     }
   }
-  if (hasStudentFBDElements(fbdState))
-    group.add(buildGivenFBDOverlay(workspace, fbdState, givenVisibility, textSprite));
+  for (const node of fbdState.joints) {
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10),
+      new THREE.MeshStandardMaterial({ color: selectedPrimitive?.kind === 'joint' && selectedPrimitive.id === node.id ? 0xc2410c : 0x047857 }));
+    marker.position.set(node.at.x, node.at.y, 0.04);
+    marker.userData.fbdPrimitive = { kind: 'joint', id: node.id };
+    group.add(marker);
+    if (node.label) {
+      const label = textSprite(node.label, '#047857', 0.42);
+      if (label) { label.position.set(node.at.x, node.at.y + 0.27, 0.2);
+        label.userData.fbdPrimitive = { kind: 'joint', id: node.id }; group.add(label); }
+    }
+  }
+  if (baseOnly) return { group, center, span };
   for (const force of fbdState.forces) {
     const arrow = buildFBDForceArrow(force, span, force.id === selectedForceId);
     arrow.userData.fbdDragApplication = force.id;
@@ -460,8 +491,8 @@ function buildStructureModel(workspace: StaticsWorkspace, reactions: BeamReactio
   return { group, center, span };
 }
 
-function StructurePreview({ workspace, reactions }: {
-  workspace: StaticsWorkspace; reactions: BeamReactionResult | null;
+function StructurePreview({ workspace, fbdState }: {
+  workspace: StaticsWorkspace; fbdState: FBDState;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
@@ -485,7 +516,8 @@ function StructurePreview({ workspace, reactions }: {
     controls.screenSpacePanning = true;
     controls.minDistance = 0.4;
     controls.maxDistance = 500;
-    const model = buildStructureModel(workspace, reactions);
+    const model = buildFBDModel(workspace, fbdState, null, null, null, null, null,
+      DEFAULT_GIVEN_VISIBILITY, true);
     scene.add(model.group);
     controls.target.copy(model.center);
     camera.position.copy(model.center).add(new THREE.Vector3(0.12, 0.16, Math.max(4.5, model.span * 1.7)));
@@ -516,7 +548,7 @@ function StructurePreview({ workspace, reactions }: {
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [workspace, reactions]);
+  }, [workspace, fbdState]);
   return <div ref={containerRef} className="relative min-h-0 flex-1 bg-slate-50 touch-none" aria-label="Structure preview">
     {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
   </div>;
@@ -536,11 +568,11 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     label?: FBDLabel,
     change?: { elementKind: FBDElementKind; elementId: string; before: FBDElement;
       after: FBDElement | null; dragTarget?: 'label' | 'application' },
-    history?: { before: FBDState; after: FBDState }) => void;
+    history?: { before: FBDState; after: FBDState },
+    primitive?: { kind: FBDPrimitiveKind; id: string }) => void;
 }) {
   const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd } = useStaticsWorkspace();
   const { showFbd } = displayModeLayout(displayMode);
-  const reactionResult = visibleCalculation(workspace, requestedVisualCalculation);
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -582,6 +614,16 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [labelDraft, setLabelDraft] = useState({ x: '0', y: '0', text: '', association: '' });
   const [labelError, setLabelError] = useState('');
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
+  const [selectedPrimitive, setSelectedPrimitive] = useState<{ kind: FBDPrimitiveKind; id: string } | null>(null);
+  const [primitiveMode, setPrimitiveMode] = useState<FBDPrimitiveKind | null>(null);
+  const [primitiveEditing, setPrimitiveEditing] = useState(false);
+  const [primitiveDraft, setPrimitiveDraft] = useState({ id: '', label: '', x: '0', y: '0',
+    endX: '4', endY: '0', width: '4', height: '0.6' });
+  const [primitiveError, setPrimitiveError] = useState('');
+  const [moveDraft, setMoveDraft] = useState({ dx: '0', dy: '0' });
+  useEffect(() => {
+    if (!hasStudentFBDElements(fbdState)) onVisualizationInteraction('fbd_blank_workspace');
+  }, []);
   const [labelMoveMode, setLabelMoveMode] = useState(false);
   const [targetSearch, setTargetSearch] = useState('');
   const [editError, setEditError] = useState('');
@@ -648,13 +690,22 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     for (const hit of raycaster.intersectObjects(modelRef.current?.children || [], true)) {
       let object: THREE.Object3D | null = hit.object;
       while (object && !object.userData.fbdForceId && !object.userData.fbdMomentId &&
-        !object.userData.fbdDimensionId && !object.userData.fbdAngleId && !object.userData.fbdLabelId) object = object.parent;
+        !object.userData.fbdDimensionId && !object.userData.fbdAngleId && !object.userData.fbdLabelId &&
+        !object.userData.fbdPrimitive) object = object.parent;
+      if (object?.userData.fbdPrimitive) {
+        setSelectedPrimitive(object.userData.fbdPrimitive as { kind: FBDPrimitiveKind; id: string });
+        setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
+        setSelectedAngleId(null); setSelectedLabelId(null);
+        return;
+      }
       if (object?.userData.fbdLabelId) {
+        setSelectedPrimitive(null);
         setSelectedLabelId(object.userData.fbdLabelId as string);
         setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null);
         return;
       }
       if (object?.userData.fbdForceId) {
+        setSelectedPrimitive(null);
         setSelectedForceId(object.userData.fbdForceId as string);
         setSelectedMomentId(null);
         setSelectedDimensionId(null);
@@ -663,6 +714,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         return;
       }
       if (object?.userData.fbdMomentId) {
+        setSelectedPrimitive(null);
         setSelectedMomentId(object.userData.fbdMomentId as string);
         setSelectedForceId(null);
         setSelectedDimensionId(null);
@@ -671,6 +723,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         return;
       }
       if (object?.userData.fbdDimensionId) {
+        setSelectedPrimitive(null);
         setSelectedDimensionId(object.userData.fbdDimensionId as string);
         setSelectedForceId(null);
         setSelectedMomentId(null);
@@ -679,6 +732,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         return;
       }
       if (object?.userData.fbdAngleId) {
+        setSelectedPrimitive(null);
         setSelectedAngleId(object.userData.fbdAngleId as string);
         setSelectedForceId(null);
         setSelectedMomentId(null);
@@ -894,10 +948,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       scene.remove(modelRef.current);
       disposeGroup(modelRef.current);
     }
-    const model = showFbd
-      ? buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId,
-        selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility)
-      : buildStructureModel(workspace, reactionResult);
+    const model = buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId,
+      selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility,
+      !showFbd, selectedPrimitive);
     modelRef.current = model.group;
     viewBoundsRef.current = { center: model.center, span: model.span };
     scene.add(model.group);
@@ -906,7 +959,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       framedRef.current = true;
       framedSpanRef.current = model.span;
     }
-  }, [ready, workspace, reactionResult, showFbd, fbdState, selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility]);
+  }, [ready, workspace, showFbd, fbdState, selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility, selectedPrimitive]);
 
   const resetView = () => {
     const bounds = viewBoundsRef.current;
@@ -1228,6 +1281,80 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
     setSelectedAngleId(null); setSelectedLabelId(null); setLabelMoveMode(false); setEditError('');
   };
+  const selectedPrimitiveElement = selectedPrimitive
+    ? getFBDElement(fbdState, selectedPrimitive.kind, selectedPrimitive.id) : undefined;
+  const recordPrimitiveChange = (kind: FBDPrimitiveKind, action: 'add' | 'edit' | 'move' | 'delete',
+    id: string, next: FBDState) => {
+    setFbdState(next);
+    onVisualizationInteraction(`fbd_${kind}_${action}` as VisualizationAction,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      { before: fbdState, after: next }, { kind, id });
+  };
+  const openPrimitiveForm = (kind: FBDPrimitiveKind, editing = false) => {
+    const item = editing && selectedPrimitive?.kind === kind ? selectedPrimitiveElement : undefined;
+    const draft = { id: item?.id || '', label: item && 'label' in item ? item.label || '' : '',
+      x: '0', y: '0', endX: '4', endY: '0', width: '4', height: '0.6' };
+    if (item && kind === 'body') {
+      const body = item as FBDBody;
+      draft.x = String(body.origin.x); draft.y = String(body.origin.y);
+      draft.width = String(body.width); draft.height = String(body.height);
+    } else if (item && kind === 'joint') {
+      const joint = item as FBDJoint;
+      draft.x = String(joint.at.x); draft.y = String(joint.at.y);
+    } else if (item && kind === 'member') {
+      const member = item as FBDMember;
+      draft.x = String(member.start.x); draft.y = String(member.start.y);
+      draft.endX = String(member.end.x); draft.endY = String(member.end.y);
+    }
+    setPrimitiveDraft(draft); setPrimitiveEditing(editing); setPrimitiveMode(kind); setPrimitiveError('');
+  };
+  const submitPrimitive = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!primitiveMode) return;
+    const id = primitiveDraft.id.trim();
+    const label = primitiveDraft.label.trim();
+    const at = { x: Number(primitiveDraft.x), y: Number(primitiveDraft.y) };
+    try {
+      const item = primitiveMode === 'body'
+        ? { id, origin: at, width: Number(primitiveDraft.width), height: Number(primitiveDraft.height),
+          ...(label ? { label } : {}) } as FBDBody
+        : primitiveMode === 'joint' ? { id, at, ...(label ? { label } : {}) } as FBDJoint
+          : { id, start: at, end: { x: Number(primitiveDraft.endX), y: Number(primitiveDraft.endY) },
+            ...(label ? { label } : {}) } as FBDMember;
+      const next = primitiveEditing ? editFBDPrimitive(fbdState, primitiveMode, id, item) :
+        primitiveMode === 'body' ? addFBDBody(fbdState, item as FBDBody) :
+          primitiveMode === 'joint' ? addFBDJoint(fbdState, item as FBDJoint) :
+            addFBDMember(fbdState, item as FBDMember);
+      recordPrimitiveChange(primitiveMode, primitiveEditing ? 'edit' : 'add', id, next);
+      setSelectedPrimitive({ kind: primitiveMode, id });
+      setPrimitiveMode(null); setPrimitiveError('');
+    } catch (caught) { setPrimitiveError(caught instanceof Error ? caught.message : 'Could not save FBD element.'); }
+  };
+  const moveSelectedPrimitive = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedPrimitive || !selectedPrimitiveElement) return;
+    const dx = Number(moveDraft.dx); const dy = Number(moveDraft.dy);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) {
+      setPrimitiveError('Enter a nonzero finite movement.'); return;
+    }
+    const translate = (point: { x: number; y: number }) => ({ x: point.x + dx, y: point.y + dy });
+    const item = selectedPrimitive.kind === 'body' ? {
+      ...(selectedPrimitiveElement as FBDBody), origin: translate((selectedPrimitiveElement as FBDBody).origin),
+    } : selectedPrimitive.kind === 'joint' ? {
+      ...(selectedPrimitiveElement as FBDJoint), at: translate((selectedPrimitiveElement as FBDJoint).at),
+    } : { ...(selectedPrimitiveElement as FBDMember),
+      start: translate((selectedPrimitiveElement as FBDMember).start),
+      end: translate((selectedPrimitiveElement as FBDMember).end) };
+    const next = editFBDPrimitive(fbdState, selectedPrimitive.kind, selectedPrimitive.id, item);
+    recordPrimitiveChange(selectedPrimitive.kind, 'move', selectedPrimitive.id, next);
+    setMoveDraft({ dx: '0', dy: '0' }); setPrimitiveError('');
+  };
+  const deleteSelectedPrimitive = () => {
+    if (!selectedPrimitive) return;
+    const next = deleteFBDElement(fbdState, selectedPrimitive.kind, selectedPrimitive.id);
+    recordPrimitiveChange(selectedPrimitive.kind, 'delete', selectedPrimitive.id, next);
+    setSelectedPrimitive(null); setPrimitiveMode(null);
+  };
   const submitLabelPosition = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedKind || !selectedId || !selectedElement) return;
@@ -1263,7 +1390,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           <Box className="size-4 text-blue-600" />
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-slate-900">Engineering visualization</h2>
-            <p className="text-[11px] text-slate-500">{workspace.nodes.length} nodes · {workspace.members.length} members</p>
+            <p className="text-[11px] text-slate-500">Your FBD · {fbdState.bodies.length + fbdState.joints.length + fbdState.members.length +
+              fbdState.forces.length + fbdState.moments.length + fbdState.dimensions.length +
+              fbdState.angles.length + fbdState.labels.length} elements</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -1294,7 +1423,11 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       <div className={`min-h-0 basis-0 flex-1 ${displayMode === 'split' ? 'flex flex-col' : ''}`}>
         {displayMode === 'split' && <div className="relative flex min-h-0 flex-1 flex-col border-b border-slate-300">
           <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">Structure</span>
-          <StructurePreview workspace={workspace} reactions={reactionResult} />
+          <StructurePreview workspace={workspace} fbdState={fbdState} />
+          {!fbdState.bodies.length && !fbdState.joints.length && !fbdState.members.length &&
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
+              No diagram yet. Start building your free-body diagram.
+            </div>}
         </div>}
         <div ref={containerRef} className={`relative min-h-0 bg-slate-50 touch-none ${displayMode === 'split' ? 'flex-1' : 'h-full'}`} aria-label={showFbd ? 'FBD canvas' : 'Structure canvas'}>
         {displayMode === 'split' && <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">FBD</span>}
@@ -1302,28 +1435,75 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           Isolated: {targetOptions.find(({ target }) => target.kind === fbdState.selectedTarget?.kind && target.id === fbdState.selectedTarget?.id)?.label || fbdState.selectedTarget.id}
         </span>}
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
-        {showFbd && !hasStudentFBDElements(fbdState) && !error &&
+        {(!hasStudentFBDElements(fbdState) || (!showFbd && !fbdState.bodies.length &&
+          !fbdState.joints.length && !fbdState.members.length)) && !error &&
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
-            {fbdState.selectedTarget ? 'Add a force, moment, dimension, angle, or label to begin your free-body diagram.' :
-              'Select a body, member, or joint to begin your free-body diagram.'}
+            No diagram yet. Start building your free-body diagram.
           </div>}
         </div>
       </div>
       {showFbd && <div className="max-h-[45%] min-h-0 shrink-0 overflow-y-auto border-t border-slate-200 px-3 py-2" aria-label="FBD construction toolbar">
-        <fieldset className="mb-2 rounded border border-slate-200 p-2 text-xs" aria-label="Given problem display">
-          <legend className="px-1 font-semibold text-slate-700">Given problem information</legend>
-          <div className="flex flex-wrap gap-x-3 gap-y-1">
-            {GIVEN_TOGGLES.map(({ key, label }) => <label key={key} className="flex items-center gap-1 text-slate-700">
-              <input type="checkbox" checked={givenVisibility[key]} onChange={(event) => {
-                const visible = event.currentTarget.checked;
-                setGivenVisibility((current) => ({ ...current, [key]: visible }));
-                onVisualizationInteraction(`fbd_given_${key}_${visible ? 'on' : 'off'}` as VisualizationAction);
-              }} />{label}
-            </label>)}
-          </div>
-          <p className="mt-1 text-slate-500">Gray annotations = givens · Red, purple, and cyan annotations = your work</p>
-        </fieldset>
+        <p className="mb-2 text-xs text-slate-600">Build the diagram yourself. Nothing is copied from the engineering problem into this canvas.</p>
+        <div className="mb-2 flex flex-wrap gap-1.5" aria-label="FBD base geometry tools">
+          {(['body', 'joint', 'member'] as const).map((kind) => <button key={kind} type="button"
+            onClick={() => openPrimitiveForm(kind)} className="rounded bg-emerald-100 px-2 py-1 text-xs text-emerald-900">
+            Add {kind === 'joint' ? 'Joint / Point' : kind === 'member' ? 'Member / Line' : 'Body'}
+          </button>)}
+          <button type="button" onClick={() => selectedPrimitive && openPrimitiveForm(selectedPrimitive.kind, true)}
+            disabled={!selectedPrimitiveElement} className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Edit Base Element</button>
+          <button type="button" onClick={deleteSelectedPrimitive} disabled={!selectedPrimitiveElement}
+            className="rounded bg-red-50 px-2 py-1 text-xs text-red-800 disabled:opacity-40">Delete Base Element</button>
+        </div>
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+          <label>Student base element<select aria-label="Select student-created body, joint, or member"
+            value={selectedPrimitive ? `${selectedPrimitive.kind}:${selectedPrimitive.id}` : ''}
+            onChange={(event) => { const [kind, ...parts] = event.target.value.split(':');
+              setSelectedPrimitive(kind ? { kind: kind as FBDPrimitiveKind, id: parts.join(':') } : null); }}
+            className="ml-1 max-w-48 rounded border border-slate-300 bg-white px-2 py-1">
+            <option value="">Choose element</option>
+            {fbdState.bodies.map((item) => <option key={`body:${item.id}`} value={`body:${item.id}`}>Body · {item.label || item.id}</option>)}
+            {fbdState.joints.map((item) => <option key={`joint:${item.id}`} value={`joint:${item.id}`}>Joint · {item.label || item.id}</option>)}
+            {fbdState.members.map((item) => <option key={`member:${item.id}`} value={`member:${item.id}`}>Member · {item.label || item.id}</option>)}
+          </select></label>
+        </div>
+        {primitiveMode && <form onSubmit={submitPrimitive} className="mb-2 grid grid-cols-2 gap-2 rounded border border-emerald-200 bg-emerald-50 p-2 text-xs"
+          aria-label={`${primitiveEditing ? 'Edit' : 'Add'} ${primitiveMode} details`}>
+          <strong className="col-span-2">{primitiveEditing ? 'Edit' : 'Add'} {primitiveMode}</strong>
+          <label>ID<input required maxLength={128} value={primitiveDraft.id} disabled={primitiveEditing}
+            onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, id: event.target.value })}
+            className="block w-full rounded border px-2 py-1" /></label>
+          <label>Display label (optional)<input maxLength={120} value={primitiveDraft.label}
+            onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, label: event.target.value })}
+            className="block w-full rounded border px-2 py-1" /></label>
+          {(['x', 'y'] as const).map((key) => <label key={key}>{primitiveMode === 'member' ? 'Start ' : 'Position '}{key.toUpperCase()}
+            <input required type="number" step="any" value={primitiveDraft[key]}
+              onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, [key]: event.target.value })}
+              className="block w-full rounded border px-2 py-1" /></label>)}
+          {primitiveMode === 'body' && (['width', 'height'] as const).map((key) => <label key={key}>{key}
+            <input required type="number" min="0.000001" step="any" value={primitiveDraft[key]}
+              onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, [key]: event.target.value })}
+              className="block w-full rounded border px-2 py-1" /></label>)}
+          {primitiveMode === 'member' && (['endX', 'endY'] as const).map((key) => <label key={key}>End {key.slice(-1)}
+            <input required type="number" step="any" value={primitiveDraft[key]}
+              onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, [key]: event.target.value })}
+              className="block w-full rounded border px-2 py-1" /></label>)}
+          <div className="col-span-2 flex gap-2"><button type="submit" className="rounded bg-emerald-700 px-2 py-1 text-white">Save {primitiveMode}</button>
+            <button type="button" onClick={() => setPrimitiveMode(null)} className="rounded bg-white px-2 py-1">Cancel</button></div>
+          {primitiveError && <p role="alert" className="col-span-2 text-red-700">{primitiveError}</p>}
+        </form>}
+        {selectedPrimitiveElement && <form onSubmit={moveSelectedPrimitive} className="mb-2 flex flex-wrap items-end gap-2 text-xs"
+          aria-label="Move selected FBD base element">
+          <strong>Move {selectedPrimitive?.kind} {selectedPrimitive?.id}</strong>
+          <label>ΔX<input type="number" step="any" required value={moveDraft.dx}
+            onChange={(event) => setMoveDraft({ ...moveDraft, dx: event.target.value })}
+            className="ml-1 w-20 rounded border px-2 py-1" /></label>
+          <label>ΔY<input type="number" step="any" required value={moveDraft.dy}
+            onChange={(event) => setMoveDraft({ ...moveDraft, dy: event.target.value })}
+            className="ml-1 w-20 rounded border px-2 py-1" /></label>
+          <button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Move Selected</button>
+        </form>}
         <div className="flex flex-wrap items-center gap-1.5">
+          <details className="w-full text-xs"><summary className="cursor-pointer font-medium text-slate-600">Optional problem object for FBD checking</summary>
           <label className="text-xs font-medium text-slate-700" htmlFor="fbd-target-select">Select Body/Member/Joint</label>
           <input type="search" aria-label="Search bodies, members, and joints" value={targetSearch}
             onChange={(event) => setTargetSearch(event.target.value)} placeholder="Search joints or members"
@@ -1339,16 +1519,17 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             {visibleTargetOptions.map(({ label, target }) =>
               <option key={`${target.kind}:${target.id}`} value={JSON.stringify(target)}>{label}</option>)}
           </select>
-          <span className="text-[11px] text-slate-500">Other rigid components appear only when defined in the engineering model.</span>
-          <button type="button" disabled={!fbdState.selectedTarget} onClick={openForceForm}
+          <span className="text-[11px] text-slate-500">Choosing a problem object does not draw it.</span>
+          </details>
+          <button type="button" onClick={openForceForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Force</button>
-          <button type="button" disabled={!fbdState.selectedTarget} onClick={openMomentForm}
+          <button type="button" onClick={openMomentForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Moment</button>
-          <button type="button" disabled={!fbdState.selectedTarget} onClick={openDimensionForm}
+          <button type="button" onClick={openDimensionForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Dimension</button>
-          <button type="button" disabled={!fbdState.selectedTarget} onClick={openAngleForm}
+          <button type="button" onClick={openAngleForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Angle</button>
-          <button type="button" disabled={!fbdState.selectedTarget} onClick={openLabelForm}
+          <button type="button" onClick={openLabelForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Label</button>
           <button type="button" disabled={!selectedElement} onClick={deleteSelected}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Delete Selected</button>

@@ -2,15 +2,12 @@ import type { FBDPoint, FBDState } from './statics/fbdState';
 import type { StaticsWorkspace } from './statics/model';
 
 export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?: StaticsWorkspace }) {
-  const selected = state.selectedTarget;
-  const nodes = new Map(workspace?.nodes.map((node) => [node.id, node]) || []);
-  const members = !selected || !workspace ? [] : selected.kind === 'body'
-    ? workspace.members : selected.kind === 'member'
-      ? workspace.members.filter((member) => member.id === selected.id) : [];
-  const visibleNodeIds = new Set(members.flatMap((member) => [member.startNodeId, member.endNodeId]));
-  if (selected?.kind === 'joint') visibleNodeIds.add(selected.id);
+  void workspace;
   const points: FBDPoint[] = [
-    ...[...visibleNodeIds].map((id) => nodes.get(id)).filter((node): node is NonNullable<typeof node> => !!node),
+    ...(state.bodies || []).flatMap((item) => [item.origin,
+      { x: item.origin.x + item.width, y: item.origin.y + item.height }]),
+    ...(state.joints || []).map((item) => item.at),
+    ...(state.members || []).flatMap((item) => [item.start, item.end]),
     ...state.forces.map((item) => item.at), ...state.moments.map((item) => item.at),
     ...state.dimensions.flatMap((item) => [item.start, item.end]),
     ...state.angles.flatMap((item) => [item.vertex, item.from, item.to]),
@@ -31,7 +28,8 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
       fontWeight="600" stroke="white" strokeWidth="4" paintOrder="stroke">{value}</text>;
   const anglePoint = (at: FBDPoint, radians: number, length: number) =>
     ({ x: at.x + Math.cos(radians) * length, y: at.y + Math.sin(radians) * length });
-  const hasWork = state.forces.length + state.moments.length + state.dimensions.length +
+  const hasWork = (state.bodies?.length || 0) + (state.joints?.length || 0) + (state.members?.length || 0) +
+    state.forces.length + state.moments.length + state.dimensions.length +
     state.angles.length + state.labels.length > 0;
 
   return <svg viewBox="0 0 800 440" role="img" aria-label="Read-only FBD replay"
@@ -40,15 +38,18 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
       orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#dc2626" /></marker>
       <marker id="replay-moment-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5"
         orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#7c3aed" /></marker></defs>
-    {hasWork && members.map((member) => {
-      const a = nodes.get(member.startNodeId); const b = nodes.get(member.endNodeId);
-      return a && b ? <g key={member.id}>{line(a, b, '#059669', 7)}</g> : null;
-    })}
-    {hasWork && [...visibleNodeIds].map((id) => {
-      const node = nodes.get(id);
-      return node ? <g key={id}><circle cx={sx(node.x)} cy={sy(node.y)} r="5" fill="#047857" />
-        {text(node.label || node.id, { x: node.x, y: node.y + span * 0.09 }, '#065f46')}</g> : null;
-    })}
+    {(state.bodies || []).map((body) => <g key={body.id}>
+      <rect x={sx(body.origin.x)} y={sy(body.origin.y + body.height)} width={body.width * scale}
+        height={body.height * scale} fill="none" stroke="#059669" strokeWidth="3" />
+      {body.label && text(body.label, { x: body.origin.x + body.width / 2,
+        y: body.origin.y + body.height / 2 }, '#047857')}</g>)}
+    {(state.members || []).map((member) => <g key={member.id}>{line(member.start, member.end, '#059669', 7)}
+      {member.label && text(member.label, { x: (member.start.x + member.end.x) / 2,
+        y: (member.start.y + member.end.y) / 2 }, '#047857')}</g>)}
+    {(state.joints || []).map((node) => <g key={node.id}>
+      <circle cx={sx(node.at.x)} cy={sy(node.at.y)} r="5" fill="#047857" />
+      {node.label && text(node.label, { x: node.at.x, y: node.at.y + span * 0.09 }, '#065f46')}
+    </g>)}
     {state.forces.map((force) => {
       const end = anglePoint(force.at, force.angle * Math.PI / 180, Math.max(0.75, span * 0.22));
       return <g key={force.id}><line x1={sx(force.at.x)} y1={sy(force.at.y)} x2={sx(end.x)} y2={sy(end.y)}
@@ -94,6 +95,6 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
     })}
     {state.labels.map((label) => <g key={label.id}>{text(label.text, label.at, '#1e293b')}</g>)}
     {!hasWork && <text x="400" y="220" textAnchor="middle" fill="#64748b" fontSize="18">
-      No student-created FBD elements at this step.</text>}
+      No diagram yet. Start building your free-body diagram.</text>}
   </svg>;
 }

@@ -26,7 +26,7 @@ import { createFBDCheckResearchEvent, createFBDToolResearchEvents, createToolRes
   createFBDResearchContext, fbdActionForVisualization, fbdToolElement,
   type EngineeringResearchEvent, type VisualizationAction } from './statics/researchLog';
 import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
-  FBDElement, FBDElementKind, FBDState, FBDTarget } from './statics/fbdState';
+  FBDElement, FBDElementKind, FBDPrimitiveKind, FBDState, FBDTarget } from './statics/fbdState';
 import { displayModeLayout, type EngineeringDisplayMode } from './statics/displayMode';
 
 const EngineeringVisualizationPanel = lazy(() =>
@@ -1259,8 +1259,8 @@ export default function App() {
   const [showArchive, setShowArchive] = useState(false);
   const [archiveTab, setArchiveTab] = useState<'chat' | 'fbd'>('chat');
   const [showEngineeringPanel, setShowEngineeringPanel] = useState(() => window.innerWidth >= 768);
-  const [displayMode, setDisplayMode] = useState<EngineeringDisplayMode>('structure');
-  const previousDisplayModeRef = useRef<EngineeringDisplayMode>('structure');
+  const [displayMode, setDisplayMode] = useState<EngineeringDisplayMode>('fbd');
+  const previousDisplayModeRef = useRef<EngineeringDisplayMode>('fbd');
   const [viewCommand, setViewCommand] = useState<{ view: EngineeringView; sequence: number }>();
   const [requestedVisualCalculation, setRequestedVisualCalculation] = useState<RequestedVisualCalculation | null>(null);
   const staticsControllerRef = useRef<StaticsWorkspaceController | null>(null);
@@ -1336,7 +1336,8 @@ export default function App() {
     force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension, angle?: FBDAngle, label?: FBDLabel,
     change?: { elementKind: FBDElementKind; elementId: string; before: FBDElement;
       after: FBDElement | null; dragTarget?: 'label' | 'application' },
-    history?: { before: FBDState; after: FBDState }) => {
+    history?: { before: FBDState; after: FBDState },
+    primitive?: { kind: FBDPrimitiveKind; id: string }) => {
     if (!userId) return;
     const sessionId = getEngineeringSessionId(sessionStorage, userId);
     const event = createVisualizationResearchEvent(sessionId, action,
@@ -1346,9 +1347,9 @@ export default function App() {
       const before = history?.before || current;
       const after = history?.after || current;
       if (before && after) {
-        const elementType = change?.elementKind || (force ? 'force' : moment ? 'moment' :
+        const elementType = primitive?.kind || change?.elementKind || (force ? 'force' : moment ? 'moment' :
           dimension ? 'dimension' : angle ? 'angle' : label ? 'label' : null);
-        const elementId = change?.elementId || force?.id || moment?.id || dimension?.id || angle?.id || label?.id || null;
+        const elementId = primitive?.id || change?.elementId || force?.id || moment?.id || dimension?.id || angle?.id || label?.id || null;
         event.fbdResearch = createFBDResearchContext(fbdActionForVisualization(action, elementType || undefined),
           before, after, nextFBDResearchSequence(sessionStorage, sessionId), elementType, elementId);
       }

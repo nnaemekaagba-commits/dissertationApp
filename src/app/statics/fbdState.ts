@@ -2,6 +2,11 @@ import type { StaticsWorkspace } from './model.ts';
 
 export type FBDTarget = { kind: 'body' | 'member' | 'joint'; id: string };
 export type FBDPoint = { x: number; y: number };
+export type FBDBody = { id: string; origin: FBDPoint; width: number; height: number; label?: string };
+export type FBDJoint = { id: string; at: FBDPoint; label?: string };
+export type FBDMember = { id: string; start: FBDPoint; end: FBDPoint; label?: string };
+export type FBDPrimitiveKind = 'body' | 'joint' | 'member';
+export type FBDPrimitive = FBDBody | FBDJoint | FBDMember;
 export type FBDForce = { id: string; at: FBDPoint; angle: number; magnitude?: number; label?: string; labelPosition?: FBDPoint };
 export type FBDForceInput = { at: FBDPoint; angle: number; label: string; magnitude?: number };
 export type FBDMoment = { id: string; at: FBDPoint; clockwise: boolean; magnitude?: number; label?: string; labelPosition?: FBDPoint };
@@ -10,17 +15,20 @@ export type FBDDimension = { id: string; start: FBDPoint; end: FBDPoint; label?:
 export type FBDDimensionInput = { start: FBDPoint; end: FBDPoint; label: string };
 export type FBDAngle = { id: string; vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label?: string; labelPosition?: FBDPoint };
 export type FBDAngleInput = { vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label: string };
-export type FBDLabelAssociation = { kind: 'force' | 'moment' | 'node' | 'member' | 'dimension' | 'angle'; id: string };
+export type FBDLabelAssociation = { kind: 'body' | 'joint' | 'force' | 'moment' | 'node' | 'member' | 'dimension' | 'angle'; id: string };
 export type FBDLabel = { id: string; at: FBDPoint; text: string; associatedWith?: FBDLabelAssociation };
 export type FBDLabelInput = { at: FBDPoint; text: string; associatedWith?: FBDLabelAssociation };
-export type FBDElementKind = 'force' | 'moment' | 'dimension' | 'angle' | 'label';
-export type FBDElement = FBDForce | FBDMoment | FBDDimension | FBDAngle | FBDLabel;
+export type FBDElementKind = FBDPrimitiveKind | 'force' | 'moment' | 'dimension' | 'angle' | 'label';
+export type FBDElement = FBDPrimitive | FBDForce | FBDMoment | FBDDimension | FBDAngle | FBDLabel;
 
 /** Student-created diagram data. EngineeringState is never copied or edited here. */
 export interface FBDState {
   version: 1;
   sourceStructureKey: string;
   selectedTarget: FBDTarget | null;
+  bodies: FBDBody[];
+  joints: FBDJoint[];
+  members: FBDMember[];
   forces: FBDForce[];
   moments: FBDMoment[];
   dimensions: FBDDimension[];
@@ -44,18 +52,61 @@ export function engineeringStructureKey(workspace: StaticsWorkspace): string {
 
 export function createEmptyFBDState(workspace: StaticsWorkspace): FBDState {
   return { version: 1, sourceStructureKey: engineeringStructureKey(workspace), selectedTarget: null,
-    forces: [], moments: [], dimensions: [], angles: [], labels: [] };
+    bodies: [], joints: [], members: [], forces: [], moments: [], dimensions: [], angles: [], labels: [] };
 }
 
 export function hasStudentFBDElements(state: FBDState): boolean {
-  return state.forces.length + state.moments.length + state.dimensions.length +
+  return (state.bodies?.length || 0) + (state.joints?.length || 0) + (state.members?.length || 0) +
+    state.forces.length + state.moments.length + state.dimensions.length +
     state.angles.length + state.labels.length > 0;
 }
 
 /** Clears only student annotations, retaining the selected body and structure association. */
 export function resetStudentFBDElements(state: FBDState): FBDState {
   if (!hasStudentFBDElements(state)) return state;
-  return { ...state, forces: [], moments: [], dimensions: [], angles: [], labels: [] };
+  return { ...state, bodies: [], joints: [], members: [],
+    forces: [], moments: [], dimensions: [], angles: [], labels: [] };
+}
+
+const validPoint = (point: FBDPoint) => Number.isFinite(point.x) && Number.isFinite(point.y);
+const validText = (value?: string) => value === undefined || (typeof value === 'string' && value.length <= 120);
+const uniquePrimitiveId = (state: FBDState, id: string) => id.trim() &&
+  ![...state.bodies, ...state.joints, ...state.members].some((item) => item.id === id);
+
+/** Student-created base geometry, independent of EngineeringState. */
+export function addFBDBody(state: FBDState, body: FBDBody): FBDState {
+  if (!uniquePrimitiveId(state, body.id) || !validPoint(body.origin) ||
+    !Number.isFinite(body.width) || body.width <= 0 ||
+    !Number.isFinite(body.height) || body.height <= 0 || !validText(body.label))
+    throw new Error('Enter a unique body ID, finite origin, positive size, and optional label.');
+  return { ...state, bodies: [...state.bodies, { ...body, origin: { ...body.origin } }] };
+}
+export function addFBDJoint(state: FBDState, joint: FBDJoint): FBDState {
+  if (!uniquePrimitiveId(state, joint.id) || !validPoint(joint.at) || !validText(joint.label))
+    throw new Error('Enter a unique joint ID, finite point, and optional label.');
+  return { ...state, joints: [...state.joints, { ...joint, at: { ...joint.at } }] };
+}
+export function addFBDMember(state: FBDState, member: FBDMember): FBDState {
+  if (!uniquePrimitiveId(state, member.id) || !validPoint(member.start) || !validPoint(member.end) ||
+    Math.hypot(member.end.x - member.start.x, member.end.y - member.start.y) < 1e-9 ||
+    !validText(member.label))
+    throw new Error('Enter a unique member ID, distinct finite endpoints, and optional label.');
+  return { ...state, members: [...state.members, { ...member,
+    start: { ...member.start }, end: { ...member.end } }] };
+}
+export function editFBDPrimitive(state: FBDState, kind: FBDPrimitiveKind,
+  id: string, replacement: FBDPrimitive): FBDState {
+  if (!getFBDElement(state, kind, id) || replacement.id !== id)
+    throw new Error('Unknown FBD base element.');
+  const without = deleteFBDElement(state, kind, id);
+  const validated = kind === 'body' ? addFBDBody(without, replacement as FBDBody) :
+    kind === 'joint' ? addFBDJoint(without, replacement as FBDJoint) :
+      addFBDMember(without, replacement as FBDMember);
+  return { ...validated,
+    bodies: kind === 'body' ? state.bodies.map((item) => item.id === id ? replacement as FBDBody : item) : state.bodies,
+    joints: kind === 'joint' ? state.joints.map((item) => item.id === id ? replacement as FBDJoint : item) : state.joints,
+    members: kind === 'member' ? state.members.map((item) => item.id === id ? replacement as FBDMember : item) : state.members,
+    labels: state.labels };
 }
 
 function validTarget(target: FBDTarget, workspace: StaticsWorkspace): boolean {
@@ -88,8 +139,6 @@ export function isolatedFBDGeometry(state: FBDState, workspace: StaticsWorkspace
 /** Adds only student supplied values; this never changes the engineering model or calls a solver. */
 export function addFBDForce(state: FBDState, input: FBDForceInput, workspace: StaticsWorkspace,
   forceId: string): FBDState {
-  if (!state.selectedTarget || !validTarget(state.selectedTarget, workspace))
-    throw new Error('Select a body, member, or joint before adding a force.');
   if (!forceId.trim() || state.forces.some((force) => force.id === forceId))
     throw new Error('Force ID must be unique.');
   if (!Number.isFinite(input.at.x) || !Number.isFinite(input.at.y) || !Number.isFinite(input.angle) ||
@@ -106,8 +155,6 @@ export function addFBDForce(state: FBDState, input: FBDForceInput, workspace: St
 /** Records only the student's moment annotation; no equilibrium calculation is performed. */
 export function addFBDMoment(state: FBDState, input: FBDMomentInput, workspace: StaticsWorkspace,
   momentId: string): FBDState {
-  if (!state.selectedTarget || !validTarget(state.selectedTarget, workspace))
-    throw new Error('Select a body, member, or joint before adding a moment.');
   if (!momentId.trim() || state.moments.some((moment) => moment.id === momentId))
     throw new Error('Moment ID must be unique.');
   if (!Number.isFinite(input.at.x) || !Number.isFinite(input.at.y) ||
@@ -124,8 +171,6 @@ export function addFBDMoment(state: FBDState, input: FBDMomentInput, workspace: 
 /** The label is supplied by the student; endpoint geometry never determines its value. */
 export function addFBDDimension(state: FBDState, input: FBDDimensionInput,
   workspace: StaticsWorkspace, dimensionId: string): FBDState {
-  if (!state.selectedTarget || !validTarget(state.selectedTarget, workspace))
-    throw new Error('Select a body, member, or joint before adding a dimension.');
   if (!dimensionId.trim() || state.dimensions.some((dimension) => dimension.id === dimensionId))
     throw new Error('Dimension ID must be unique.');
   const { start, end } = input;
@@ -142,8 +187,6 @@ export function addFBDDimension(state: FBDState, input: FBDDimensionInput,
 /** Stores two student-chosen reference rays and their text without finding an angle value. */
 export function addFBDAngle(state: FBDState, input: FBDAngleInput,
   workspace: StaticsWorkspace, angleId: string): FBDState {
-  if (!state.selectedTarget || !validTarget(state.selectedTarget, workspace))
-    throw new Error('Select a body, member, or joint before adding an angle.');
   if (!angleId.trim() || state.angles.some((angle) => angle.id === angleId))
     throw new Error('Angle ID must be unique.');
   const { vertex, from, to } = input;
@@ -166,8 +209,11 @@ export function addFBDAngle(state: FBDState, input: FBDAngleInput,
 
 function validLabelAssociation(state: FBDState, workspace: StaticsWorkspace, association: FBDLabelAssociation) {
   const { kind, id } = association;
-  return kind === 'node' ? workspace.nodes.some((node) => node.id === id) :
-    kind === 'member' ? workspace.members.some((member) => member.id === id) :
+  return kind === 'body' ? state.bodies.some((item) => item.id === id) :
+    kind === 'joint' ? state.joints.some((item) => item.id === id) :
+    kind === 'node' ? workspace.nodes.some((node) => node.id === id) :
+    kind === 'member' ? state.members.some((member) => member.id === id) ||
+      workspace.members.some((member) => member.id === id) :
     kind === 'force' ? state.forces.some((force) => force.id === id) :
     kind === 'moment' ? state.moments.some((moment) => moment.id === id) :
     kind === 'dimension' ? state.dimensions.some((dimension) => dimension.id === id) :
@@ -176,8 +222,6 @@ function validLabelAssociation(state: FBDState, workspace: StaticsWorkspace, ass
 
 export function addFBDLabel(state: FBDState, input: FBDLabelInput,
   workspace: StaticsWorkspace, labelId: string): FBDState {
-  if (!state.selectedTarget || !validTarget(state.selectedTarget, workspace))
-    throw new Error('Select a body, member, or joint before adding a label.');
   if (!labelId.trim() || state.labels.some((label) => label.id === labelId))
     throw new Error('Label ID must be unique.');
   if (!Number.isFinite(input.at.x) || !Number.isFinite(input.at.y) ||
@@ -274,7 +318,8 @@ export function editFBDLabel(state: FBDState, id: string, input: FBDLabelInput,
 }
 
 export function getFBDElement(state: FBDState, kind: FBDElementKind, id: string): FBDElement | undefined {
-  const collection = kind === 'force' ? state.forces : kind === 'moment' ? state.moments :
+  const collection = kind === 'body' ? state.bodies : kind === 'joint' ? state.joints :
+    kind === 'member' ? state.members : kind === 'force' ? state.forces : kind === 'moment' ? state.moments :
     kind === 'dimension' ? state.dimensions : kind === 'angle' ? state.angles : state.labels;
   return collection.find((item) => item.id === id);
 }
@@ -285,6 +330,9 @@ export function deleteFBDElement(state: FBDState, kind: FBDElementKind, id: stri
     state.labels.map((item) => item.associatedWith?.kind === kind && item.associatedWith.id === id
       ? { id: item.id, at: item.at, text: item.text } : item);
   return { ...state,
+    bodies: kind === 'body' ? state.bodies.filter((item) => item.id !== id) : state.bodies,
+    joints: kind === 'joint' ? state.joints.filter((item) => item.id !== id) : state.joints,
+    members: kind === 'member' ? state.members.filter((item) => item.id !== id) : state.members,
     forces: kind === 'force' ? state.forces.filter((item) => item.id !== id) : state.forces,
     moments: kind === 'moment' ? state.moments.filter((item) => item.id !== id) : state.moments,
     dimensions: kind === 'dimension' ? state.dimensions.filter((item) => item.id !== id) : state.dimensions,
@@ -334,6 +382,13 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
   } : null;
   const output: FBDState = {
     version: 1, sourceStructureKey: id(root.sourceStructureKey), selectedTarget,
+    bodies: rows(root.bodies ?? [], (row) => ({ id: id(row.id), origin: point(row.origin),
+      width: number(row.width), height: number(row.height),
+      ...(row.label === undefined ? {} : { label: label(row.label) }) })),
+    joints: rows(root.joints ?? [], (row) => ({ id: id(row.id), at: point(row.at),
+      ...(row.label === undefined ? {} : { label: label(row.label) }) })),
+    members: rows(root.members ?? [], (row) => ({ id: id(row.id), start: point(row.start), end: point(row.end),
+      ...(row.label === undefined ? {} : { label: label(row.label) }) })),
     forces: rows(root.forces, (row) => ({ id: id(row.id), at: point(row.at), angle: number(row.angle),
       ...(row.magnitude === undefined ? {} : { magnitude: number(row.magnitude) }),
       ...(row.label === undefined ? {} : { label: label(row.label) }),
@@ -352,16 +407,22 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
     labels: rows(root.labels, (row) => {
       const association = row.associatedWith === undefined ? undefined : object(row.associatedWith);
       const kind = association?.kind;
-      const validKind = kind === 'force' || kind === 'moment' || kind === 'node' ||
+      const validKind = kind === 'body' || kind === 'joint' || kind === 'force' || kind === 'moment' || kind === 'node' ||
         kind === 'member' || kind === 'dimension' || kind === 'angle';
       if (association && !validKind) fail();
       return { id: id(row.id), at: point(row.at), text: id(row.text),
         ...(association ? { associatedWith: { kind: kind as FBDLabelAssociation['kind'], id: id(association.id) } } : {}) };
     }),
   };
-  for (const key of ['forces', 'moments', 'dimensions', 'angles', 'labels'] as const) {
+  for (const key of ['bodies', 'joints', 'members', 'forces', 'moments', 'dimensions', 'angles', 'labels'] as const) {
     if (new Set(output[key].map((item) => item.id)).size !== output[key].length) fail();
   }
+  if (new Set([...output.bodies, ...output.joints, ...output.members].map((item) => item.id)).size !==
+    output.bodies.length + output.joints.length + output.members.length) fail();
+  if (output.bodies.some((item) => item.width <= 0 || item.height <= 0 || !validText(item.label)) ||
+    output.joints.some((item) => !validText(item.label)) ||
+    output.members.some((item) => Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y) < 1e-9 ||
+      !validText(item.label))) fail();
   output.labels = output.labels.map((item) => item.associatedWith &&
     !validLabelAssociation(output, workspace, item.associatedWith)
     ? { id: item.id, at: item.at, text: item.text } : item);
