@@ -4,7 +4,8 @@ import { readBeamControls, updateBeamWorkspace } from './beamControls.ts';
 import { parseStaticsWorkspace, type StaticsSupport, type StaticsWorkspace } from './model.ts';
 
 export const ENGINEERING_TOOL_NAMES = [
-  'get_current_structure', 'change_load_magnitude', 'move_load', 'change_support',
+  'get_current_structure', 'create_structure', 'add_node', 'remove_node', 'add_member', 'remove_member',
+  'change_load_magnitude', 'move_load', 'change_support',
   'change_member_dimension', 'add_load', 'remove_load', 'change_dimension',
   'show_view', 'show_fbd', 'calculate_reactions',
 ] as const;
@@ -40,6 +41,7 @@ export interface EngineeringToolBatch {
 }
 
 const STRUCTURE_MUTATIONS = new Set<EngineeringToolName>([
+  'create_structure', 'add_node', 'remove_node', 'add_member', 'remove_member',
   'change_load_magnitude', 'move_load', 'change_support', 'change_member_dimension',
   'change_dimension', 'add_load', 'remove_load',
 ]);
@@ -108,6 +110,11 @@ export function formatEngineeringToolBatch(batch: EngineeringToolBatch): string 
         `${count(structure.supports.length, 'support')}, ${count(structure.loads.length, 'load')}; units: ` +
         `${structure.units.length} and ${structure.units.force}.`);
     }
+    if (item.name === 'create_structure') lines.push(`- Created a structure with ${result.nodeCount} joints and ${result.memberCount} members.`);
+    if (item.name === 'add_node') lines.push(`- Added joint ${result.nodeId}.`);
+    if (item.name === 'remove_node') lines.push(`- Removed joint ${result.nodeId}.`);
+    if (item.name === 'add_member') lines.push(`- Added member ${result.memberId}.`);
+    if (item.name === 'remove_member') lines.push(`- Removed member ${result.memberId}.`);
     if (item.name === 'change_load_magnitude') {
       const load = batch.workspace.loads.find((candidate) => candidate.id === result.loadId);
       const unit = load?.kind === 'moment' ? (batch.workspace.units.moment || `${batch.workspace.units.force}*${batch.workspace.units.length}`)
@@ -190,6 +197,62 @@ export function executeEngineeringTool(workspace: StaticsWorkspace, call: Engine
     object(raw, []);
     return { workspace, result: { structure: workspace } };
   }
+  if (name === 'create_structure') {
+    const args = object(raw, ['nodes', 'members']);
+    if (!Array.isArray(args.nodes) || !Array.isArray(args.members))
+      throw new Error('nodes and members must be arrays.');
+    const nodes = args.nodes.map((entry) => {
+      const row = object(entry, ['id', 'x', 'y']);
+      return { id: text(row.id, 'node id'), x: finite(row.x, 'node x'), y: finite(row.y, 'node y') };
+    });
+    const members = args.members.map((entry) => {
+      const row = object(entry, ['id', 'startNodeId', 'endNodeId']);
+      return { id: text(row.id, 'member id'), startNodeId: text(row.startNodeId, 'startNodeId'),
+        endNodeId: text(row.endNodeId, 'endNodeId') };
+    });
+    if (!nodes.length) throw new Error('A structure needs at least one joint.');
+    const next = parseStaticsWorkspace({ nodes, members, supports: [], loads: [], dimensions: [],
+      units: workspace.units });
+    return { workspace: next, result: { nodeCount: nodes.length, memberCount: members.length } };
+  }
+  if (name === 'add_node') {
+    const args = object(raw, ['id', 'x', 'y']);
+    const node = { id: text(args.id, 'node id'), x: finite(args.x, 'x'), y: finite(args.y, 'y') };
+    const next = parseStaticsWorkspace({ ...workspace, nodes: [...workspace.nodes, node] });
+    return { workspace: next, result: { nodeId: node.id } };
+  }
+  if (name === 'remove_node') {
+    const args = object(raw, ['id']);
+    const nodeId = text(args.id, 'node id');
+    if (!workspace.nodes.some((node) => node.id === nodeId)) throw new Error(`Joint ${nodeId} does not exist.`);
+    if (workspace.members.some((member) => member.startNodeId === nodeId || member.endNodeId === nodeId) ||
+      workspace.supports.some((support) => support.nodeId === nodeId) ||
+      workspace.loads.some((load) => load.kind !== 'distributed' && load.nodeId === nodeId) ||
+      workspace.dimensions.some((item) => item.startNodeId === nodeId || item.endNodeId === nodeId) ||
+      workspace.angles?.some((item) => [item.vertexNodeId, item.fromNodeId, item.toNodeId].includes(nodeId)))
+      throw new Error(`Joint ${nodeId} is still referenced; remove connected elements first.`);
+    const next = parseStaticsWorkspace({ ...workspace,
+      nodes: workspace.nodes.filter((node) => node.id !== nodeId) });
+    return { workspace: next, result: { nodeId } };
+  }
+  if (name === 'add_member') {
+    const args = object(raw, ['id', 'startNodeId', 'endNodeId']);
+    const member = { id: text(args.id, 'member id'),
+      startNodeId: text(args.startNodeId, 'startNodeId'), endNodeId: text(args.endNodeId, 'endNodeId') };
+    const next = parseStaticsWorkspace({ ...workspace, members: [...workspace.members, member] });
+    return { workspace: next, result: { memberId: member.id } };
+  }
+  if (name === 'remove_member') {
+    const args = object(raw, ['id']);
+    const memberId = text(args.id, 'member id');
+    if (!workspace.members.some((member) => member.id === memberId))
+      throw new Error(`Member ${memberId} does not exist.`);
+    if (workspace.loads.some((load) => load.kind === 'distributed' && load.memberId === memberId))
+      throw new Error(`Member ${memberId} has a distributed load; remove that load first.`);
+    const next = parseStaticsWorkspace({ ...workspace,
+      members: workspace.members.filter((member) => member.id !== memberId) });
+    return { workspace: next, result: { memberId } };
+  }
   if (name === 'calculate_reactions') {
     object(raw, []);
     return { workspace, result: { calculation: calculatePlanarBeamReactions(workspace) } };
@@ -237,9 +300,8 @@ export function executeEngineeringTool(workspace: StaticsWorkspace, call: Engine
     const args = object(raw, ['nodeId', 'kind'], ['reactionAngle']);
     const nodeId = text(args.nodeId, 'nodeId');
     const kind = choice(args.kind, ['none', 'pin', 'roller', 'fixed'] as const, 'kind');
-    const { left, right } = findBeam(workspace);
     const node = workspace.nodes.find((item) => item.id === nodeId);
-    if (!node || node.y !== left.y || node.x < left.x || node.x > right.x) throw new Error('Support node must lie on the beam.');
+    if (!node) throw new Error(`Support node ${nodeId} does not exist.`);
     if (kind !== 'roller' && args.reactionAngle !== undefined) throw new Error('reactionAngle applies only to a roller.');
     const angle = args.reactionAngle === undefined ? (workspace.units.angle === 'rad' ? Math.PI / 2 : 90)
       : finite(args.reactionAngle, 'reactionAngle');
@@ -340,16 +402,18 @@ export function executeEngineeringTool(workspace: StaticsWorkspace, call: Engine
     const dimension = workspace.dimensions.find((item) => item.id === dimensionId);
     if (!dimension) throw new Error(`Dimension ${dimensionId} does not exist.`);
     const beam = readBeamControls(workspace);
-    if (!beam) throw new Error('This dimension can only be changed on the editable A-C-B beam.');
+    if (!beam) throw new Error('This dimension requires a single horizontal beam with one interior node.');
+    const { left, right } = findBeam(workspace);
+    const interior = workspace.nodes.find((node) => node.id !== left.id && node.id !== right.id &&
+      node.y === left.y && node.x > left.x && node.x < right.x);
+    if (!interior) throw new Error('The beam has no interior dimension node.');
+    const endpoints = new Set([dimension.startNodeId, dimension.endNodeId]);
     let next: StaticsWorkspace;
-    if (new Set([dimension.startNodeId, dimension.endNodeId]).has('A') &&
-      new Set([dimension.startNodeId, dimension.endNodeId]).has('B')) {
+    if (endpoints.has(left.id) && endpoints.has(right.id)) {
       next = updateBeamWorkspace(workspace, { field: 'length', value });
-    } else if (new Set([dimension.startNodeId, dimension.endNodeId]).has('A') &&
-      new Set([dimension.startNodeId, dimension.endNodeId]).has('C')) {
+    } else if (endpoints.has(left.id) && endpoints.has(interior.id)) {
       next = updateBeamWorkspace(workspace, { field: 'loadPosition', value });
-    } else if (new Set([dimension.startNodeId, dimension.endNodeId]).has('C') &&
-      new Set([dimension.startNodeId, dimension.endNodeId]).has('B')) {
+    } else if (endpoints.has(interior.id) && endpoints.has(right.id)) {
       next = updateBeamWorkspace(workspace, { field: 'loadPosition', value: beam.length - value });
     } else throw new Error('This dimension cannot be mapped to beam geometry.');
     if (next === workspace) throw new Error('Dimension value is outside the valid beam range.');

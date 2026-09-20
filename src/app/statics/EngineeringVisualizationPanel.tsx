@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useStaticsWorkspace } from './StaticsWorkspaceProvider';
 import { selectSceneData } from './sceneData';
+import { fbdTargetOptions } from './fbdTargetOptions';
 import type { VisualizationAction } from './researchLog';
 import type { BeamReactionResult } from './calculations';
 import { visibleCalculation, type RequestedVisualCalculation } from './calculationPolicy';
@@ -582,6 +583,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [labelError, setLabelError] = useState('');
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
   const [labelMoveMode, setLabelMoveMode] = useState(false);
+  const [targetSearch, setTargetSearch] = useState('');
   const [editError, setEditError] = useState('');
   const [forceApplicationArmed, setForceApplicationArmed] = useState(false);
   const dragRef = useRef<FBDDrag | null>(null);
@@ -928,13 +930,13 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     else selectView(viewCommand.view);
   }, [ready, viewCommand?.sequence]);
 
-  const targetOptions: { label: string; target: FBDTarget }[] = [
-    { label: 'Body · Entire structure', target: { kind: 'body', id: 'structure' } },
-    ...workspace.members.map((member) => ({ label: `Member · ${member.label || member.id}`,
-      target: { kind: 'member' as const, id: member.id } })),
-    ...workspace.nodes.map((node) => ({ label: `Joint · ${node.label || node.id}`,
-      target: { kind: 'joint' as const, id: node.id } })),
-  ];
+  const targetOptions = fbdTargetOptions(workspace);
+  const visibleTargetOptions = fbdTargetOptions(workspace, targetSearch);
+  const selectedTargetOption = targetOptions.find((item) =>
+    item.target.kind === fbdState.selectedTarget?.kind && item.target.id === fbdState.selectedTarget?.id);
+  if (selectedTargetOption && !visibleTargetOptions.some((item) =>
+    item.target.kind === selectedTargetOption.target.kind && item.target.id === selectedTargetOption.target.id))
+    visibleTargetOptions.unshift(selectedTargetOption);
   const dimensionChoices = [
     ...workspace.nodes.map((node) => ({ value: `node:${node.id}`, label: `Joint · ${node.label || node.id}`,
       point: { x: node.x, y: node.y } })),
@@ -1323,6 +1325,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         </fieldset>
         <div className="flex flex-wrap items-center gap-1.5">
           <label className="text-xs font-medium text-slate-700" htmlFor="fbd-target-select">Select Body/Member/Joint</label>
+          <input type="search" aria-label="Search bodies, members, and joints" value={targetSearch}
+            onChange={(event) => setTargetSearch(event.target.value)} placeholder="Search joints or members"
+            className="w-44 max-w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs" />
           <select id="fbd-target-select" aria-label="Select Body/Member/Joint"
             className="max-w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs"
             value={fbdState.selectedTarget ? JSON.stringify(fbdState.selectedTarget) : ''}
@@ -1331,7 +1336,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
               selectTarget(option?.target || null);
             }}>
             <option value="">Select a body, member, or joint</option>
-            {targetOptions.map(({ label, target }) =>
+            {visibleTargetOptions.map(({ label, target }) =>
               <option key={`${target.kind}:${target.id}`} value={JSON.stringify(target)}>{label}</option>)}
           </select>
           <span className="text-[11px] text-slate-500">Other rigid components appear only when defined in the engineering model.</span>
