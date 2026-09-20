@@ -32,6 +32,9 @@ import { displayModeLayout, type EngineeringDisplayMode } from './statics/displa
 const EngineeringVisualizationPanel = lazy(() =>
   import('./statics/EngineeringVisualizationPanel').then(({ EngineeringVisualizationPanel }) => ({ default: EngineeringVisualizationPanel }))
 );
+const StudentFBDArchive = lazy(() =>
+  import('./StudentFBDArchive').then(({ StudentFBDArchive }) => ({ default: StudentFBDArchive }))
+);
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
@@ -1254,6 +1257,7 @@ export default function App() {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
+  const [archiveTab, setArchiveTab] = useState<'chat' | 'fbd'>('chat');
   const [showEngineeringPanel, setShowEngineeringPanel] = useState(() => window.innerWidth >= 768);
   const [displayMode, setDisplayMode] = useState<EngineeringDisplayMode>('structure');
   const previousDisplayModeRef = useRef<EngineeringDisplayMode>('structure');
@@ -3427,32 +3431,46 @@ ${data.response}` : data.response,
 
           {/* Archive Panel */}
           {showArchive && (
-            <div className="w-80 bg-white border-l flex flex-col flex-shrink-0">
+            <div className={archiveTab === 'fbd'
+              ? 'absolute inset-y-0 right-0 z-30 flex w-full max-w-[900px] flex-col border-l bg-white shadow-xl'
+              : 'w-80 bg-white border-l flex flex-col flex-shrink-0'}>
               <div className="p-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white flex items-center justify-between">
                 <div>
                   <h2 className="font-semibold">Archive</h2>
-                  <p className="text-xs">Total: {archiveQueryCount}</p>
+                  <p className="text-xs">{archiveTab === 'chat' ? `Total: ${archiveQueryCount}` : 'Your saved FBD steps'}</p>
                 </div>
                 <div className="flex gap-1">
-                  <button onClick={() => setShowClearLogDialog(true)} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Clear All Messages">
+                  {archiveTab === 'chat' && <button onClick={() => setShowClearLogDialog(true)} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Clear All Messages">
                     <Trash2 className="size-4" />
-                  </button>
-                  <button onClick={exportToSpreadsheet} className="h-8 px-2 rounded hover:bg-white/20 flex items-center justify-center gap-1 text-[11px] font-semibold" title="Export activity spreadsheet">
+                  </button>}
+                  {archiveTab === 'chat' && <button onClick={exportToSpreadsheet} className="h-8 px-2 rounded hover:bg-white/20 flex items-center justify-center gap-1 text-[11px] font-semibold" title="Export activity spreadsheet">
                     <FileDown className="size-4" />
                     <span>CSV</span>
-                  </button>
-                  <button onClick={exportToPDF} className="h-8 px-2 rounded hover:bg-white/20 flex items-center justify-center gap-1 text-[11px] font-semibold" title="Export to PDF">
+                  </button>}
+                  {archiveTab === 'chat' && <button onClick={exportToPDF} className="h-8 px-2 rounded hover:bg-white/20 flex items-center justify-center gap-1 text-[11px] font-semibold" title="Export to PDF">
                     <FileDown className="size-4" />
                     <span>PDF</span>
-                  </button>
+                  </button>}
                   <button onClick={() => setShowArchive(false)} className="size-8 rounded hover:bg-white/20 flex items-center justify-center" title="Close Archive">
                     <X className="size-4" />
                   </button>
                 </div>
               </div>
+              <div className="flex gap-2 border-b px-3 py-2" role="tablist" aria-label="Archive sections">
+                <button type="button" role="tab" aria-selected={archiveTab === 'chat'}
+                  onClick={() => setArchiveTab('chat')}
+                  className={`rounded px-3 py-1 text-sm ${archiveTab === 'chat' ? 'bg-indigo-600 text-white' : 'bg-slate-100'}`}>
+                  Chat Archive</button>
+                <button type="button" role="tab" aria-selected={archiveTab === 'fbd'}
+                  onClick={() => setArchiveTab('fbd')}
+                  className={`rounded px-3 py-1 text-sm ${archiveTab === 'fbd' ? 'bg-indigo-600 text-white' : 'bg-slate-100'}`}>
+                  My FBD History</button>
+              </div>
               
               <div className="flex-1 overflow-y-auto p-3">
-                {archiveEntries.map((entry, index) => (
+                {archiveTab === 'fbd' ? <Suspense fallback={<p className="text-sm text-slate-500">Loading FBD history…</p>}>
+                  <StudentFBDArchive key={userId} accessToken={accessToken} />
+                </Suspense> : archiveEntries.map((entry, index) => (
                   <div
                     key={entry.id}
                     className="p-3 mb-3 rounded-lg border bg-gray-50 border-gray-200"
