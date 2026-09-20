@@ -525,7 +525,8 @@ function StructurePreview({ workspace, fbdState }: {
       DEFAULT_GIVEN_VISIBILITY, false);
     scene.add(model.group);
     controls.target.copy(model.center);
-    camera.position.copy(model.center).add(new THREE.Vector3(0.12, 0.16, Math.max(4.5, model.span * 1.7)));
+    camera.position.copy(model.center).add(new THREE.Vector3(0, 0, Math.max(4.5, model.span * 1.7)));
+    controls.enableRotate = false;
     controls.update();
     const resize = () => {
       const width = Math.max(container.clientWidth, 1);
@@ -589,7 +590,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const viewBoundsRef = useRef<{ center: THREE.Vector3; span: number } | null>(null);
   const framedRef = useRef(false);
   const framedSpanRef = useRef<number | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('free');
+  const [viewMode, setViewMode] = useState<ViewMode>('front');
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [resetPending, setResetPending] = useState(false);
@@ -981,6 +982,16 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     setViewMode(mode);
     onVisualizationInteraction(mode);
   };
+
+  const previousDisplayModeRef = useRef(displayMode);
+  useEffect(() => {
+    const previous = previousDisplayModeRef.current;
+    previousDisplayModeRef.current = displayMode;
+    if (!ready || displayMode !== 'fbd' || previous === 'fbd') return;
+    const bounds = viewBoundsRef.current;
+    if (bounds) frameModel(bounds.center, bounds.span, 'front');
+    setViewMode('front');
+  }, [ready, displayMode]);
 
   useEffect(() => {
     if (!ready || !viewCommand) return;

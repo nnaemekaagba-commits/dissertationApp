@@ -43,6 +43,14 @@ test('both view panes render the same student elements and joint types persist',
   assert.throws(() => addFBDJoint(createEmptyFBDState(workspace), { ...joint, kind: 'hinged-ish' }));
 });
 
+test('FBD opens facing the diagram and restores front view when selected', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /useState<ViewMode>\('front'\)/);
+  assert.match(panel, /displayMode !== 'fbd' \|\| previous === 'fbd'/);
+  assert.match(panel, /frameModel\(bounds.center, bounds.span, 'front'\)/);
+  assert.match(panel, /new THREE.Vector3\(0, 0, Math.max\(4\.5, model.span \* 1\.7\)\)/);
+});
+
 test('first student-created element starts diagram; all geometry and labels are manual FBDState data', () => {
   const before = JSON.stringify(workspace);
   let state = createEmptyFBDState(workspace);
