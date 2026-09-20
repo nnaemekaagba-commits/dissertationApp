@@ -1436,7 +1436,33 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           Free Orbit
         </button>}
         {showFbd && <span className="self-center px-2 text-xs font-medium text-emerald-800">Build FBD Mode</span>}
+        {showFbd && <button type="button" disabled={!hasStudentFBDElements(fbdState)}
+          onClick={() => { setPendingTarget(undefined); setResetPending(true); }}
+          className="shrink-0 rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-800 disabled:opacity-40">
+          Clear Diagram
+        </button>}
       </div>
+      {showFbd && resetPending && hasStudentFBDElements(fbdState) && <div role="group" aria-label="Confirm Reset FBD"
+        className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-300 bg-amber-50 px-3 py-2 text-xs">
+        <span>Clear all student-created FBD elements? You can undo this.</span>
+        <button type="button" className="rounded bg-amber-600 px-2 py-1 text-white" onClick={() => {
+          const before = fbdState;
+          const after = resetStudentFBDElements(before);
+          if (after === before) { setResetPending(false); return; }
+          setFbdState(after);
+          setSelectedPrimitive(null); setPrimitiveMode(null);
+          setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
+          setSelectedAngleId(null); setSelectedLabelId(null);
+          setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false);
+          setAngleFormOpen(false); setLabelFormOpen(false); setLabelMoveMode(false);
+          setResetPending(false);
+          onVisualizationInteraction('fbd_reset', undefined, undefined, undefined,
+            undefined, undefined, undefined, undefined, { before, after });
+        }}>Clear FBD</button>
+        <button type="button" className="rounded bg-slate-100 px-2 py-1" onClick={() => setResetPending(false)}>
+          Cancel
+        </button>
+      </div>}
       <div className={`min-h-0 basis-0 flex-1 ${displayMode === 'split' ? 'flex flex-col' : ''}`}>
         {displayMode === 'split' && <div className="relative flex min-h-0 flex-1 flex-col border-b border-slate-300">
           <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">Structure</span>
@@ -1564,8 +1590,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             if (transition) onVisualizationInteraction('fbd_redo', undefined, undefined, undefined,
               undefined, undefined, undefined, undefined, transition); }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Redo</button>
-          <button type="button" disabled={!hasStudentFBDElements(fbdState)} onClick={() => { setPendingTarget(undefined); setResetPending(true); }}
-            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Reset FBD</button>
           <button type="button" onClick={onCheckFBD}
             className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white">Check My FBD</button>
         </div>
@@ -1576,26 +1600,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             onClick={() => commitTarget(pendingTarget)}>Replace diagram</button>
           <button type="button" className="rounded bg-slate-100 px-2 py-1"
             onClick={() => setPendingTarget(undefined)}>Cancel</button>
-        </div>}
-        {resetPending && hasStudentFBDElements(fbdState) && <div role="group" aria-label="Confirm Reset FBD"
-          className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs">
-          <span>Clear all student-created FBD elements? You can undo this.</span>
-          <button type="button" className="rounded bg-amber-600 px-2 py-1 text-white" onClick={() => {
-            const before = fbdState;
-            const after = resetStudentFBDElements(before);
-            if (after === before) { setResetPending(false); return; }
-            setFbdState(after);
-            setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
-            setSelectedAngleId(null); setSelectedLabelId(null);
-            setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false);
-            setAngleFormOpen(false); setLabelFormOpen(false); setLabelMoveMode(false);
-            setResetPending(false);
-            onVisualizationInteraction('fbd_reset', undefined, undefined, undefined,
-              undefined, undefined, undefined, undefined, { before, after });
-          }}>Clear FBD</button>
-          <button type="button" className="rounded bg-slate-100 px-2 py-1" onClick={() => setResetPending(false)}>
-            Cancel
-          </button>
         </div>}
         {selectedElement && selectedKind && <form key={`${selectedKind}:${selectedElement.id}:${JSON.stringify(selectedElement)}`}
           onSubmit={submitSelectedEdit} className="mt-2 grid grid-cols-2 gap-2 rounded border border-blue-200 bg-blue-50 p-2 text-xs"

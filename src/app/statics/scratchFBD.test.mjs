@@ -51,6 +51,18 @@ test('FBD opens facing the diagram and restores front view when selected', () =>
   assert.match(panel, /new THREE.Vector3\(0, 0, Math.max\(4\.5, model.span \* 1\.7\)\)/);
 });
 
+test('clear diagram is visible above canvas and clears only student work', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.ok(panel.indexOf('Clear Diagram') < panel.indexOf('aria-label={showFbd'));
+  assert.match(panel, /aria-label="Confirm Reset FBD"/);
+  const state = addFBDJoint(addFBDBody(createEmptyFBDState(workspace), body), joint);
+  const original = JSON.stringify(workspace);
+  const cleared = resetStudentFBDElements(state);
+  assert.equal(hasStudentFBDElements(cleared), false);
+  assert.equal(JSON.stringify(workspace), original);
+  assert.equal(undoFBDChange(applyFBDChange(createFBDHistory(state), cleared)).present.joints.length, 1);
+});
+
 test('first student-created element starts diagram; all geometry and labels are manual FBDState data', () => {
   const before = JSON.stringify(workspace);
   let state = createEmptyFBDState(workspace);
