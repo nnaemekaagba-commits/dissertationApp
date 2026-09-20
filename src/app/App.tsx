@@ -3357,7 +3357,7 @@ ${data.response}` : data.response,
           </div>
 
           {showEngineeringPanel && (
-            <Suspense fallback={<div className="w-[min(40vw,480px)] border-l bg-slate-50 p-4 text-sm text-slate-500">Loading 3D view...</div>}>
+            <Suspense fallback={<div className="border-l bg-slate-50 p-4 text-sm text-slate-500 md:w-[64vw] md:min-w-[600px]">Loading 3D view...</div>}>
               <EngineeringVisualizationPanel onClose={() => setShowEngineeringPanel(false)}
                 viewCommand={viewCommand} displayMode={displayMode} onDisplayModeChange={setDisplayMode}
                 requestedVisualCalculation={requestedVisualCalculation}

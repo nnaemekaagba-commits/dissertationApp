@@ -109,7 +109,10 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
   const size = bounds.isEmpty() ? new THREE.Vector3(1, 1, 0) : bounds.getSize(new THREE.Vector3());
   const span = Math.max(size.x, size.y, 1);
-  const isolated = isolatedFBDGeometry(fbdState, workspace);
+  // Selecting an object sets the FBD context; drawing begins only after the
+  // student creates an annotation. This keeps an untouched FBD canvas empty.
+  const isolated = hasStudentFBDElements(fbdState)
+    ? isolatedFBDGeometry(fbdState, workspace) : { members: [], nodes: [] };
   for (const member of isolated.members) {
     const start = nodes.get(member.startNodeId);
     const end = nodes.get(member.endNodeId);
@@ -135,7 +138,8 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       group.add(halo);
     }
   }
-  group.add(buildGivenFBDOverlay(workspace, fbdState, givenVisibility, textSprite));
+  if (hasStudentFBDElements(fbdState))
+    group.add(buildGivenFBDOverlay(workspace, fbdState, givenVisibility, textSprite));
   for (const force of fbdState.forces) {
     const arrow = buildFBDForceArrow(force, span, force.id === selectedForceId);
     arrow.userData.fbdDragApplication = force.id;
@@ -1243,7 +1247,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       defaultValue={initial} className="block w-full rounded border border-slate-300 px-2 py-1" /></label>;
 
   return (
-    <aside className="absolute inset-0 z-20 flex h-full max-h-full min-h-0 flex-col overflow-hidden border-l border-slate-200 bg-white md:relative md:inset-auto md:z-auto md:w-[min(40vw,480px)] md:flex-shrink-0" aria-label="Engineering visualization">
+    <aside className="absolute inset-0 z-20 flex h-full max-h-full min-h-0 flex-col overflow-hidden border-l border-slate-200 bg-white md:relative md:inset-auto md:z-auto md:w-[64vw] md:min-w-[600px] md:flex-shrink-0" aria-label="Engineering visualization">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <Box className="size-4 text-blue-600" />
@@ -1288,10 +1292,10 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           Isolated: {targetOptions.find(({ target }) => target.kind === fbdState.selectedTarget?.kind && target.id === fbdState.selectedTarget?.id)?.label || fbdState.selectedTarget.id}
         </span>}
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
-        {showFbd && !fbdState.selectedTarget && fbdState.forces.length === 0 &&
-          fbdState.moments.length === 0 && fbdState.dimensions.length === 0 && fbdState.angles.length === 0 && fbdState.labels.length === 0 && !error &&
+        {showFbd && !hasStudentFBDElements(fbdState) && !error &&
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
-            Select a body, member, or joint to begin your free-body diagram.
+            {fbdState.selectedTarget ? 'Add a force, moment, dimension, angle, or label to begin your free-body diagram.' :
+              'Select a body, member, or joint to begin your free-body diagram.'}
           </div>}
         </div>
       </div>

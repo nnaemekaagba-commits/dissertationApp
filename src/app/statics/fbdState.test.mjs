@@ -23,6 +23,20 @@ import { DISPLAY_MODES, displayModeLayout } from './displayMode.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
 
+test('an isolated target alone does not draw an FBD member; student work starts the drawing', () => {
+  const selected = selectFBDTarget(createEmptyFBDState(workspace),
+    { kind: 'member', id: workspace.members[0].id }, workspace);
+  assert.equal(hasStudentFBDElements(selected), false);
+  const withForce = addFBDForce(selected,
+    { at: { x: 1, y: 0 }, angle: -90, label: 'F' }, workspace, 'force-1');
+  assert.equal(hasStudentFBDElements(withForce), true);
+  assert.equal(hasStudentFBDElements(resetStudentFBDElements(withForce)), false);
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /const isolated = hasStudentFBDElements\(fbdState\)/);
+  assert.match(panel, /if \(hasStudentFBDElements\(fbdState\)\)\s*group\.add\(buildGivenFBDOverlay/);
+  assert.match(panel, /md:w-\[64vw\]/);
+});
+
 test('given information follows the isolated body, member, or joint and never enters FBDState', () => {
   const problem = { ...workspace, angles: [{ id: 'angle-C', vertexNodeId: 'C',
     fromNodeId: 'A', toNodeId: 'B', value: 180 }] };
