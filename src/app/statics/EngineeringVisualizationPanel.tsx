@@ -624,8 +624,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [primitiveMode, setPrimitiveMode] = useState<FBDPrimitiveKind | null>(null);
   const [primitiveEditing, setPrimitiveEditing] = useState(false);
   const [primitiveDraft, setPrimitiveDraft] = useState({ id: '', label: '', x: '0', y: '0',
-    endX: '4', endY: '0', width: '4', height: '0.6' });
+    endX: '4', endY: '0', width: '4', height: '0.6', jointKind: 'free' });
   const [primitiveError, setPrimitiveError] = useState('');
+  const [diagramActionNotice, setDiagramActionNotice] = useState('');
   const [moveDraft, setMoveDraft] = useState({ dx: '0', dy: '0' });
   useEffect(() => {
     if (!hasStudentFBDElements(fbdState)) onVisualizationInteraction('fbd_blank_workspace');
@@ -1436,12 +1437,28 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           Free Orbit
         </button>}
         {showFbd && <span className="self-center px-2 text-xs font-medium text-emerald-800">Build FBD Mode</span>}
-        {showFbd && <button type="button" disabled={!hasStudentFBDElements(fbdState)}
-          onClick={() => { setPendingTarget(undefined); setResetPending(true); }}
-          className="shrink-0 rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-800 disabled:opacity-40">
+        {showFbd && <button type="button" onClick={() => {
+          setDiagramActionNotice('');
+          if (selectedElement) deleteSelected();
+          else if (selectedPrimitiveElement) deleteSelectedPrimitive();
+          else setDiagramActionNotice('Select an element in the diagram or from the list below to delete it.');
+        }} className="shrink-0 rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-800">
+          Delete Selected
+        </button>}
+        {showFbd && <button type="button" onClick={() => {
+          if (!hasStudentFBDElements(fbdState)) {
+            setDiagramActionNotice('The diagram is already empty.');
+            return;
+          }
+          setDiagramActionNotice(''); setPendingTarget(undefined); setResetPending(true);
+        }} className="shrink-0 rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-800">
           Clear Diagram
         </button>}
       </div>
+      {showFbd && diagramActionNotice && <p role="status"
+        className="shrink-0 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+        {diagramActionNotice}
+      </p>}
       {showFbd && resetPending && hasStudentFBDElements(fbdState) && <div role="group" aria-label="Confirm Reset FBD"
         className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-300 bg-amber-50 px-3 py-2 text-xs">
         <span>Clear all student-created FBD elements? You can undo this.</span>
@@ -1493,14 +1510,14 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           </button>)}
           <button type="button" onClick={() => selectedPrimitive && openPrimitiveForm(selectedPrimitive.kind, true)}
             disabled={!selectedPrimitiveElement} className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Edit Base Element</button>
-          <button type="button" onClick={deleteSelectedPrimitive} disabled={!selectedPrimitiveElement}
-            className="rounded bg-red-50 px-2 py-1 text-xs text-red-800 disabled:opacity-40">Delete Base Element</button>
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
           <label>Student base element<select aria-label="Select student-created body, joint, or member"
             value={selectedPrimitive ? `${selectedPrimitive.kind}:${selectedPrimitive.id}` : ''}
             onChange={(event) => { const [kind, ...parts] = event.target.value.split(':');
-              setSelectedPrimitive(kind ? { kind: kind as FBDPrimitiveKind, id: parts.join(':') } : null); }}
+              setSelectedPrimitive(kind ? { kind: kind as FBDPrimitiveKind, id: parts.join(':') } : null);
+              setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
+              setSelectedAngleId(null); setSelectedLabelId(null); }}
             className="ml-1 max-w-48 rounded border border-slate-300 bg-white px-2 py-1">
             <option value="">Choose element</option>
             {fbdState.bodies.map((item) => <option key={`body:${item.id}`} value={`body:${item.id}`}>Body · {item.label || item.id}</option>)}
@@ -1580,8 +1597,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Angle</button>
           <button type="button" onClick={openLabelForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Label</button>
-          <button type="button" disabled={!selectedElement} onClick={deleteSelected}
-            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Delete Selected</button>
           <button type="button" disabled={!canUndoFbd} onClick={() => { const transition = undoFbd();
             if (transition) onVisualizationInteraction('fbd_undo', undefined, undefined, undefined,
               undefined, undefined, undefined, undefined, transition); }}

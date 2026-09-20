@@ -63,6 +63,14 @@ test('clear diagram is visible above canvas and clears only student work', () =>
   assert.equal(undoFBDChange(applyFBDChange(createFBDHistory(state), cleared)).present.joints.length, 1);
 });
 
+test('clear and delete controls explain empty or unselected states instead of disabling', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /The diagram is already empty\./);
+  assert.match(panel, /Select an element in the diagram or from the list below to delete it\./);
+  assert.match(panel, /if \(selectedElement\) deleteSelected\(\);\s*else if \(selectedPrimitiveElement\) deleteSelectedPrimitive\(\);/);
+  assert.doesNotMatch(panel, /disabled=\{!hasStudentFBDElements\(fbdState\)\}/);
+});
+
 test('first student-created element starts diagram; all geometry and labels are manual FBDState data', () => {
   const before = JSON.stringify(workspace);
   let state = createEmptyFBDState(workspace);
