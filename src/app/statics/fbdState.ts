@@ -3,7 +3,8 @@ import type { StaticsWorkspace } from './model.ts';
 export type FBDTarget = { kind: 'body' | 'member' | 'joint'; id: string };
 export type FBDPoint = { x: number; y: number };
 export type FBDBody = { id: string; origin: FBDPoint; width: number; height: number; label?: string };
-export type FBDJoint = { id: string; at: FBDPoint; label?: string };
+export type FBDJointKind = 'free' | 'pin' | 'roller' | 'fixed';
+export type FBDJoint = { id: string; at: FBDPoint; kind?: FBDJointKind; label?: string };
 export type FBDMember = { id: string; start: FBDPoint; end: FBDPoint; label?: string };
 export type FBDPrimitiveKind = 'body' | 'joint' | 'member';
 export type FBDPrimitive = FBDBody | FBDJoint | FBDMember;
@@ -82,7 +83,8 @@ export function addFBDBody(state: FBDState, body: FBDBody): FBDState {
   return { ...state, bodies: [...state.bodies, { ...body, origin: { ...body.origin } }] };
 }
 export function addFBDJoint(state: FBDState, joint: FBDJoint): FBDState {
-  if (!uniquePrimitiveId(state, joint.id) || !validPoint(joint.at) || !validText(joint.label))
+  if (!uniquePrimitiveId(state, joint.id) || !validPoint(joint.at) || !validText(joint.label) ||
+    (joint.kind !== undefined && !['free', 'pin', 'roller', 'fixed'].includes(joint.kind)))
     throw new Error('Enter a unique joint ID, finite point, and optional label.');
   return { ...state, joints: [...state.joints, { ...joint, at: { ...joint.at } }] };
 }
@@ -386,6 +388,8 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
       width: number(row.width), height: number(row.height),
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),
     joints: rows(root.joints ?? [], (row) => ({ id: id(row.id), at: point(row.at),
+      ...(row.kind === undefined ? {} : { kind: ['free', 'pin', 'roller', 'fixed'].includes(String(row.kind))
+        ? row.kind as FBDJointKind : fail() }),
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),
     members: rows(root.members ?? [], (row) => ({ id: id(row.id), start: point(row.start), end: point(row.end),
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),

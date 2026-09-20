@@ -31,6 +31,18 @@ test('workspace starts blank and renders no engineering geometry or givens', () 
   assert.doesNotMatch(replay, /workspace\.members/);
 });
 
+test('both view panes render the same student elements and joint types persist', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /DEFAULT_GIVEN_VISIBILITY, false\);/);
+  assert.match(panel, /givenVisibility,\s*false, selectedPrimitive\);/);
+  assert.match(panel, /aria-label="Joint type"/);
+  for (const kind of ['free', 'pin', 'roller', 'fixed']) {
+    const state = addFBDJoint(createEmptyFBDState(workspace), { ...joint, kind });
+    assert.equal(parseFBDState(JSON.parse(JSON.stringify(state)), workspace).joints[0].kind, kind);
+  }
+  assert.throws(() => addFBDJoint(createEmptyFBDState(workspace), { ...joint, kind: 'hinged-ish' }));
+});
+
 test('first student-created element starts diagram; all geometry and labels are manual FBDState data', () => {
   const before = JSON.stringify(workspace);
   let state = createEmptyFBDState(workspace);

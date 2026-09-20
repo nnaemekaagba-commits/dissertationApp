@@ -64,9 +64,9 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
     const [, operation, kind] = /^fbd_(add|edit)_(body|joint|member)$/.exec(name)!;
     const editing = operation === 'edit';
     const geometry = kind === 'body' ? ['x', 'y', 'width', 'height'] :
-      kind === 'joint' ? ['x', 'y'] : ['startX', 'startY', 'endX', 'endY'];
+      kind === 'joint' ? ['x', 'y', 'jointKind'] : ['startX', 'startY', 'endX', 'endY'];
     const row = args(value, [...(editing ? ['id'] : []), ...geometry, 'label'],
-      editing ? ['id'] : geometry);
+      editing ? ['id'] : kind === 'joint' ? ['x', 'y'] : geometry);
     const id = editing ? str(row, 'id', 128) : newId();
     const old = editing ? getFBDElement(state, kind as FBDPrimitiveKind, id) : undefined;
     if (editing && !old) throw new Error(`Unknown FBD ${kind}.`);
@@ -81,7 +81,9 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
       height: coordinate('height', (old as FBDBody | undefined)?.height ?? 0), ...withLabel } :
       kind === 'joint' ? { id, at: {
         x: coordinate('x', (old as FBDJoint | undefined)?.at.x ?? 0),
-        y: coordinate('y', (old as FBDJoint | undefined)?.at.y ?? 0) }, ...withLabel } :
+        y: coordinate('y', (old as FBDJoint | undefined)?.at.y ?? 0) },
+        kind: row.jointKind === undefined ? (old as FBDJoint | undefined)?.kind || 'free'
+          : str(row, 'jointKind') as FBDJoint['kind'], ...withLabel } :
         { id, start: {
           x: coordinate('startX', (old as FBDMember | undefined)?.start.x ?? 0),
           y: coordinate('startY', (old as FBDMember | undefined)?.start.y ?? 0) }, end: {

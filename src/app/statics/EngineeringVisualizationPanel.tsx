@@ -165,6 +165,11 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     marker.position.set(node.at.x, node.at.y, 0.04);
     marker.userData.fbdPrimitive = { kind: 'joint', id: node.id };
     group.add(marker);
+    if (node.kind && node.kind !== 'free') {
+      const kindLabel = textSprite(node.kind.toUpperCase(), '#047857', 0.28);
+      if (kindLabel) { kindLabel.position.set(node.at.x, node.at.y - 0.3, 0.2);
+        kindLabel.userData.fbdPrimitive = { kind: 'joint', id: node.id }; group.add(kindLabel); }
+    }
     if (node.label) {
       const label = textSprite(node.label, '#047857', 0.42);
       if (label) { label.position.set(node.at.x, node.at.y + 0.27, 0.2);
@@ -517,7 +522,7 @@ function StructurePreview({ workspace, fbdState }: {
     controls.minDistance = 0.4;
     controls.maxDistance = 500;
     const model = buildFBDModel(workspace, fbdState, null, null, null, null, null,
-      DEFAULT_GIVEN_VISIBILITY, true);
+      DEFAULT_GIVEN_VISIBILITY, false);
     scene.add(model.group);
     controls.target.copy(model.center);
     camera.position.copy(model.center).add(new THREE.Vector3(0.12, 0.16, Math.max(4.5, model.span * 1.7)));
@@ -950,7 +955,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     }
     const model = buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId,
       selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility,
-      !showFbd, selectedPrimitive);
+      false, selectedPrimitive);
     modelRef.current = model.group;
     viewBoundsRef.current = { center: model.center, span: model.span };
     scene.add(model.group);
@@ -1293,14 +1298,14 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const openPrimitiveForm = (kind: FBDPrimitiveKind, editing = false) => {
     const item = editing && selectedPrimitive?.kind === kind ? selectedPrimitiveElement : undefined;
     const draft = { id: item?.id || '', label: item && 'label' in item ? item.label || '' : '',
-      x: '0', y: '0', endX: '4', endY: '0', width: '4', height: '0.6' };
+      x: '0', y: '0', endX: '4', endY: '0', width: '4', height: '0.6', jointKind: 'free' };
     if (item && kind === 'body') {
       const body = item as FBDBody;
       draft.x = String(body.origin.x); draft.y = String(body.origin.y);
       draft.width = String(body.width); draft.height = String(body.height);
     } else if (item && kind === 'joint') {
       const joint = item as FBDJoint;
-      draft.x = String(joint.at.x); draft.y = String(joint.at.y);
+      draft.x = String(joint.at.x); draft.y = String(joint.at.y); draft.jointKind = joint.kind || 'free';
     } else if (item && kind === 'member') {
       const member = item as FBDMember;
       draft.x = String(member.start.x); draft.y = String(member.start.y);
@@ -1318,7 +1323,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       const item = primitiveMode === 'body'
         ? { id, origin: at, width: Number(primitiveDraft.width), height: Number(primitiveDraft.height),
           ...(label ? { label } : {}) } as FBDBody
-        : primitiveMode === 'joint' ? { id, at, ...(label ? { label } : {}) } as FBDJoint
+        : primitiveMode === 'joint' ? { id, at, kind: primitiveDraft.jointKind as FBDJoint['kind'],
+          ...(label ? { label } : {}) } as FBDJoint
           : { id, start: at, end: { x: Number(primitiveDraft.endX), y: Number(primitiveDraft.endY) },
             ...(label ? { label } : {}) } as FBDMember;
       const next = primitiveEditing ? editFBDPrimitive(fbdState, primitiveMode, id, item) :
@@ -1424,7 +1430,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         {displayMode === 'split' && <div className="relative flex min-h-0 flex-1 flex-col border-b border-slate-300">
           <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">Structure</span>
           <StructurePreview workspace={workspace} fbdState={fbdState} />
-          {!fbdState.bodies.length && !fbdState.joints.length && !fbdState.members.length &&
+          {!hasStudentFBDElements(fbdState) &&
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
               No diagram yet. Start building your free-body diagram.
             </div>}
@@ -1435,8 +1441,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           Isolated: {targetOptions.find(({ target }) => target.kind === fbdState.selectedTarget?.kind && target.id === fbdState.selectedTarget?.id)?.label || fbdState.selectedTarget.id}
         </span>}
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
-        {(!hasStudentFBDElements(fbdState) || (!showFbd && !fbdState.bodies.length &&
-          !fbdState.joints.length && !fbdState.members.length)) && !error &&
+        {!hasStudentFBDElements(fbdState) && !error &&
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
             No diagram yet. Start building your free-body diagram.
           </div>}
@@ -1462,7 +1467,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             className="ml-1 max-w-48 rounded border border-slate-300 bg-white px-2 py-1">
             <option value="">Choose element</option>
             {fbdState.bodies.map((item) => <option key={`body:${item.id}`} value={`body:${item.id}`}>Body · {item.label || item.id}</option>)}
-            {fbdState.joints.map((item) => <option key={`joint:${item.id}`} value={`joint:${item.id}`}>Joint · {item.label || item.id}</option>)}
+            {fbdState.joints.map((item) => <option key={`joint:${item.id}`} value={`joint:${item.id}`}>Joint · {item.label || item.id} ({item.kind || 'free'})</option>)}
             {fbdState.members.map((item) => <option key={`member:${item.id}`} value={`member:${item.id}`}>Member · {item.label || item.id}</option>)}
           </select></label>
         </div>
@@ -1479,6 +1484,13 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             <input required type="number" step="any" value={primitiveDraft[key]}
               onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, [key]: event.target.value })}
               className="block w-full rounded border px-2 py-1" /></label>)}
+          {primitiveMode === 'joint' && <label>Joint type<select aria-label="Joint type"
+            value={primitiveDraft.jointKind}
+            onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, jointKind: event.target.value })}
+            className="block w-full rounded border px-2 py-1">
+            <option value="free">Free point</option><option value="pin">Pin</option>
+            <option value="roller">Roller</option><option value="fixed">Fixed</option>
+          </select></label>}
           {primitiveMode === 'body' && (['width', 'height'] as const).map((key) => <label key={key}>{key}
             <input required type="number" min="0.000001" step="any" value={primitiveDraft[key]}
               onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, [key]: event.target.value })}
