@@ -637,7 +637,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         setLabelMoveMode(false);
         if (before) onVisualizationInteraction('fbd_element_reposition', undefined, undefined, undefined, undefined,
           undefined, undefined, { elementKind: 'label', elementId: selectedLabelId, before,
-            after: getFBDElement(next, 'label', selectedLabelId)!, dragTarget: 'label' });
+            after: getFBDElement(next, 'label', selectedLabelId)!, dragTarget: 'label' },
+          { before: fbdState, after: next });
       }
       return;
     }
@@ -773,7 +774,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     setTimeout(() => { suppressClickRef.current = false; }, 0);
     onVisualizationInteraction('fbd_element_drag', undefined, undefined, undefined, undefined,
       undefined, undefined, { elementKind: drag.kind, elementId: drag.id, before, after,
-        dragTarget: drag.target });
+        dragTarget: drag.target }, { before: fbdState, after: next });
   };
 
   const frameModel = (center: THREE.Vector3, span: number, mode: ViewMode | 'reset') => {
@@ -1013,7 +1014,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setSelectedLabelId(null);
       setForceFormOpen(false);
       setForceError('');
-      onVisualizationInteraction('fbd_force_add', undefined, force);
+      onVisualizationInteraction('fbd_force_add', undefined, force, undefined, undefined, undefined,
+        undefined, undefined, { before: fbdState, after: next });
     } catch (caught) {
       setForceError(caught instanceof Error ? caught.message : 'Could not add force.');
     }
@@ -1046,7 +1048,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setSelectedLabelId(null);
       setMomentFormOpen(false);
       setMomentError('');
-      onVisualizationInteraction('fbd_moment_add', undefined, undefined, moment);
+      onVisualizationInteraction('fbd_moment_add', undefined, undefined, moment, undefined, undefined,
+        undefined, undefined, { before: fbdState, after: next });
     } catch (caught) {
       setMomentError(caught instanceof Error ? caught.message : 'Could not add moment.');
     }
@@ -1087,7 +1090,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setSelectedLabelId(null);
       setDimensionFormOpen(false);
       setDimensionError('');
-      onVisualizationInteraction('fbd_dimension_add', undefined, undefined, undefined, dimension);
+      onVisualizationInteraction('fbd_dimension_add', undefined, undefined, undefined, dimension, undefined,
+        undefined, undefined, { before: fbdState, after: next });
     } catch (caught) {
       setDimensionError(caught instanceof Error ? caught.message : 'Could not add dimension.');
     }
@@ -1127,7 +1131,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setSelectedLabelId(null);
       setAngleFormOpen(false);
       setAngleError('');
-      onVisualizationInteraction('fbd_angle_add', undefined, undefined, undefined, undefined, angle);
+      onVisualizationInteraction('fbd_angle_add', undefined, undefined, undefined, undefined, angle,
+        undefined, undefined, { before: fbdState, after: next });
     } catch (caught) {
       setAngleError(caught instanceof Error ? caught.message : 'Could not add angle.');
     }
@@ -1159,7 +1164,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null);
       setLabelFormOpen(false);
       setLabelError('');
-      onVisualizationInteraction('fbd_label_add', undefined, undefined, undefined, undefined, undefined, label);
+      onVisualizationInteraction('fbd_label_add', undefined, undefined, undefined, undefined, undefined,
+        label, undefined, { before: fbdState, after: next });
     } catch (caught) {
       setLabelError(caught instanceof Error ? caught.message : 'Could not add label.');
     }
@@ -1204,7 +1210,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setFbdState(next);
       setEditError('');
       onVisualizationInteraction('fbd_element_edit', undefined, undefined, undefined, undefined,
-        undefined, undefined, { elementKind: selectedKind, elementId: selectedId, before: selectedElement, after });
+        undefined, undefined, { elementKind: selectedKind, elementId: selectedId, before: selectedElement, after },
+        { before: fbdState, after: next });
     } catch (caught) {
       setEditError(caught instanceof Error ? caught.message : 'Could not edit FBD element.');
     }
@@ -1215,7 +1222,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     setFbdState(next);
     onVisualizationInteraction('fbd_element_delete', undefined, undefined, undefined, undefined,
       undefined, undefined, { elementKind: selectedKind, elementId: selectedId,
-        before: selectedElement, after: null });
+        before: selectedElement, after: null }, { before: fbdState, after: next });
     setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
     setSelectedAngleId(null); setSelectedLabelId(null); setLabelMoveMode(false); setEditError('');
   };
@@ -1233,7 +1240,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setEditError('');
       onVisualizationInteraction('fbd_element_reposition', undefined, undefined, undefined, undefined,
         undefined, undefined, { elementKind: selectedKind, elementId: selectedId,
-          before: selectedElement, after: getFBDElement(next, selectedKind, selectedId)!, dragTarget: 'label' });
+          before: selectedElement, after: getFBDElement(next, selectedKind, selectedId)!, dragTarget: 'label' },
+        { before: fbdState, after: next });
     } catch (caught) {
       setEditError(caught instanceof Error ? caught.message : 'Could not reposition label.');
     }

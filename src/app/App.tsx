@@ -22,7 +22,8 @@ import { explicitlyRequestsVisualCalculation, visualCalculationForRequest,
   type RequestedVisualCalculation } from './statics/calculationPolicy';
 import type { BeamReactionResult } from './statics/calculations';
 import { createFBDCheckResearchEvent, createFBDToolResearchEvents, createToolResearchEvents,
-  createVisualizationResearchEvent, getEngineeringSessionId,
+  createVisualizationResearchEvent, getEngineeringSessionId, nextFBDResearchSequence,
+  createFBDResearchContext, fbdActionForVisualization, fbdToolElement,
   type EngineeringResearchEvent, type VisualizationAction } from './statics/researchLog';
 import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
   FBDElement, FBDElementKind, FBDState, FBDTarget } from './statics/fbdState';
@@ -1314,11 +1315,17 @@ export default function App() {
     [accessToken]
   );
 
-  const recordEngineeringEvent = useCallback(async (event: EngineeringResearchEvent) => {
-    const response = await fetch(`${API_BASE_URL}/engineering-events`, {
-      method: 'POST', headers: buildApiHeaders(true), body: JSON.stringify(event),
-    });
-    if (!response.ok) throw new Error(`Research event was not saved (${response.status}).`);
+  const researchEventQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const recordEngineeringEvent = useCallback((event: EngineeringResearchEvent) => {
+    const send = async () => {
+      const response = await fetch(`${API_BASE_URL}/engineering-events`, {
+        method: 'POST', headers: buildApiHeaders(true), body: JSON.stringify(event),
+      });
+      if (!response.ok) throw new Error(`Research event was not saved (${response.status}).`);
+    };
+    const pending = researchEventQueueRef.current.then(send, send);
+    researchEventQueueRef.current = pending.catch(() => {});
+    return pending;
   }, [buildApiHeaders]);
 
   const recordVisualizationInteraction = useCallback((action: VisualizationAction, target?: FBDTarget,
@@ -1327,14 +1334,30 @@ export default function App() {
       after: FBDElement | null; dragTarget?: 'label' | 'application' },
     history?: { before: FBDState; after: FBDState }) => {
     if (!userId) return;
-    const event = createVisualizationResearchEvent(getEngineeringSessionId(sessionStorage, userId), action,
+    const sessionId = getEngineeringSessionId(sessionStorage, userId);
+    const event = createVisualizationResearchEvent(sessionId, action,
       undefined, undefined, target, force, moment, dimension, angle, label, change, history);
+    if (event.kind === 'visualization') {
+      const current = staticsControllerRef.current?.getFbdState();
+      const before = history?.before || current;
+      const after = history?.after || current;
+      if (before && after) {
+        const elementType = change?.elementKind || (force ? 'force' : moment ? 'moment' :
+          dimension ? 'dimension' : angle ? 'angle' : label ? 'label' : null);
+        const elementId = change?.elementId || force?.id || moment?.id || dimension?.id || angle?.id || label?.id || null;
+        event.fbdResearch = createFBDResearchContext(fbdActionForVisualization(action, elementType || undefined),
+          before, after, nextFBDResearchSequence(sessionStorage, sessionId), elementType, elementId);
+      }
+    }
     void recordEngineeringEvent(event).catch((error) => console.warn('Visualization event logging failed.', error));
   }, [recordEngineeringEvent, userId]);
 
   useEffect(() => {
     if (previousDisplayModeRef.current === displayMode) return;
+    const previous = previousDisplayModeRef.current;
     previousDisplayModeRef.current = displayMode;
+    if (previous === 'structure' && displayMode !== 'structure') recordVisualizationInteraction('fbd_enter');
+    if (previous !== 'structure' && displayMode === 'structure') recordVisualizationInteraction('fbd_exit');
     recordVisualizationInteraction(displayModeLayout(displayMode).logAction);
   }, [displayMode, recordVisualizationInteraction]);
 
@@ -1904,16 +1927,34 @@ export default function App() {
       };
       if (comparison && fbd && userId) {
         try {
-          await recordEngineeringEvent(createFBDCheckResearchEvent(
-            getEngineeringSessionId(sessionStorage, userId), currentInput, fbd, comparison, feedback));
+          const sessionId = getEngineeringSessionId(sessionStorage, userId);
+          const event = createFBDCheckResearchEvent(sessionId, currentInput, fbd, comparison, feedback);
+          if (event.kind === 'fbd_check') event.fbdResearch = createFBDResearchContext(
+            'request_fbd_check', fbd, fbd, nextFBDResearchSequence(sessionStorage, sessionId),
+            null, null, studentInput.inputModality, currentInput);
+          await recordEngineeringEvent(event);
         } catch (error) { console.warn('FBD check event logging failed.', error); }
       }
       insertAssistantMessage(assistantMessage);
       return;
     }
+    if (userId && (displayMode !== 'structure' ||
+      /\b(fbd|free[ -]?body|diagram|pin support|roller support|reaction force)\b/i.test(currentInput)) &&
+      /^(what|why|how|am i|should i|is there|do i|can i|help|explain)\b/i.test(currentInput.trim())) {
+      const fbd = staticsControllerRef.current?.getFbdState();
+      if (fbd) {
+        const sessionId = getEngineeringSessionId(sessionStorage, userId);
+        const event = createVisualizationResearchEvent(sessionId, 'fbd');
+        if (event.kind === 'visualization') event.fbdResearch = createFBDResearchContext(
+          'request_ai_help', fbd, fbd, nextFBDResearchSequence(sessionStorage, sessionId),
+          null, null, studentInput.inputModality, currentInput);
+        void recordEngineeringEvent(event).catch((error) => console.warn('FBD help logging failed.', error));
+      }
+    }
     setIsTyping(true);
     let engineeringBatch: EngineeringToolBatch | null = null;
     let fbdBatch: FBDChatBatch | null = null;
+    let pendingFBDResearchEvents: EngineeringResearchEvent[] = [];
 
     try {
       const response = await fetch(`${CHAT_API_BASE_URL}/chat`, {
@@ -1949,6 +1990,20 @@ export default function App() {
             setDisplayMode((current) => current === 'structure' ? 'fbd' : current);
           }
           data = { ...data, response: formatFBDChatToolBatch(fbdBatch) };
+          if (userId) {
+            const sessionId = getEngineeringSessionId(sessionStorage, userId);
+            pendingFBDResearchEvents = createFBDToolResearchEvents(sessionId,
+              currentInput, fbdBatch, data.response);
+            for (const event of pendingFBDResearchEvents) {
+              if (event.kind !== 'fbd_tool') continue;
+              const item = fbdToolElement(event.stateBefore, event.stateAfter,
+                event.toolName, event.toolArguments);
+              event.fbdResearch = createFBDResearchContext(item.actionType,
+                event.stateBefore, event.stateAfter,
+                nextFBDResearchSequence(sessionStorage, sessionId), item.elementType, item.elementId,
+                studentInput.inputModality, currentInput);
+            }
+          }
         } else {
           const batch = executeEngineeringToolBatch(controller.getWorkspace(),
             calls as EngineeringToolCall[], controller.setWorkspace, currentInput);
@@ -2015,9 +2070,10 @@ ${data.response}` : data.response,
       }
       if (fbdBatch && userId) {
         try {
-          const events = createFBDToolResearchEvents(getEngineeringSessionId(sessionStorage, userId),
-            currentInput, fbdBatch, assistantMessage.content);
-          await Promise.allSettled(events.map(recordEngineeringEvent));
+          for (const event of pendingFBDResearchEvents) {
+            if (event.kind === 'fbd_tool') event.aiResponse = assistantMessage.content;
+            await recordEngineeringEvent(event);
+          }
         } catch (error) { console.warn('FBD tool event logging failed.', error); }
       }
       
@@ -2043,9 +2099,10 @@ ${data.response}` : data.response,
       }
       if (fbdBatch && userId) {
         try {
-          const events = createFBDToolResearchEvents(getEngineeringSessionId(sessionStorage, userId),
-            currentInput, fbdBatch, assistantMessage.content);
-          await Promise.allSettled(events.map(recordEngineeringEvent));
+          for (const event of pendingFBDResearchEvents) {
+            if (event.kind === 'fbd_tool') event.aiResponse = assistantMessage.content;
+            await recordEngineeringEvent(event);
+          }
         } catch (loggingError) { console.warn('FBD tool event logging failed.', loggingError); }
       }
       insertAssistantMessage(assistantMessage);
