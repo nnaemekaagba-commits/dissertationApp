@@ -248,6 +248,19 @@ test('grid coordinate readings use large high-contrast text', () => {
   assert.match(replay, /fontWeight="700" stroke="#f8fafc"/);
 });
 
+test('FBD annotation tools remain available without an isolated problem target', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  for (const opener of ['openForceForm', 'openMomentForm', 'openDimensionForm', 'openAngleForm', 'openLabelForm']) {
+    const start = panel.indexOf(`const ${opener} = () =>`);
+    const end = panel.indexOf('\n  };', start);
+    assert.ok(start >= 0 && end > start);
+    assert.doesNotMatch(panel.slice(start, end), /if \(!fbdState\.selectedTarget\) return/);
+  }
+  assert.match(panel, /const member = target\?\.kind === 'member'/);
+  assert.match(panel, /fbdState\.selectedTarget\?\.kind === 'joint'/);
+  assert.match(panel, /const body = fbdState\.bodies\[0\]/);
+});
+
 test('first student-created element starts diagram; all geometry and labels are manual FBDState data', () => {
   const before = JSON.stringify(workspace);
   let state = createEmptyFBDState(workspace);

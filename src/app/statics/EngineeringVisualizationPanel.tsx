@@ -1146,7 +1146,16 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   };
   const selectedTargetPoint = () => {
     const target = fbdState.selectedTarget;
-    if (!target) return { x: 0, y: 0 };
+    if (!target) {
+      const body = fbdState.bodies[0];
+      if (body) {
+        const corners = fbdBodyCorners(body);
+        return { x: (corners[0].x + corners[2].x) / 2, y: (corners[0].y + corners[2].y) / 2 };
+      }
+      const member = fbdState.members[0];
+      if (member) return { x: (member.start.x + member.end.x) / 2, y: (member.start.y + member.end.y) / 2 };
+      return { x: 0, y: 0 };
+    }
     const joint = target.kind === 'joint' ? workspace.nodes.find((node) => node.id === target.id) : null;
     const member = target.kind === 'member' ? workspace.members.find((item) => item.id === target.id) : null;
     const start = member ? workspace.nodes.find((node) => node.id === member.startNodeId) : null;
@@ -1155,7 +1164,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       y: joint?.y ?? (start && end ? (start.y + end.y) / 2 : 0) };
   };
   const openForceForm = () => {
-    if (!fbdState.selectedTarget) return;
     const { x, y } = selectedTargetPoint();
     setForceDraft({ x: String(x), y: String(y), label: 'F', angle: '-90', magnitude: '' });
     setForceError('');
@@ -1189,7 +1197,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     }
   };
   const openMomentForm = () => {
-    if (!fbdState.selectedTarget) return;
     const { x, y } = selectedTargetPoint();
     setMomentDraft({ x: String(x), y: String(y), label: 'M', clockwise: 'clockwise', magnitude: '' });
     setMomentError('');
@@ -1223,10 +1230,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     }
   };
   const openDimensionForm = () => {
-    if (!fbdState.selectedTarget) return;
     const target = fbdState.selectedTarget;
-    const member = target.kind === 'member' ? workspace.members.find((item) => item.id === target.id) : null;
-    const firstId = member?.startNodeId || (target.kind === 'joint' ? target.id : workspace.nodes[0]?.id);
+    const member = target?.kind === 'member' ? workspace.members.find((item) => item.id === target.id) : null;
+    const firstId = member?.startNodeId || (target?.kind === 'joint' ? target.id : workspace.nodes[0]?.id);
     const lastId = member?.endNodeId || workspace.nodes.find((node) => node.id !== firstId)?.id;
     const start = dimensionChoices.find((item) => item.value === `node:${firstId}`);
     const end = dimensionChoices.find((item) => item.value === `node:${lastId}`);
@@ -1265,9 +1271,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     }
   };
   const openAngleForm = () => {
-    if (!fbdState.selectedTarget) return;
     const vertex = selectedTargetPoint();
-    const vertexChoice = fbdState.selectedTarget.kind === 'joint'
+    const vertexChoice = fbdState.selectedTarget?.kind === 'joint'
       ? `node:${fbdState.selectedTarget.id}` : 'custom';
     setAngleDraft({ vertexChoice, fromChoice: 'custom', toChoice: 'custom',
       vertexX: String(vertex.x), vertexY: String(vertex.y),
@@ -1307,7 +1312,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   };
 
   const openLabelForm = () => {
-    if (!fbdState.selectedTarget) return;
     const { x, y } = selectedTargetPoint();
     setLabelDraft({ x: String(x), y: String(y), text: '', association: '' });
     setLabelError('');
