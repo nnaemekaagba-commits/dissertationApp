@@ -197,6 +197,15 @@ test('rotated body endpoint letters are centered and outside both longitudinal e
   assert.match(replay, /fbdBodyEndpointLabelPositions\(body/);
 });
 
+test('body fill masks background gridlines without hiding its outline', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /new THREE\.ShapeGeometry\(maskShape\)/);
+  assert.match(panel, /color: 0xf8fafc/);
+  assert.match(panel, /mask\.position\.z = -0\.08/);
+  assert.match(replay, /fill="#f8fafc" stroke="#059669"/);
+});
+
 test('first student-created element starts diagram; all geometry and labels are manual FBDState data', () => {
   const before = JSON.stringify(workspace);
   let state = createEmptyFBDState(workspace);

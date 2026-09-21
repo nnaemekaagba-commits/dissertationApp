@@ -64,7 +64,7 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
     </g>}
     {(state.bodies || []).map((body) => <g key={body.id}>
       <polygon points={fbdBodyCorners(body).map((point) => `${sx(point.x)},${sy(point.y)}`).join(' ')}
-        fill="none" stroke="#059669" strokeWidth="3" />
+        fill="#f8fafc" stroke="#059669" strokeWidth="3" />
       {fbdEndpointLabels(body.label || body.id) ? <>
         {text(fbdEndpointLabels(body.label || body.id)![0],
           fbdBodyEndpointLabelPositions(body, Math.max(0.28, span * 0.075))[0], '#047857', 0)}

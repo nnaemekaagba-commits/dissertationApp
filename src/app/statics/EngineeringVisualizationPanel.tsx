@@ -153,6 +153,15 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     const outline = new THREE.Group();
     outline.userData.fbdPrimitive = { kind: 'body', id: body.id };
     const corners = fbdBodyCorners(body).map((point) => new THREE.Vector3(point.x, point.y, 0));
+    const maskShape = new THREE.Shape();
+    maskShape.moveTo(corners[0].x, corners[0].y);
+    for (let index = 1; index < 4; index++) maskShape.lineTo(corners[index].x, corners[index].y);
+    maskShape.closePath();
+    const mask = new THREE.Mesh(new THREE.ShapeGeometry(maskShape),
+      new THREE.MeshBasicMaterial({ color: 0xf8fafc, side: THREE.DoubleSide, depthTest: true }));
+    mask.position.z = -0.08;
+    mask.userData.fbdPrimitive = { kind: 'body', id: body.id };
+    outline.add(mask);
     corners.push(corners[0]);
     for (let index = 0; index < 4; index++) addLine(outline,
       corners[index], corners[index + 1], selectedPrimitive?.kind === 'body' && selectedPrimitive.id === body.id ? 0xc2410c : 0x059669);
