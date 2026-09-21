@@ -58,18 +58,20 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
       {grid.xValues.filter((x) => !fbdGridLineConflicts('x', x, geometrySegments, conflictTolerance))
         .map((x) => <g key={`grid-x-${x}`}>
         {line({ x, y: minY }, { x, y: maxY }, Math.abs(x) < grid.step / 100 ? '#94a3b8' : '#e2e8f0', 1)}
-        <text x={sx(x)} y={sy(minY) + 18} textAnchor="middle" fill="#64748b" fontSize="11">
+        <text x={sx(x)} y={sy(minY) + 18} textAnchor="middle" fill="#334155" fontSize="14"
+          fontWeight="700" stroke="#f8fafc" strokeWidth="3" paintOrder="stroke">
           {fbdGridReading(x)}</text>
       </g>)}
       {grid.yValues.filter((y) => !fbdGridLineConflicts('y', y, geometrySegments, conflictTolerance))
         .map((y) => <g key={`grid-y-${y}`}>
         {line({ x: minX, y }, { x: maxX, y }, Math.abs(y) < grid.step / 100 ? '#94a3b8' : '#e2e8f0', 1)}
-        <text x={sx(minX) - 10} y={sy(y) + 4} textAnchor="end" fill="#64748b" fontSize="11">
+        <text x={sx(minX) - 10} y={sy(y) + 4} textAnchor="end" fill="#334155" fontSize="14"
+          fontWeight="700" stroke="#f8fafc" strokeWidth="3" paintOrder="stroke">
           {fbdGridReading(y)}</text>
       </g>)}
-      <text x={sx(maxX)} y={sy(minY) + 34} textAnchor="end" fill="#475569" fontSize="12">
+      <text x={sx(maxX)} y={sy(minY) + 38} textAnchor="end" fill="#1e293b" fontSize="15" fontWeight="700">
         x ({workspace?.units.length || 'units'})</text>
-      <text x={sx(minX) - 10} y={sy(maxY) - 8} textAnchor="end" fill="#475569" fontSize="12">
+      <text x={sx(minX) - 10} y={sy(maxY) - 8} textAnchor="end" fill="#1e293b" fontSize="15" fontWeight="700">
         y ({workspace?.units.length || 'units'})</text>
     </g>}
     {(state.bodies || []).map((body) => <g key={body.id}>

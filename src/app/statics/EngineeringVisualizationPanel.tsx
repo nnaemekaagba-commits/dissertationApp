@@ -51,6 +51,10 @@ function textSprite(text: string, color = '#0f172a', scale = 0.64) {
   context.font = '600 42px sans-serif';
   context.textAlign = 'center';
   context.textBaseline = 'middle';
+  context.lineJoin = 'round';
+  context.lineWidth = 8;
+  context.strokeStyle = 'rgba(248, 250, 252, 0.96)';
+  context.strokeText(text, 128, 48, 242);
   context.fillStyle = color;
   context.fillText(text, 128, 48, 242);
   const texture = new THREE.CanvasTexture(canvas);
@@ -143,19 +147,19 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       if (fbdGridLineConflicts('x', x, geometrySegments, conflictTolerance)) continue;
       addLine(group, new THREE.Vector3(x, yMin, -0.18), new THREE.Vector3(x, yMax, -0.18),
         Math.abs(x) < grid.step / 100 ? 0x94a3b8 : 0xe2e8f0);
-      const reading = textSprite(fbdGridReading(x), '#64748b', 0.25);
+      const reading = textSprite(fbdGridReading(x), '#334155', 0.4);
       if (reading) { reading.position.set(x, yMin - grid.step * 0.35, -0.12); group.add(reading); }
     }
     for (const y of grid.yValues) {
       if (fbdGridLineConflicts('y', y, geometrySegments, conflictTolerance)) continue;
       addLine(group, new THREE.Vector3(xMin, y, -0.18), new THREE.Vector3(xMax, y, -0.18),
         Math.abs(y) < grid.step / 100 ? 0x94a3b8 : 0xe2e8f0);
-      const reading = textSprite(fbdGridReading(y), '#64748b', 0.25);
+      const reading = textSprite(fbdGridReading(y), '#334155', 0.4);
       if (reading) { reading.position.set(xMin - grid.step * 0.45, y, -0.12); group.add(reading); }
     }
-    const xUnit = textSprite(`x (${workspace.units.length})`, '#475569', 0.28);
+    const xUnit = textSprite(`x (${workspace.units.length})`, '#1e293b', 0.44);
     if (xUnit) { xUnit.position.set(xMax, yMin - grid.step * 0.72, -0.12); group.add(xUnit); }
-    const yUnit = textSprite(`y (${workspace.units.length})`, '#475569', 0.28);
+    const yUnit = textSprite(`y (${workspace.units.length})`, '#1e293b', 0.44);
     if (yUnit) { yUnit.position.set(xMin - grid.step * 0.7, yMax, -0.12); group.add(yUnit); }
   }
   // Only student-created FBDState is drawn. EngineeringState remains problem data.

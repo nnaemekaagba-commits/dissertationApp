@@ -221,6 +221,16 @@ test('gridlines that coincide with member or body edges are omitted', () => {
   assert.match(replay, /fbdGridLineConflicts\('x', x, geometrySegments/);
 });
 
+test('grid coordinate readings use large high-contrast text', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /fbdGridReading\(x\), '#334155', 0\.4/);
+  assert.match(panel, /strokeText\(text, 128, 48, 242\)/);
+  assert.match(panel, /x \(\$\{workspace\.units\.length\}\).*'#1e293b', 0\.44/);
+  assert.match(replay, /fill="#334155" fontSize="14"/);
+  assert.match(replay, /fontWeight="700" stroke="#f8fafc"/);
+});
+
 test('first student-created element starts diagram; all geometry and labels are manual FBDState data', () => {
   const before = JSON.stringify(workspace);
   let state = createEmptyFBDState(workspace);
