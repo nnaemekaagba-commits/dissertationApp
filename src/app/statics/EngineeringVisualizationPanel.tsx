@@ -728,6 +728,12 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [diagramActionNotice, setDiagramActionNotice] = useState('');
   const [moveDraft, setMoveDraft] = useState({ dx: '0', dy: '0' });
   useEffect(() => {
+    if (selectedPrimitive) return;
+    const bases = [...fbdState.bodies.map((item) => ({ kind: 'body' as const, id: item.id })),
+      ...fbdState.members.map((item) => ({ kind: 'member' as const, id: item.id }))];
+    if (bases.length === 1) setSelectedPrimitive(bases[0]);
+  }, [fbdState.bodies, fbdState.members, selectedPrimitive]);
+  useEffect(() => {
     if (!hasStudentFBDElements(fbdState)) onVisualizationInteraction('fbd_blank_workspace');
   }, []);
   const [labelMoveMode, setLabelMoveMode] = useState(false);

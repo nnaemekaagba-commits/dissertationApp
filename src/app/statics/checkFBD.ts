@@ -6,7 +6,8 @@ import { DEFAULT_GIVEN_VISIBILITY, selectGivenFBDInformation } from './fbdGiven.
 export type FBDCheckIssueKind = 'missing_force' | 'extra_force' | 'incorrect_force_direction' |
   'missing_moment' | 'extra_moment' | 'incorrect_moment_direction' |
   'incorrect_support_reaction' | 'omitted_applied_load' | 'incorrect_given_magnitude' |
-  'select_target' | 'stale_structure' | 'diagram_context_mismatch';
+  'select_target' | 'stale_structure' | 'diagram_context_mismatch' |
+  'missing_support_definition' | 'unclassified_reaction';
 export type FBDCheckIssue = { kind: FBDCheckIssueKind; description: string; elementId?: string; sourceId?: string };
 export type FBDCheckResult = {
   status: 'no_discrepancies' | 'needs_revision' | 'limited';
@@ -108,7 +109,12 @@ export function checkStudentFBD(workspace: StaticsWorkspace, inputState: FBDStat
     const used = new Set<string>();
     checked.appliedForces = state.forces.length - reactions.length;
     checked.appliedMoments = state.moments.length;
-    for (const endpoint of endpoints.filter((item) => item.kind && item.kind !== 'free')) {
+    const supportedEndpoints = endpoints.filter((item) => item.kind && item.kind !== 'free');
+    if (!supportedEndpoints.length) issues.push({ kind: 'missing_support_definition',
+      description: `${body ? `Body ${body.label || body.id}` : `Member ${member?.label || member?.id}`} has no endpoint support selected. Edit the base element and set the supported endpoint to pin, roller, or fixed.` });
+    else if (!reactions.length) issues.push({ kind: 'unclassified_reaction',
+      description: 'No force is marked as a support reaction. Edit each reaction arrow and set Force type to Support reaction.' });
+    for (const endpoint of supportedEndpoints) {
       const axes = endpoint.kind === 'roller' ? [90] : [0, 90];
       for (const axis of axes) {
         checked.supportForceComponents++;

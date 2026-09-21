@@ -276,6 +276,12 @@ test('structure translation uses only selected joints and external applied force
   assert.equal(restored.forces[1].role, 'reaction');
 });
 
+test('the sole student body or member is selected automatically for editing', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /const bases = \[\.\.\.fbdState\.bodies\.map/);
+  assert.match(panel, /if \(bases\.length === 1\) setSelectedPrimitive\(bases\[0\]\)/);
+});
+
 test('first student-created element starts diagram; all geometry and labels are manual FBDState data', () => {
   const before = JSON.stringify(workspace);
   let state = createEmptyFBDState(workspace);

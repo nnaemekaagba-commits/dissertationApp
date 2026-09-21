@@ -167,3 +167,16 @@ test('scratch body check reports a missing reaction from its selected endpoint s
   assert.ok(check.issues.some((issue) => issue.kind === 'missing_force' && issue.description.includes('Roller')));
   assert.ok(!check.issues.some((issue) => issue.kind === 'diagram_context_mismatch'));
 });
+
+test('scratch checker explains missing support metadata and legacy force classification', () => {
+  const noSupport = { ...empty, selectedTarget: null,
+    bodies: [{ id: 'body-CD', label: 'CD', origin: { x: 0, y: 0 }, width: 4, height: 0.4 }],
+    forces: [{ id: 'legacy-force', at: { x: 0, y: 0 }, angle: 0, label: 'F' }] };
+  let check = checkStudentFBD(workspace, noSupport);
+  assert.ok(check.issues.some((issue) => issue.kind === 'missing_support_definition' &&
+    issue.description.includes('Body CD')));
+  check = checkStudentFBD(workspace, { ...noSupport,
+    bodies: [{ ...noSupport.bodies[0], startJointKind: 'fixed' }] });
+  assert.ok(check.issues.some((issue) => issue.kind === 'unclassified_reaction' &&
+    issue.description.includes('Force type')));
+});
