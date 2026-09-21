@@ -141,10 +141,12 @@ test('workspace starts blank and renders no engineering geometry or givens', () 
   assert.doesNotMatch(replay, /workspace\.members/);
 });
 
-test('both view panes render the same student elements and joint types persist', () => {
+test('structure panes render only student base geometry while FBD view retains annotations', () => {
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
-  assert.match(panel, /DEFAULT_GIVEN_VISIBILITY, false\);/);
-  assert.match(panel, /givenVisibility,\s*false, selectedPrimitive\);/);
+  assert.match(panel, /DEFAULT_GIVEN_VISIBILITY, true\);/);
+  assert.match(panel, /givenVisibility,\s*!showFbd, selectedPrimitive\);/);
+  assert.match(panel, /function hasStudentFBDBaseGeometry/);
+  assert.match(panel, /No rigid body, joint, or member has been added yet\./);
   assert.match(panel, /aria-label="Joint type"/);
   for (const kind of ['free', 'pin', 'roller', 'fixed']) {
     const state = addFBDJoint(createEmptyFBDState(workspace), { ...joint, kind });

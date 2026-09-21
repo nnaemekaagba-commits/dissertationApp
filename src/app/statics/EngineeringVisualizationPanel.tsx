@@ -311,6 +311,10 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   return { group, center, span };
 }
 
+function hasStudentFBDBaseGeometry(state: FBDState): boolean {
+  return state.bodies.length + state.joints.length + state.members.length > 0;
+}
+
 function buildStructureModel(workspace: StaticsWorkspace, reactions: BeamReactionResult | null) {
   const group = new THREE.Group();
   const sceneData = selectSceneData(workspace);
@@ -599,7 +603,7 @@ function StructurePreview({ workspace, fbdState }: {
     controls.minDistance = 0.4;
     controls.maxDistance = 500;
     const model = buildFBDModel(workspace, fbdState, null, null, null, null, null,
-      DEFAULT_GIVEN_VISIBILITY, false);
+      DEFAULT_GIVEN_VISIBILITY, true);
     scene.add(model.group);
     controls.target.copy(model.center);
     camera.position.copy(model.center).add(new THREE.Vector3(0, 0, Math.max(4.5, model.span * 1.7)));
@@ -1034,7 +1038,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     }
     const model = buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId,
       selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility,
-      false, selectedPrimitive);
+      !showFbd, selectedPrimitive);
     modelRef.current = model.group;
     viewBoundsRef.current = { center: model.center, span: model.span };
     scene.add(model.group);
@@ -1589,9 +1593,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         {displayMode === 'split' && <div className="relative flex min-h-0 flex-1 flex-col border-b border-slate-300">
           <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">Structure</span>
           <StructurePreview workspace={workspace} fbdState={fbdState} />
-          {!hasStudentFBDElements(fbdState) &&
+          {!hasStudentFBDBaseGeometry(fbdState) &&
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
-              No diagram yet. Start building your free-body diagram.
+              No rigid body, joint, or member has been added yet.
             </div>}
         </div>}
         <div ref={containerRef} className={`relative min-h-0 bg-slate-50 touch-none ${displayMode === 'split' ? 'flex-1' : 'h-full'}`} aria-label={showFbd ? 'FBD canvas' : 'Structure canvas'}>
@@ -1600,9 +1604,10 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           Isolated: {targetOptions.find(({ target }) => target.kind === fbdState.selectedTarget?.kind && target.id === fbdState.selectedTarget?.id)?.label || fbdState.selectedTarget.id}
         </span>}
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
-        {!hasStudentFBDElements(fbdState) && !error &&
+        {!(showFbd ? hasStudentFBDElements(fbdState) : hasStudentFBDBaseGeometry(fbdState)) && !error &&
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
-            No diagram yet. Start building your free-body diagram.
+            {showFbd ? 'No diagram yet. Start building your free-body diagram.' :
+              'No rigid body, joint, or member has been added yet.'}
           </div>}
         </div>
       </div>
