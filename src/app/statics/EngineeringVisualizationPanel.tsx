@@ -223,15 +223,18 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   const derivedJoints: FBDJoint[] = baseOnly ? [
     ...fbdState.bodies.flatMap((body) => {
       const corners = fbdBodyCorners(body);
-      return [
-        { id: `${body.id}:start`, at: { x: (corners[0].x + corners[3].x) / 2, y: (corners[0].y + corners[3].y) / 2 }, kind: body.startJointKind || 'free' },
-        { id: `${body.id}:end`, at: { x: (corners[1].x + corners[2].x) / 2, y: (corners[1].y + corners[2].y) / 2 }, kind: body.endJointKind || 'free' },
-      ] as FBDJoint[];
+      return [body.startJointKind && body.startJointKind !== 'free' ?
+        { id: `${body.id}:start`, at: { x: (corners[0].x + corners[3].x) / 2, y: (corners[0].y + corners[3].y) / 2 }, kind: body.startJointKind } : null,
+      body.endJointKind && body.endJointKind !== 'free' ?
+        { id: `${body.id}:end`, at: { x: (corners[1].x + corners[2].x) / 2, y: (corners[1].y + corners[2].y) / 2 }, kind: body.endJointKind } : null]
+        .filter((joint): joint is FBDJoint => joint !== null);
     }),
     ...fbdState.members.flatMap((member) => [
-      { id: `${member.id}:start`, at: member.start, kind: member.startJointKind || 'free' },
-      { id: `${member.id}:end`, at: member.end, kind: member.endJointKind || 'free' },
-    ] as FBDJoint[]),
+      member.startJointKind && member.startJointKind !== 'free' ?
+        { id: `${member.id}:start`, at: member.start, kind: member.startJointKind } : null,
+      member.endJointKind && member.endJointKind !== 'free' ?
+        { id: `${member.id}:end`, at: member.end, kind: member.endJointKind } : null,
+    ].filter((joint): joint is FBDJoint => joint !== null)),
     ...fbdState.joints,
   ] : [];
   for (const node of derivedJoints) {
@@ -267,8 +270,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
         label.userData.fbdPrimitive = { kind: 'joint', id: node.id }; group.add(label); }
     }
   }
-  if (baseOnly) return { group, center, span };
-  for (const force of fbdState.forces) {
+  for (const force of fbdState.forces.filter((item) => !baseOnly || (item.role || 'applied') === 'applied')) {
     const arrow = buildFBDForceArrow(force, span, force.id === selectedForceId);
     arrow.userData.fbdDragApplication = force.id;
     group.add(arrow);
@@ -281,6 +283,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       group.add(label);
     }
   }
+  if (baseOnly) return { group, center, span };
   for (const moment of fbdState.moments) {
     group.add(buildFBDMomentArrow(moment, span, moment.id === selectedMomentId));
     const labelText = `${moment.label || 'M'}${moment.magnitude === undefined ? '' : ` = ${moment.magnitude} ${workspace.units.force}·${workspace.units.length}`}`;
@@ -692,7 +695,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [givenVisibility, setGivenVisibility] = useState<GivenVisibility>(DEFAULT_GIVEN_VISIBILITY);
   const [pendingTarget, setPendingTarget] = useState<FBDTarget | null | undefined>(undefined);
   const [forceFormOpen, setForceFormOpen] = useState(false);
-  const [forceDraft, setForceDraft] = useState({ x: '0', y: '0', label: 'F', angle: '-90', magnitude: '' });
+  const [forceDraft, setForceDraft] = useState({ x: '0', y: '0', label: 'F', angle: '-90', magnitude: '', role: 'applied' });
   const [forceError, setForceError] = useState('');
   const [selectedForceId, setSelectedForceId] = useState<string | null>(null);
   const [momentFormOpen, setMomentFormOpen] = useState(false);
@@ -720,7 +723,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [primitiveEditing, setPrimitiveEditing] = useState(false);
   const [primitiveDraft, setPrimitiveDraft] = useState({ id: '', label: '', x: '0', y: '0',
     endX: '4', endY: '0', width: '4', height: '0.6', angle: '0', length: '4', jointKind: 'free',
-    startJointKind: 'free', endJointKind: 'free' });
+    startJointKind: 'none', endJointKind: 'none' });
   const [primitiveError, setPrimitiveError] = useState('');
   const [diagramActionNotice, setDiagramActionNotice] = useState('');
   const [moveDraft, setMoveDraft] = useState({ dx: '0', dy: '0' });
@@ -1165,7 +1168,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   };
   const openForceForm = () => {
     const { x, y } = selectedTargetPoint();
-    setForceDraft({ x: String(x), y: String(y), label: 'F', angle: '-90', magnitude: '' });
+    setForceDraft({ x: String(x), y: String(y), label: 'F', angle: '-90', magnitude: '', role: 'applied' });
     setForceError('');
     setMomentFormOpen(false);
     setDimensionFormOpen(false);
@@ -1178,7 +1181,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     try {
       const forceId = crypto.randomUUID();
       const input = { at: { x: Number(forceDraft.x), y: Number(forceDraft.y) },
-        label: forceDraft.label, angle: Number(forceDraft.angle),
+        label: forceDraft.label, angle: Number(forceDraft.angle), role: forceDraft.role as 'applied' | 'reaction',
         ...(forceDraft.magnitude.trim() ? { magnitude: Number(forceDraft.magnitude) } : {}) };
       const next = addFBDForce(fbdState, input, workspace, forceId);
       const force = next.forces[next.forces.length - 1];
@@ -1357,6 +1360,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       let next: FBDState;
       if (selectedKind === 'force') next = editFBDForce(fbdState, selectedId, {
         at: point('at'), angle: number('angle'), label: value('label'),
+        role: value('role') === 'reaction' ? 'reaction' : 'applied',
         ...(value('magnitude').trim() ? { magnitude: number('magnitude') } : {}),
       }, workspace);
       else if (selectedKind === 'moment') next = editFBDMoment(fbdState, selectedId, {
@@ -1411,13 +1415,14 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     const item = editing && selectedPrimitive?.kind === kind ? selectedPrimitiveElement : undefined;
     const draft = { id: item?.id || '', label: item && 'label' in item ? item.label || '' : '',
       x: '0', y: '0', endX: '4', endY: '0', width: '4', height: '0.6', angle: '0', length: '4', jointKind: 'free',
-      startJointKind: 'free', endJointKind: 'free' };
+      startJointKind: 'none', endJointKind: 'none' };
     if (item && kind === 'body') {
       const body = item as FBDBody;
       draft.x = String(body.origin.x); draft.y = String(body.origin.y);
       draft.width = String(body.width); draft.height = String(body.height);
       draft.angle = String(body.angle ?? 0);
-      draft.startJointKind = body.startJointKind || 'free'; draft.endJointKind = body.endJointKind || 'free';
+      draft.startJointKind = body.startJointKind && body.startJointKind !== 'free' ? body.startJointKind : 'none';
+      draft.endJointKind = body.endJointKind && body.endJointKind !== 'free' ? body.endJointKind : 'none';
     } else if (item && kind === 'joint') {
       const joint = item as FBDJoint;
       draft.x = String(joint.at.x); draft.y = String(joint.at.y); draft.jointKind = joint.kind || 'free';
@@ -1429,7 +1434,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         member.end.x - member.start.x) * 180 / Math.PI);
       draft.length = String(Math.hypot(member.end.x - member.start.x,
         member.end.y - member.start.y));
-      draft.startJointKind = member.startJointKind || 'free'; draft.endJointKind = member.endJointKind || 'free';
+      draft.startJointKind = member.startJointKind && member.startJointKind !== 'free' ? member.startJointKind : 'none';
+      draft.endJointKind = member.endJointKind && member.endJointKind !== 'free' ? member.endJointKind : 'none';
     }
     setPrimitiveDraft(draft); setPrimitiveEditing(editing); setPrimitiveMode(kind); setPrimitiveError('');
   };
@@ -1465,14 +1471,14 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       const item = primitiveMode === 'body'
         ? { id, origin: at, width: Number(primitiveDraft.width), height: Number(primitiveDraft.height),
           angle: Number(primitiveDraft.angle),
-          startJointKind: primitiveDraft.startJointKind as FBDJoint['kind'],
-          endJointKind: primitiveDraft.endJointKind as FBDJoint['kind'],
+          ...(primitiveDraft.startJointKind === 'none' ? {} : { startJointKind: primitiveDraft.startJointKind as FBDJoint['kind'] }),
+          ...(primitiveDraft.endJointKind === 'none' ? {} : { endJointKind: primitiveDraft.endJointKind as FBDJoint['kind'] }),
           ...(label ? { label } : {}) } as FBDBody
         : primitiveMode === 'joint' ? { id, at, kind: primitiveDraft.jointKind as FBDJoint['kind'],
           ...(label ? { label } : {}) } as FBDJoint
           : { id, start: at, end: { x: Number(primitiveDraft.endX), y: Number(primitiveDraft.endY) },
-            startJointKind: primitiveDraft.startJointKind as FBDJoint['kind'],
-            endJointKind: primitiveDraft.endJointKind as FBDJoint['kind'],
+            ...(primitiveDraft.startJointKind === 'none' ? {} : { startJointKind: primitiveDraft.startJointKind as FBDJoint['kind'] }),
+            ...(primitiveDraft.endJointKind === 'none' ? {} : { endJointKind: primitiveDraft.endJointKind as FBDJoint['kind'] }),
             ...(label ? { label } : {}) } as FBDMember;
       const next = primitiveEditing ? editFBDPrimitive(fbdState, primitiveMode, id, item) :
         primitiveMode === 'body' ? addFBDBody(fbdState, item as FBDBody) :
@@ -1707,7 +1713,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
               <select value={primitiveDraft[key]}
                 onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, [key]: event.target.value })}
                 className="block w-full rounded border px-2 py-1">
-                <option value="free">Free</option><option value="pin">Pin</option>
+                <option value="none">No joint</option><option value="pin">Pin</option>
                 <option value="roller">Roller</option><option value="fixed">Fixed</option>
               </select>
             </label>)}
@@ -1784,6 +1790,10 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
               {editNumber('atX', `Point X (${workspace.units.length})`, item.at.x)}
               {editNumber('atY', `Point Y (${workspace.units.length})`, item.at.y)}
               {editNumber('angle', 'Direction (degrees from +X)', item.angle)}
+              <label>Force type<select name="role" defaultValue={item.role || 'applied'}
+                className="block w-full rounded border border-slate-300 bg-white px-2 py-1">
+                <option value="applied">External applied force</option><option value="reaction">Support reaction</option>
+              </select></label>
               {editNumber('magnitude', `Magnitude (${workspace.units.force}, optional)`, item.magnitude, true)}
               <button type="button" aria-pressed={forceApplicationArmed}
                 onClick={() => setForceApplicationArmed((current) => !current)}
@@ -1884,6 +1894,11 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           <label>Magnitude ({workspace.units.force}, optional)<input type="number" min="0" step="any" value={forceDraft.magnitude}
             onChange={(event) => setForceDraft({ ...forceDraft, magnitude: event.target.value })}
             className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <label>Force type<select value={forceDraft.role}
+            onChange={(event) => setForceDraft({ ...forceDraft, role: event.target.value })}
+            className="block w-full rounded border border-slate-300 bg-white px-2 py-1">
+            <option value="applied">External applied force</option><option value="reaction">Support reaction</option>
+          </select></label>
           <div className="flex items-end gap-2"><button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Add force</button>
             <button type="button" onClick={() => setForceFormOpen(false)} className="rounded bg-slate-100 px-2 py-1">Cancel</button></div>
           {forceError && <p className="col-span-2 text-red-700" role="alert">{forceError}</p>}

@@ -261,6 +261,21 @@ test('FBD annotation tools remain available without an isolated problem target',
   assert.match(panel, /const body = fbdState\.bodies\[0\]/);
 });
 
+test('structure translation uses only selected joints and external applied forces', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /<option value="none">No joint<\/option>/);
+  assert.match(panel, /body\.startJointKind && body\.startJointKind !== 'free'/);
+  assert.match(panel, /!baseOnly \|\| \(item\.role \|\| 'applied'\) === 'applied'/);
+  assert.match(panel, /<option value="applied">External applied force<\/option>/);
+  const external = addFBDForce(createEmptyFBDState(workspace),
+    { at: { x: 1, y: 0 }, angle: -90, label: 'P', role: 'applied' }, workspace, 'P');
+  const reaction = addFBDForce(external,
+    { at: { x: 0, y: 0 }, angle: 90, label: 'R', role: 'reaction' }, workspace, 'R');
+  const restored = parseFBDState(JSON.parse(JSON.stringify(reaction)), workspace);
+  assert.equal(restored.forces[0].role, undefined);
+  assert.equal(restored.forces[1].role, 'reaction');
+});
+
 test('first student-created element starts diagram; all geometry and labels are manual FBDState data', () => {
   const before = JSON.stringify(workspace);
   let state = createEmptyFBDState(workspace);

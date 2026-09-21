@@ -10,8 +10,10 @@ export type FBDMember = { id: string; start: FBDPoint; end: FBDPoint; label?: st
   startJointKind?: FBDJointKind; endJointKind?: FBDJointKind };
 export type FBDPrimitiveKind = 'body' | 'joint' | 'member';
 export type FBDPrimitive = FBDBody | FBDJoint | FBDMember;
-export type FBDForce = { id: string; at: FBDPoint; angle: number; magnitude?: number; label?: string; labelPosition?: FBDPoint };
-export type FBDForceInput = { at: FBDPoint; angle: number; label: string; magnitude?: number };
+export type FBDForceRole = 'applied' | 'reaction';
+export type FBDForce = { id: string; at: FBDPoint; angle: number; magnitude?: number; label?: string;
+  role?: FBDForceRole; labelPosition?: FBDPoint };
+export type FBDForceInput = { at: FBDPoint; angle: number; label: string; magnitude?: number; role?: FBDForceRole };
 export type FBDMoment = { id: string; at: FBDPoint; clockwise: boolean; magnitude?: number; label?: string; labelPosition?: FBDPoint };
 export type FBDMomentInput = { at: FBDPoint; clockwise: boolean; label: string; magnitude?: number };
 export type FBDDimension = { id: string; start: FBDPoint; end: FBDPoint; label?: string; labelPosition?: FBDPoint };
@@ -206,10 +208,12 @@ export function addFBDForce(state: FBDState, input: FBDForceInput, workspace: St
     throw new Error('Force ID must be unique.');
   if (!Number.isFinite(input.at.x) || !Number.isFinite(input.at.y) || !Number.isFinite(input.angle) ||
     !input.label.trim() || input.label.length > 80 ||
+    (input.role !== undefined && input.role !== 'applied' && input.role !== 'reaction') ||
     (input.magnitude !== undefined && (!Number.isFinite(input.magnitude) || input.magnitude < 0)))
     throw new Error('Enter a valid point, label, direction, and optional nonnegative magnitude.');
   const force: FBDForce = { id: forceId, at: { x: input.at.x, y: input.at.y },
     angle: input.angle, label: input.label.trim(),
+    ...(input.role === 'reaction' ? { role: 'reaction' as const } : {}),
     ...(input.magnitude === undefined ? {} : { magnitude: input.magnitude }) };
   return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
     forces: [...state.forces, force] };
@@ -461,6 +465,7 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),
     forces: rows(root.forces, (row) => ({ id: id(row.id), at: point(row.at), angle: number(row.angle),
       ...(row.magnitude === undefined ? {} : { magnitude: number(row.magnitude) }),
+      ...(row.role === undefined ? {} : { role: row.role === 'applied' || row.role === 'reaction' ? row.role : fail() }),
       ...(row.label === undefined ? {} : { label: label(row.label) }),
       ...(row.labelPosition === undefined ? {} : { labelPosition: point(row.labelPosition) }) })),
     moments: rows(root.moments, (row) => ({ id: id(row.id), at: point(row.at),
