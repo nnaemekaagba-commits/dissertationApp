@@ -24,7 +24,7 @@ import { fbdBodyCorners, fbdBodyEndpointLabelPositions, fbdEndpointLabels, fbdMe
 import { buildFBDForceArrow } from './fbdForceScene';
 import { buildFBDMomentArrow } from './fbdMomentScene';
 import { fbdJointSymbol } from './fbdJointSymbol';
-import { fbdGridReading, fbdGridSpec } from './fbdGrid';
+import { fbdGridLineConflicts, fbdGridReading, fbdGridSpec } from './fbdGrid';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene';
 import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene';
 import { DEFAULT_GIVEN_VISIBILITY, GIVEN_TOGGLES, type GivenVisibility } from './fbdGiven';
@@ -129,15 +129,25 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   const span = Math.max(size.x, size.y, 1);
   if (pointData.length) {
     const grid = fbdGridSpec(center, span);
+    const geometrySegments = [
+      ...fbdState.members.map((member) => ({ start: member.start, end: member.end })),
+      ...fbdState.bodies.flatMap((body) => {
+        const corners = fbdBodyCorners(body);
+        return corners.map((start, index) => ({ start, end: corners[(index + 1) % corners.length] }));
+      }),
+    ];
+    const conflictTolerance = Math.max(grid.step * 0.035, 1e-8);
     const xMin = grid.xValues[0]; const xMax = grid.xValues[grid.xValues.length - 1];
     const yMin = grid.yValues[0]; const yMax = grid.yValues[grid.yValues.length - 1];
     for (const x of grid.xValues) {
+      if (fbdGridLineConflicts('x', x, geometrySegments, conflictTolerance)) continue;
       addLine(group, new THREE.Vector3(x, yMin, -0.18), new THREE.Vector3(x, yMax, -0.18),
         Math.abs(x) < grid.step / 100 ? 0x94a3b8 : 0xe2e8f0);
       const reading = textSprite(fbdGridReading(x), '#64748b', 0.25);
       if (reading) { reading.position.set(x, yMin - grid.step * 0.35, -0.12); group.add(reading); }
     }
     for (const y of grid.yValues) {
+      if (fbdGridLineConflicts('y', y, geometrySegments, conflictTolerance)) continue;
       addLine(group, new THREE.Vector3(xMin, y, -0.18), new THREE.Vector3(xMax, y, -0.18),
         Math.abs(y) < grid.step / 100 ? 0x94a3b8 : 0xe2e8f0);
       const reading = textSprite(fbdGridReading(y), '#64748b', 0.25);

@@ -1,7 +1,7 @@
 import { fbdBodyCorners, fbdBodyEndpointLabelPositions, fbdEndpointLabels, fbdMemberEndpointLabelPositions,
   type FBDPoint, type FBDState } from './statics/fbdState';
 import { fbdJointSymbol } from './statics/fbdJointSymbol';
-import { fbdGridReading, fbdGridSpec } from './statics/fbdGrid';
+import { fbdGridLineConflicts, fbdGridReading, fbdGridSpec } from './statics/fbdGrid';
 import type { StaticsWorkspace } from './statics/model';
 
 export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?: StaticsWorkspace }) {
@@ -20,6 +20,14 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
   const rawMaxY = Math.max(1, ...points.map((point) => point.y));
   const rawSpan = Math.max(rawMaxX - rawMinX, rawMaxY - rawMinY, 1);
   const grid = fbdGridSpec({ x: (rawMinX + rawMaxX) / 2, y: (rawMinY + rawMaxY) / 2 }, rawSpan);
+  const geometrySegments = [
+    ...(state.members || []).map((member) => ({ start: member.start, end: member.end })),
+    ...(state.bodies || []).flatMap((body) => {
+      const corners = fbdBodyCorners(body);
+      return corners.map((start, index) => ({ start, end: corners[(index + 1) % corners.length] }));
+    }),
+  ];
+  const conflictTolerance = Math.max(grid.step * 0.035, 1e-8);
   const minX = points.length ? grid.xValues[0] : rawMinX;
   const maxX = points.length ? grid.xValues[grid.xValues.length - 1] : rawMaxX;
   const minY = points.length ? grid.yValues[0] : rawMinY;
@@ -47,12 +55,14 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
       <marker id="replay-moment-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5"
         orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#7c3aed" /></marker></defs>
     {points.length > 0 && <g aria-label="Coordinate grid">
-      {grid.xValues.map((x) => <g key={`grid-x-${x}`}>
+      {grid.xValues.filter((x) => !fbdGridLineConflicts('x', x, geometrySegments, conflictTolerance))
+        .map((x) => <g key={`grid-x-${x}`}>
         {line({ x, y: minY }, { x, y: maxY }, Math.abs(x) < grid.step / 100 ? '#94a3b8' : '#e2e8f0', 1)}
         <text x={sx(x)} y={sy(minY) + 18} textAnchor="middle" fill="#64748b" fontSize="11">
           {fbdGridReading(x)}</text>
       </g>)}
-      {grid.yValues.map((y) => <g key={`grid-y-${y}`}>
+      {grid.yValues.filter((y) => !fbdGridLineConflicts('y', y, geometrySegments, conflictTolerance))
+        .map((y) => <g key={`grid-y-${y}`}>
         {line({ x: minX, y }, { x: maxX, y }, Math.abs(y) < grid.step / 100 ? '#94a3b8' : '#e2e8f0', 1)}
         <text x={sx(minX) - 10} y={sy(y) + 4} textAnchor="end" fill="#64748b" fontSize="11">
           {fbdGridReading(y)}</text>

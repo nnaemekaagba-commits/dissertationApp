@@ -11,7 +11,7 @@ import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDLabel,
 import { executeFBDChatToolBatch } from './fbdChatTools.ts';
 import { fbdActionForVisualization } from './researchLog.ts';
 import { fbdJointSymbol } from './fbdJointSymbol.ts';
-import { fbdGridReading, fbdGridSpec } from './fbdGrid.ts';
+import { fbdGridLineConflicts, fbdGridReading, fbdGridSpec } from './fbdGrid.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
 const body = { id: 'Body-1', origin: { x: 0, y: 0 }, width: 4, height: 0.6, label: 'My body' };
@@ -204,6 +204,21 @@ test('body fill masks background gridlines without hiding its outline', () => {
   assert.match(panel, /color: 0xf8fafc/);
   assert.match(panel, /mask\.position\.z = -0\.08/);
   assert.match(replay, /fill="#f8fafc" stroke="#059669"/);
+});
+
+test('gridlines that coincide with member or body edges are omitted', () => {
+  const segments = [
+    { start: { x: 0, y: 0 }, end: { x: 0, y: 4 } },
+    { start: { x: -1, y: 2 }, end: { x: 3, y: 2 } },
+  ];
+  assert.equal(fbdGridLineConflicts('x', 0, segments, 0.01), true);
+  assert.equal(fbdGridLineConflicts('y', 2, segments, 0.01), true);
+  assert.equal(fbdGridLineConflicts('x', 1, segments, 0.01), false);
+  assert.equal(fbdGridLineConflicts('y', 1, segments, 0.01), false);
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /fbdGridLineConflicts\('x', x, geometrySegments/);
+  assert.match(replay, /fbdGridLineConflicts\('x', x, geometrySegments/);
 });
 
 test('first student-created element starts diagram; all geometry and labels are manual FBDState data', () => {
