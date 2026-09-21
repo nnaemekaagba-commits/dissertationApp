@@ -21,6 +21,7 @@ import { fbdEndpointLabels, hasStudentFBDElements, resetStudentFBDElements, sele
   type FBDElement, type FBDElementKind, type FBDLabelAssociation, type FBDState, type FBDTarget } from './fbdState';
 import { buildFBDForceArrow } from './fbdForceScene';
 import { buildFBDMomentArrow } from './fbdMomentScene';
+import { fbdJointSymbol } from './fbdJointSymbol';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene';
 import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene';
 import { DEFAULT_GIVEN_VISIBILITY, GIVEN_TOGGLES, type GivenVisibility } from './fbdGiven';
@@ -177,16 +178,32 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     }
   }
   for (const node of fbdState.joints) {
-    const marker = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10),
-      new THREE.MeshStandardMaterial({ color: selectedPrimitive?.kind === 'joint' && selectedPrimitive.id === node.id ? 0xc2410c : 0x047857 }));
-    marker.position.set(node.at.x, node.at.y, 0.04);
-    marker.userData.fbdPrimitive = { kind: 'joint', id: node.id };
-    group.add(marker);
-    if (node.kind && node.kind !== 'free') {
-      const kindLabel = textSprite(node.kind.toUpperCase(), '#047857', 0.28);
-      if (kindLabel) { kindLabel.position.set(node.at.x, node.at.y - 0.3, 0.2);
-        kindLabel.userData.fbdPrimitive = { kind: 'joint', id: node.id }; group.add(kindLabel); }
+    const symbol = new THREE.Group();
+    symbol.userData.fbdPrimitive = { kind: 'joint', id: node.id };
+    symbol.position.set(node.at.x, node.at.y, 0.1);
+    const color = selectedPrimitive?.kind === 'joint' && selectedPrimitive.id === node.id ? 0xc2410c : 0x047857;
+    const drawing = fbdJointSymbol(node.kind);
+    for (const stroke of drawing.strokes) addLine(symbol,
+      new THREE.Vector3(stroke.from.x, stroke.from.y, 0),
+      new THREE.Vector3(stroke.to.x, stroke.to.y, 0), color);
+    for (const circle of drawing.circles) {
+      if (!circle.filled) {
+        const points = Array.from({ length: 33 }, (_, index) => {
+          const angle = index / 32 * Math.PI * 2;
+          return new THREE.Vector3(circle.center.x + Math.cos(angle) * circle.radius,
+            circle.center.y + Math.sin(angle) * circle.radius, 0.02);
+        });
+        const outline = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),
+          new THREE.LineBasicMaterial({ color }));
+        symbol.add(outline);
+      } else {
+        const shape = new THREE.Mesh(new THREE.CircleGeometry(circle.radius, 32),
+          new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
+        shape.position.set(circle.center.x, circle.center.y, 0.02);
+        symbol.add(shape);
+      }
     }
+    group.add(symbol);
     if (node.label) {
       const label = textSprite(node.label, '#047857', 0.42);
       if (label) { label.position.set(node.at.x, node.at.y + 0.27, 0.2);

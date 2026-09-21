@@ -1,4 +1,5 @@
 import { fbdEndpointLabels, type FBDPoint, type FBDState } from './statics/fbdState';
+import { fbdJointSymbol } from './statics/fbdJointSymbol';
 import type { StaticsWorkspace } from './statics/model';
 
 export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?: StaticsWorkspace }) {
@@ -57,7 +58,14 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
       </> : member.label && text(member.label, { x: (member.start.x + member.end.x) / 2,
         y: (member.start.y + member.end.y) / 2 }, '#047857')}</g>)}
     {(state.joints || []).map((node) => <g key={node.id}>
-      <circle cx={sx(node.at.x)} cy={sy(node.at.y)} r="5" fill="#047857" />
+      {fbdJointSymbol(node.kind).strokes.map((stroke, index) =>
+        <g key={`stroke-${index}`}>{line(
+          { x: node.at.x + stroke.from.x, y: node.at.y + stroke.from.y },
+          { x: node.at.x + stroke.to.x, y: node.at.y + stroke.to.y }, '#047857', 2.5)}</g>)}
+      {fbdJointSymbol(node.kind).circles.map((circle, index) =>
+        <circle key={`circle-${index}`} cx={sx(node.at.x + circle.center.x)}
+          cy={sy(node.at.y + circle.center.y)} r={circle.radius * scale}
+          fill={circle.filled ? '#047857' : 'none'} stroke="#047857" strokeWidth="2.5" />)}
       {node.label && text(node.label, { x: node.at.x, y: node.at.y + span * 0.09 }, '#065f46')}
     </g>)}
     {state.forces.map((force) => {

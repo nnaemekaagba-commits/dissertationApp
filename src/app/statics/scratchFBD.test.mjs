@@ -8,11 +8,32 @@ import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDLabel, fbdEnd
   createFBDHistory, applyFBDChange, undoFBDChange, redoFBDChange } from './fbdState.ts';
 import { executeFBDChatToolBatch } from './fbdChatTools.ts';
 import { fbdActionForVisualization } from './researchLog.ts';
+import { fbdJointSymbol } from './fbdJointSymbol.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
 const body = { id: 'Body-1', origin: { x: 0, y: 0 }, width: 4, height: 0.6, label: 'My body' };
 const joint = { id: 'Point-1', at: { x: 1, y: 0 }, label: 'J1' };
 const member = { id: 'Line-1', start: { x: 0, y: 0 }, end: { x: 3, y: 2 }, label: 'My line' };
+
+test('each joint kind has its own drafting geometry in the live canvas and replay', () => {
+  const free = fbdJointSymbol('free');
+  const pin = fbdJointSymbol('pin');
+  const roller = fbdJointSymbol('roller');
+  const fixed = fbdJointSymbol('fixed');
+  assert.equal(free.strokes.length, 0);
+  assert.equal(free.circles.length, 1);
+  assert.equal(pin.circles.length, 1);
+  assert.ok(pin.strokes.length >= 4);
+  assert.equal(roller.circles.filter((item) => !item.filled).length, 2);
+  assert.ok(roller.circles.length > pin.circles.length);
+  assert.equal(fixed.circles.length, 1);
+  assert.ok(fixed.strokes.length >= 4);
+  assert.notDeepEqual(pin, roller);
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /fbdJointSymbol\(node\.kind\)/);
+  assert.match(replay, /fbdJointSymbol\(node\.kind\)/);
+});
 
 test('two-letter body and member names display their endpoint labels without creating new elements', () => {
   assert.deepEqual(fbdEndpointLabels('AD'), ['A', 'D']);
