@@ -147,12 +147,27 @@ test('structure panes render only student base geometry while FBD view retains a
   assert.match(panel, /givenVisibility,\s*!showFbd, selectedPrimitive\);/);
   assert.match(panel, /function hasStudentFBDBaseGeometry/);
   assert.match(panel, /No rigid body, joint, or member has been added yet\./);
-  assert.match(panel, /aria-label="Joint type"/);
+  assert.doesNotMatch(panel, /Add Joint \/ Point/);
+  assert.doesNotMatch(panel, /\(\['body', 'joint', 'member'\]/);
+  assert.match(panel, /Start joint in Structure View/);
+  assert.match(panel, /const derivedJoints: FBDJoint\[\] = baseOnly/);
   for (const kind of ['free', 'pin', 'roller', 'fixed']) {
     const state = addFBDJoint(createEmptyFBDState(workspace), { ...joint, kind });
     assert.equal(parseFBDState(JSON.parse(JSON.stringify(state)), workspace).joints[0].kind, kind);
   }
   assert.throws(() => addFBDJoint(createEmptyFBDState(workspace), { ...joint, kind: 'hinged-ish' }));
+});
+
+test('body endpoint joints persist as structure metadata and reject unknown support kinds', () => {
+  const state = addFBDBody(createEmptyFBDState(workspace), {
+    ...body, startJointKind: 'pin', endJointKind: 'roller',
+  });
+  const restored = parseFBDState(JSON.parse(JSON.stringify(state)), workspace);
+  assert.equal(restored.bodies[0].startJointKind, 'pin');
+  assert.equal(restored.bodies[0].endJointKind, 'roller');
+  assert.throws(() => addFBDBody(createEmptyFBDState(workspace), {
+    ...body, startJointKind: 'welded-ish',
+  }));
 });
 
 test('FBD opens facing the diagram and restores front view when selected', () => {

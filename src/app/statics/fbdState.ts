@@ -2,10 +2,12 @@ import type { StaticsWorkspace } from './model.ts';
 
 export type FBDTarget = { kind: 'body' | 'member' | 'joint'; id: string };
 export type FBDPoint = { x: number; y: number };
-export type FBDBody = { id: string; origin: FBDPoint; width: number; height: number; angle?: number; label?: string };
 export type FBDJointKind = 'free' | 'pin' | 'roller' | 'fixed';
+export type FBDBody = { id: string; origin: FBDPoint; width: number; height: number; angle?: number; label?: string;
+  startJointKind?: FBDJointKind; endJointKind?: FBDJointKind };
 export type FBDJoint = { id: string; at: FBDPoint; kind?: FBDJointKind; label?: string };
-export type FBDMember = { id: string; start: FBDPoint; end: FBDPoint; label?: string };
+export type FBDMember = { id: string; start: FBDPoint; end: FBDPoint; label?: string;
+  startJointKind?: FBDJointKind; endJointKind?: FBDJointKind };
 export type FBDPrimitiveKind = 'body' | 'joint' | 'member';
 export type FBDPrimitive = FBDBody | FBDJoint | FBDMember;
 export type FBDForce = { id: string; at: FBDPoint; angle: number; magnitude?: number; label?: string; labelPosition?: FBDPoint };
@@ -126,6 +128,8 @@ export function resetStudentFBDElements(state: FBDState): FBDState {
 
 const validPoint = (point: FBDPoint) => Number.isFinite(point.x) && Number.isFinite(point.y);
 const validText = (value?: string) => value === undefined || (typeof value === 'string' && value.length <= 120);
+const validJointKind = (value?: FBDJointKind) => value === undefined ||
+  ['free', 'pin', 'roller', 'fixed'].includes(value);
 const uniquePrimitiveId = (state: FBDState, id: string) => id.trim() &&
   ![...state.bodies, ...state.joints, ...state.members].some((item) => item.id === id);
 
@@ -134,7 +138,8 @@ export function addFBDBody(state: FBDState, body: FBDBody): FBDState {
   if (!uniquePrimitiveId(state, body.id) || !validPoint(body.origin) ||
     !Number.isFinite(body.width) || body.width <= 0 ||
     !Number.isFinite(body.height) || body.height <= 0 ||
-    (body.angle !== undefined && !Number.isFinite(body.angle)) || !validText(body.label))
+    (body.angle !== undefined && !Number.isFinite(body.angle)) || !validText(body.label) ||
+    !validJointKind(body.startJointKind) || !validJointKind(body.endJointKind))
     throw new Error('Enter a unique body ID, finite origin, positive size, and optional label.');
   return { ...state, bodies: [...state.bodies, { ...body, origin: { ...body.origin } }] };
 }
@@ -147,7 +152,7 @@ export function addFBDJoint(state: FBDState, joint: FBDJoint): FBDState {
 export function addFBDMember(state: FBDState, member: FBDMember): FBDState {
   if (!uniquePrimitiveId(state, member.id) || !validPoint(member.start) || !validPoint(member.end) ||
     Math.hypot(member.end.x - member.start.x, member.end.y - member.start.y) < 1e-9 ||
-    !validText(member.label))
+    !validText(member.label) || !validJointKind(member.startJointKind) || !validJointKind(member.endJointKind))
     throw new Error('Enter a unique member ID, distinct finite endpoints, and optional label.');
   return { ...state, members: [...state.members, { ...member,
     start: { ...member.start }, end: { ...member.end } }] };
@@ -443,12 +448,16 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
     bodies: rows(root.bodies ?? [], (row) => ({ id: id(row.id), origin: point(row.origin),
       width: number(row.width), height: number(row.height),
       ...(row.angle === undefined ? {} : { angle: number(row.angle) }),
+      ...(row.startJointKind === undefined ? {} : { startJointKind: ['free', 'pin', 'roller', 'fixed'].includes(String(row.startJointKind)) ? row.startJointKind as FBDJointKind : fail() }),
+      ...(row.endJointKind === undefined ? {} : { endJointKind: ['free', 'pin', 'roller', 'fixed'].includes(String(row.endJointKind)) ? row.endJointKind as FBDJointKind : fail() }),
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),
     joints: rows(root.joints ?? [], (row) => ({ id: id(row.id), at: point(row.at),
       ...(row.kind === undefined ? {} : { kind: ['free', 'pin', 'roller', 'fixed'].includes(String(row.kind))
         ? row.kind as FBDJointKind : fail() }),
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),
     members: rows(root.members ?? [], (row) => ({ id: id(row.id), start: point(row.start), end: point(row.end),
+      ...(row.startJointKind === undefined ? {} : { startJointKind: ['free', 'pin', 'roller', 'fixed'].includes(String(row.startJointKind)) ? row.startJointKind as FBDJointKind : fail() }),
+      ...(row.endJointKind === undefined ? {} : { endJointKind: ['free', 'pin', 'roller', 'fixed'].includes(String(row.endJointKind)) ? row.endJointKind as FBDJointKind : fail() }),
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),
     forces: rows(root.forces, (row) => ({ id: id(row.id), at: point(row.at), angle: number(row.angle),
       ...(row.magnitude === undefined ? {} : { magnitude: number(row.magnitude) }),
