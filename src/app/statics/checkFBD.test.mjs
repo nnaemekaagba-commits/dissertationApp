@@ -124,3 +124,20 @@ test('checker continues when scratch geometry matches the selected problem membe
   assert.ok(!check.issues.some((issue) => issue.kind === 'diagram_context_mismatch'));
   assert.ok(check.issues.some((issue) => issue.kind === 'omitted_applied_load'));
 });
+
+test('a single selected student body is inferred without the optional problem-object selector', () => {
+  const state = { ...empty, selectedTarget: null,
+    bodies: [{ id: 'body-AB', label: 'AB', origin: { x: 0, y: 0 }, width: 4, height: 0.4 }] };
+  const check = checkStudentFBD(workspace, state);
+  assert.deepEqual(check.selectedTarget, { kind: 'body', id: 'structure' });
+  assert.ok(!check.issues.some((issue) => issue.kind === 'select_target'));
+  assert.ok(check.issues.some((issue) => issue.kind === 'omitted_applied_load'));
+});
+
+test('a single student member is matched to the engineering member by endpoint label', () => {
+  const state = { ...empty, selectedTarget: null,
+    members: [{ id: 'student-member', label: 'AB', start: { x: 0, y: 0 }, end: { x: 4, y: 0 } }] };
+  const check = checkStudentFBD(workspace, state);
+  assert.deepEqual(check.selectedTarget, { kind: 'member', id: 'AB' });
+  assert.ok(!check.issues.some((issue) => issue.kind === 'select_target'));
+});

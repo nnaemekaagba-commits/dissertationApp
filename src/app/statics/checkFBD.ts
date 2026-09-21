@@ -56,7 +56,19 @@ function diagramContextMismatch(workspace: StaticsWorkspace, state: FBDState): s
 }
 
 /** Compares only student-created marks with external problem data; it never runs equilibrium. */
-export function checkStudentFBD(workspace: StaticsWorkspace, state: FBDState): FBDCheckResult {
+export function checkStudentFBD(workspace: StaticsWorkspace, inputState: FBDState): FBDCheckResult {
+  const bases = [...inputState.bodies.map((item) => ({ kind: 'body' as const, name: item.label || item.id })),
+    ...inputState.members.map((item) => ({ kind: 'member' as const, name: item.label || item.id }))];
+  const inferredTarget = !inputState.selectedTarget && bases.length === 1 ? (() => {
+    const base = bases[0];
+    if (base.kind === 'body') return { kind: 'body' as const, id: 'structure' };
+    const name = base.name.toLowerCase();
+    const member = workspace.members.find((item) => item.id.toLowerCase() === name ||
+      `${item.startNodeId}${item.endNodeId}`.toLowerCase() === name ||
+      `${item.endNodeId}${item.startNodeId}`.toLowerCase() === name);
+    return member ? { kind: 'member' as const, id: member.id } : { kind: 'body' as const, id: 'structure' };
+  })() : null;
+  const state = inferredTarget ? { ...inputState, selectedTarget: inferredTarget } : inputState;
   const issues: FBDCheckIssue[] = [];
   const limitations: string[] = [];
   const checked = { appliedForces: 0, appliedMoments: 0, supportForceComponents: 0, supportMoments: 0 };
@@ -65,7 +77,7 @@ export function checkStudentFBD(workspace: StaticsWorkspace, state: FBDState): F
     selectedTarget: state.selectedTarget, issues, limitations, checked,
   });
   if (!state.selectedTarget) {
-    issues.push({ kind: 'select_target', description: 'Select a body, member, or joint before checking its FBD.' });
+    issues.push({ kind: 'select_target', description: 'Select one student-created body or member before checking its FBD.' });
     return result('needs_revision');
   }
   if (state.sourceStructureKey !== engineeringStructureKey(workspace)) {
