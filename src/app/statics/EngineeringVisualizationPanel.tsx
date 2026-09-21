@@ -11,7 +11,7 @@ import { visibleCalculation, type RequestedVisualCalculation } from './calculati
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
 import { DISPLAY_MODES, displayModeLayout, type EngineeringDisplayMode } from './displayMode';
-import { hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget,
+import { fbdEndpointLabels, hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget,
   addFBDBody, addFBDJoint, addFBDMember, editFBDPrimitive,
   addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
@@ -137,7 +137,16 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     ];
     for (let index = 0; index < 4; index++) addLine(outline,
       corners[index], corners[index + 1], selectedPrimitive?.kind === 'body' && selectedPrimitive.id === body.id ? 0xc2410c : 0x059669);
-    if (body.label) {
+    const bodyEnds = fbdEndpointLabels(body.label);
+    if (bodyEnds) {
+      const labelY = body.origin.y + body.height + Math.max(0.24, span * 0.07);
+      for (const [text, x] of [[bodyEnds[0], body.origin.x],
+        [bodyEnds[1], body.origin.x + body.width]] as const) {
+        const label = textSprite(text, '#047857', 0.42);
+        if (label) { label.position.set(x, labelY, 0.2);
+          label.userData.fbdPrimitive = { kind: 'body', id: body.id }; outline.add(label); }
+      }
+    } else if (body.label) {
       const label = textSprite(body.label, '#047857', 0.42);
       if (label) { label.position.set(body.origin.x + body.width / 2, body.origin.y + body.height / 2, 0.2); outline.add(label); }
     }
@@ -153,7 +162,15 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     beam.position.copy(from).add(to).multiplyScalar(0.5);
     beam.userData.fbdPrimitive = { kind: 'member', id: member.id };
     group.add(beam);
-    if (member.label) {
+    const memberEnds = fbdEndpointLabels(member.label);
+    if (memberEnds) {
+      for (const [text, point] of [[memberEnds[0], member.start],
+        [memberEnds[1], member.end]] as const) {
+        const label = textSprite(text, '#047857', 0.42);
+        if (label) { label.position.set(point.x, point.y + Math.max(0.24, span * 0.07), 0.2);
+          label.userData.fbdPrimitive = { kind: 'member', id: member.id }; group.add(label); }
+      }
+    } else if (member.label) {
       const label = textSprite(member.label, '#047857', 0.42);
       if (label) { label.position.copy(beam.position).add(new THREE.Vector3(0, 0.24, 0.2));
         label.userData.fbdPrimitive = { kind: 'member', id: member.id }; group.add(label); }

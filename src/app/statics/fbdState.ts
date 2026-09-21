@@ -22,6 +22,12 @@ export type FBDLabelInput = { at: FBDPoint; text: string; associatedWith?: FBDLa
 export type FBDElementKind = FBDPrimitiveKind | 'force' | 'moment' | 'dimension' | 'angle' | 'label';
 export type FBDElement = FBDPrimitive | FBDForce | FBDMoment | FBDDimension | FBDAngle | FBDLabel;
 
+/** Two-letter names identify the visible start and end of a student-drawn body or member. */
+export function fbdEndpointLabels(label?: string): [string, string] | null {
+  const name = label?.trim();
+  return name && /^[A-Za-z]{2}$/.test(name) ? [name[0], name[1]] : null;
+}
+
 /** Student-created diagram data. EngineeringState is never copied or edited here. */
 export interface FBDState {
   version: 1;

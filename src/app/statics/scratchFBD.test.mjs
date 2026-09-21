@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
-import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDLabel,
+import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDLabel, fbdEndpointLabels,
   editFBDPrimitive, deleteFBDElement, createEmptyFBDState, hasStudentFBDElements,
   resetStudentFBDElements, parseFBDState, saveFBDState, loadFBDState,
   createFBDHistory, applyFBDChange, undoFBDChange, redoFBDChange } from './fbdState.ts';
@@ -13,6 +13,23 @@ const workspace = createSimplySupportedBeamWorkspace();
 const body = { id: 'Body-1', origin: { x: 0, y: 0 }, width: 4, height: 0.6, label: 'My body' };
 const joint = { id: 'Point-1', at: { x: 1, y: 0 }, label: 'J1' };
 const member = { id: 'Line-1', start: { x: 0, y: 0 }, end: { x: 3, y: 2 }, label: 'My line' };
+
+test('two-letter body and member names display their endpoint labels without creating new elements', () => {
+  assert.deepEqual(fbdEndpointLabels('AD'), ['A', 'D']);
+  assert.deepEqual(fbdEndpointLabels('BC'), ['B', 'C']);
+  assert.equal(fbdEndpointLabels('Member_12'), null);
+  const state = addFBDMember(addFBDBody(createEmptyFBDState(workspace),
+    { ...body, label: 'AD' }), { ...member, label: 'BC' });
+  assert.equal(state.labels.length, 0);
+  assert.equal(state.bodies[0].label, 'AD');
+  assert.equal(state.members[0].label, 'BC');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /fbdEndpointLabels\(body\.label\)/);
+  assert.match(panel, /fbdEndpointLabels\(member\.label\)/);
+  assert.match(replay, /fbdEndpointLabels\(body\.label\)/);
+  assert.match(replay, /fbdEndpointLabels\(member\.label\)/);
+});
 
 test('workspace starts blank and renders no engineering geometry or givens', () => {
   const empty = createEmptyFBDState(workspace);

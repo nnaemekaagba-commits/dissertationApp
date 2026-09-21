@@ -1,4 +1,4 @@
-import type { FBDPoint, FBDState } from './statics/fbdState';
+import { fbdEndpointLabels, type FBDPoint, type FBDState } from './statics/fbdState';
 import type { StaticsWorkspace } from './statics/model';
 
 export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?: StaticsWorkspace }) {
@@ -41,10 +41,20 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
     {(state.bodies || []).map((body) => <g key={body.id}>
       <rect x={sx(body.origin.x)} y={sy(body.origin.y + body.height)} width={body.width * scale}
         height={body.height * scale} fill="none" stroke="#059669" strokeWidth="3" />
-      {body.label && text(body.label, { x: body.origin.x + body.width / 2,
+      {fbdEndpointLabels(body.label) ? <>
+        {text(fbdEndpointLabels(body.label)![0], { x: body.origin.x,
+          y: body.origin.y + body.height + span * 0.05 }, '#047857')}
+        {text(fbdEndpointLabels(body.label)![1], { x: body.origin.x + body.width,
+          y: body.origin.y + body.height + span * 0.05 }, '#047857')}
+      </> : body.label && text(body.label, { x: body.origin.x + body.width / 2,
         y: body.origin.y + body.height / 2 }, '#047857')}</g>)}
     {(state.members || []).map((member) => <g key={member.id}>{line(member.start, member.end, '#059669', 7)}
-      {member.label && text(member.label, { x: (member.start.x + member.end.x) / 2,
+      {fbdEndpointLabels(member.label) ? <>
+        {text(fbdEndpointLabels(member.label)![0], { x: member.start.x,
+          y: member.start.y + span * 0.05 }, '#047857')}
+        {text(fbdEndpointLabels(member.label)![1], { x: member.end.x,
+          y: member.end.y + span * 0.05 }, '#047857')}
+      </> : member.label && text(member.label, { x: (member.start.x + member.end.x) / 2,
         y: (member.start.y + member.end.y) / 2 }, '#047857')}</g>)}
     {(state.joints || []).map((node) => <g key={node.id}>
       <circle cx={sx(node.at.x)} cy={sy(node.at.y)} r="5" fill="#047857" />
