@@ -5,7 +5,7 @@ import { DEFAULT_GIVEN_VISIBILITY, selectGivenFBDInformation } from './fbdGiven.
 export type FBDCheckIssueKind = 'missing_force' | 'extra_force' | 'incorrect_force_direction' |
   'missing_moment' | 'extra_moment' | 'incorrect_moment_direction' |
   'incorrect_support_reaction' | 'omitted_applied_load' | 'incorrect_given_magnitude' |
-  'select_target' | 'stale_structure';
+  'select_target' | 'stale_structure' | 'diagram_context_mismatch';
 export type FBDCheckIssue = { kind: FBDCheckIssueKind; description: string; elementId?: string; sourceId?: string };
 export type FBDCheckResult = {
   status: 'no_discrepancies' | 'needs_revision' | 'limited';
@@ -19,6 +19,41 @@ const degrees = (angle: number, units: StaticsWorkspace['units']) => units.angle
 const angleGap = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 const axisGap = (a: number, b: number) => Math.min(angleGap(a, b), angleGap(a, b + 180));
 const distance = (a: FBDPoint, b: FBDPoint) => Math.hypot(a.x - b.x, a.y - b.y);
+
+const diagramBaseNames = (state: FBDState) => [...state.bodies, ...state.members, ...state.joints]
+  .map((item) => (item.label || item.id).trim()).filter(Boolean);
+
+/** Stops a scratch-built diagram from being assessed against an unrelated problem object. */
+function diagramContextMismatch(workspace: StaticsWorkspace, state: FBDState): string | null {
+  const names = diagramBaseNames(state);
+  if (!names.length || !state.selectedTarget) return null;
+  const target = state.selectedTarget;
+  if (target.kind === 'member') {
+    const member = workspace.members.find((item) => item.id === target.id);
+    if (!member) return `The selected problem member ${target.id} is no longer available.`;
+    const accepted = new Set([
+      member.id.toLowerCase(),
+      `${member.startNodeId}${member.endNodeId}`.toLowerCase(),
+      `${member.endNodeId}${member.startNodeId}`.toLowerCase(),
+    ]);
+    if (!names.some((name) => accepted.has(name.toLowerCase())))
+      return `The visible diagram (${names.join(', ')}) does not match the selected problem member ${member.id} ` +
+        `(${member.startNodeId}-${member.endNodeId}).`;
+  }
+  if (target.kind === 'joint') {
+    const accepted = target.id.toLowerCase();
+    if (!names.some((name) => name.toLowerCase() === accepted))
+      return `The visible diagram (${names.join(', ')}) does not match the selected problem joint ${target.id}.`;
+  }
+  if (target.kind === 'body') {
+    const nodeIds = new Set(workspace.nodes.map((node) => node.id.toLowerCase()));
+    const unknownEndpoint = names.find((name) => /^[A-Za-z]{2}$/.test(name) &&
+      (!nodeIds.has(name[0].toLowerCase()) || !nodeIds.has(name[1].toLowerCase())));
+    if (unknownEndpoint)
+      return `The visible diagram (${unknownEndpoint}) includes endpoints that are not in the selected engineering structure.`;
+  }
+  return null;
+}
 
 /** Compares only student-created marks with external problem data; it never runs equilibrium. */
 export function checkStudentFBD(workspace: StaticsWorkspace, state: FBDState): FBDCheckResult {
@@ -36,6 +71,12 @@ export function checkStudentFBD(workspace: StaticsWorkspace, state: FBDState): F
   if (state.sourceStructureKey !== engineeringStructureKey(workspace)) {
     issues.push({ kind: 'stale_structure', description: 'The FBD belongs to an older structure. Reopen the diagram before checking it.' });
     return result('needs_revision');
+  }
+  const contextMismatch = diagramContextMismatch(workspace, state);
+  if (contextMismatch) {
+    issues.push({ kind: 'diagram_context_mismatch', description: `${contextMismatch} Select the matching problem object before checking.` });
+    limitations.push('Loads and reactions were not compared because that would produce feedback about the wrong object.');
+    return result('limited');
   }
   const given = selectGivenFBDInformation(workspace, state, DEFAULT_GIVEN_VISIBILITY);
   const nodes = new Map(workspace.nodes.map((node) => [node.id, node]));
