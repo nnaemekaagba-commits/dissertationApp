@@ -137,7 +137,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     ];
     for (let index = 0; index < 4; index++) addLine(outline,
       corners[index], corners[index + 1], selectedPrimitive?.kind === 'body' && selectedPrimitive.id === body.id ? 0xc2410c : 0x059669);
-    const bodyEnds = fbdEndpointLabels(body.label);
+    const bodyEnds = fbdEndpointLabels(body.label || body.id);
     if (bodyEnds) {
       const labelY = body.origin.y + body.height + Math.max(0.24, span * 0.07);
       for (const [text, x] of [[bodyEnds[0], body.origin.x],
@@ -162,7 +162,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     beam.position.copy(from).add(to).multiplyScalar(0.5);
     beam.userData.fbdPrimitive = { kind: 'member', id: member.id };
     group.add(beam);
-    const memberEnds = fbdEndpointLabels(member.label);
+    const memberEnds = fbdEndpointLabels(member.label || member.id);
     if (memberEnds) {
       for (const [text, point] of [[memberEnds[0], member.start],
         [memberEnds[1], member.end]] as const) {

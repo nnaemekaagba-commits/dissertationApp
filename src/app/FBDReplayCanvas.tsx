@@ -41,18 +41,18 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
     {(state.bodies || []).map((body) => <g key={body.id}>
       <rect x={sx(body.origin.x)} y={sy(body.origin.y + body.height)} width={body.width * scale}
         height={body.height * scale} fill="none" stroke="#059669" strokeWidth="3" />
-      {fbdEndpointLabels(body.label) ? <>
-        {text(fbdEndpointLabels(body.label)![0], { x: body.origin.x,
+      {fbdEndpointLabels(body.label || body.id) ? <>
+        {text(fbdEndpointLabels(body.label || body.id)![0], { x: body.origin.x,
           y: body.origin.y + body.height + span * 0.05 }, '#047857')}
-        {text(fbdEndpointLabels(body.label)![1], { x: body.origin.x + body.width,
+        {text(fbdEndpointLabels(body.label || body.id)![1], { x: body.origin.x + body.width,
           y: body.origin.y + body.height + span * 0.05 }, '#047857')}
       </> : body.label && text(body.label, { x: body.origin.x + body.width / 2,
         y: body.origin.y + body.height / 2 }, '#047857')}</g>)}
     {(state.members || []).map((member) => <g key={member.id}>{line(member.start, member.end, '#059669', 7)}
-      {fbdEndpointLabels(member.label) ? <>
-        {text(fbdEndpointLabels(member.label)![0], { x: member.start.x,
+      {fbdEndpointLabels(member.label || member.id) ? <>
+        {text(fbdEndpointLabels(member.label || member.id)![0], { x: member.start.x,
           y: member.start.y + span * 0.05 }, '#047857')}
-        {text(fbdEndpointLabels(member.label)![1], { x: member.end.x,
+        {text(fbdEndpointLabels(member.label || member.id)![1], { x: member.end.x,
           y: member.end.y + span * 0.05 }, '#047857')}
       </> : member.label && text(member.label, { x: (member.start.x + member.end.x) / 2,
         y: (member.start.y + member.end.y) / 2 }, '#047857')}</g>)}

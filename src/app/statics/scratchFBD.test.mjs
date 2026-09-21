@@ -23,12 +23,16 @@ test('two-letter body and member names display their endpoint labels without cre
   assert.equal(state.labels.length, 0);
   assert.equal(state.bodies[0].label, 'AD');
   assert.equal(state.members[0].label, 'BC');
+  const idOnly = addFBDMember(addFBDBody(createEmptyFBDState(workspace),
+    { ...body, id: 'AD', label: undefined }), { ...member, id: 'BC', label: undefined });
+  assert.deepEqual(fbdEndpointLabels(idOnly.bodies[0].label || idOnly.bodies[0].id), ['A', 'D']);
+  assert.deepEqual(fbdEndpointLabels(idOnly.members[0].label || idOnly.members[0].id), ['B', 'C']);
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
   const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
-  assert.match(panel, /fbdEndpointLabels\(body\.label\)/);
-  assert.match(panel, /fbdEndpointLabels\(member\.label\)/);
-  assert.match(replay, /fbdEndpointLabels\(body\.label\)/);
-  assert.match(replay, /fbdEndpointLabels\(member\.label\)/);
+  assert.match(panel, /fbdEndpointLabels\(body\.label \|\| body\.id\)/);
+  assert.match(panel, /fbdEndpointLabels\(member\.label \|\| member\.id\)/);
+  assert.match(replay, /fbdEndpointLabels\(body\.label \|\| body\.id\)/);
+  assert.match(replay, /fbdEndpointLabels\(member\.label \|\| member\.id\)/);
 });
 
 test('workspace starts blank and renders no engineering geometry or givens', () => {
