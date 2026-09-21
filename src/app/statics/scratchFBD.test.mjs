@@ -11,11 +11,27 @@ import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDLabel,
 import { executeFBDChatToolBatch } from './fbdChatTools.ts';
 import { fbdActionForVisualization } from './researchLog.ts';
 import { fbdJointSymbol } from './fbdJointSymbol.ts';
+import { fbdGridReading, fbdGridSpec } from './fbdGrid.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
 const body = { id: 'Body-1', origin: { x: 0, y: 0 }, width: 4, height: 0.6, label: 'My body' };
 const joint = { id: 'Point-1', at: { x: 1, y: 0 }, label: 'J1' };
 const member = { id: 'Line-1', start: { x: 0, y: 0 }, end: { x: 3, y: 2 }, label: 'My line' };
+
+test('adaptive gridlines include numeric coordinate readings and workspace units', () => {
+  const grid = fbdGridSpec({ x: 2, y: 1 }, 4);
+  assert.ok(grid.xValues.length >= 8 && grid.xValues.length <= 20);
+  assert.ok(grid.yValues.length >= 8 && grid.yValues.length <= 20);
+  assert.ok(grid.xValues.includes(0));
+  assert.equal(fbdGridReading(0), '0');
+  assert.equal(fbdGridReading(1.5), '1.5');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /fbdGridSpec\(center, span\)/);
+  assert.match(panel, /x \(\$\{workspace\.units\.length\}\)/);
+  assert.match(replay, /aria-label="Coordinate grid"/);
+  assert.match(replay, /workspace\?\.units\.length/);
+});
 
 test('member endpoint letters sit beyond the exact ends for every orientation', () => {
   const horizontal = fbdMemberEndpointLabelPositions({ ...member,

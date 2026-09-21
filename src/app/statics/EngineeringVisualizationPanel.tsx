@@ -24,6 +24,7 @@ import { fbdBodyCorners, fbdBodyEndpointLabelPositions, fbdEndpointLabels, fbdMe
 import { buildFBDForceArrow } from './fbdForceScene';
 import { buildFBDMomentArrow } from './fbdMomentScene';
 import { fbdJointSymbol } from './fbdJointSymbol';
+import { fbdGridReading, fbdGridSpec } from './fbdGrid';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene';
 import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene';
 import { DEFAULT_GIVEN_VISIBILITY, GIVEN_TOGGLES, type GivenVisibility } from './fbdGiven';
@@ -126,6 +127,27 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
   const size = bounds.isEmpty() ? new THREE.Vector3(1, 1, 0) : bounds.getSize(new THREE.Vector3());
   const span = Math.max(size.x, size.y, 1);
+  if (pointData.length) {
+    const grid = fbdGridSpec(center, span);
+    const xMin = grid.xValues[0]; const xMax = grid.xValues[grid.xValues.length - 1];
+    const yMin = grid.yValues[0]; const yMax = grid.yValues[grid.yValues.length - 1];
+    for (const x of grid.xValues) {
+      addLine(group, new THREE.Vector3(x, yMin, -0.18), new THREE.Vector3(x, yMax, -0.18),
+        Math.abs(x) < grid.step / 100 ? 0x94a3b8 : 0xe2e8f0);
+      const reading = textSprite(fbdGridReading(x), '#64748b', 0.25);
+      if (reading) { reading.position.set(x, yMin - grid.step * 0.35, -0.12); group.add(reading); }
+    }
+    for (const y of grid.yValues) {
+      addLine(group, new THREE.Vector3(xMin, y, -0.18), new THREE.Vector3(xMax, y, -0.18),
+        Math.abs(y) < grid.step / 100 ? 0x94a3b8 : 0xe2e8f0);
+      const reading = textSprite(fbdGridReading(y), '#64748b', 0.25);
+      if (reading) { reading.position.set(xMin - grid.step * 0.45, y, -0.12); group.add(reading); }
+    }
+    const xUnit = textSprite(`x (${workspace.units.length})`, '#475569', 0.28);
+    if (xUnit) { xUnit.position.set(xMax, yMin - grid.step * 0.72, -0.12); group.add(xUnit); }
+    const yUnit = textSprite(`y (${workspace.units.length})`, '#475569', 0.28);
+    if (yUnit) { yUnit.position.set(xMin - grid.step * 0.7, yMax, -0.12); group.add(yUnit); }
+  }
   // Only student-created FBDState is drawn. EngineeringState remains problem data.
   for (const body of fbdState.bodies) {
     const outline = new THREE.Group();
