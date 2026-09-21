@@ -40,6 +40,21 @@ export function fbdBodyCorners(body: FBDBody): [FBDPoint, FBDPoint, FBDPoint, FB
   return [at(0, 0), at(body.width, 0), at(body.width, body.height), at(0, body.height)];
 }
 
+/** Centers endpoint names across body thickness and places them beyond its longitudinal ends. */
+export function fbdBodyEndpointLabelPositions(body: FBDBody, gap: number): [FBDPoint, FBDPoint] {
+  if (!Number.isFinite(gap) || gap <= 0) throw new Error('Enter a positive body label gap.');
+  const radians = (body.angle ?? 0) * Math.PI / 180;
+  const ux = Math.cos(radians); const uy = Math.sin(radians);
+  const vx = -uy; const vy = ux;
+  const middleX = vx * body.height / 2;
+  const middleY = vy * body.height / 2;
+  return [
+    { x: body.origin.x + middleX - ux * gap, y: body.origin.y + middleY - uy * gap },
+    { x: body.origin.x + middleX + ux * (body.width + gap),
+      y: body.origin.y + middleY + uy * (body.width + gap) },
+  ];
+}
+
 export function fbdMemberEndFromAngle(start: FBDPoint, length: number, angle: number): FBDPoint {
   if (!validPoint(start) || !Number.isFinite(length) || length <= 0 || !Number.isFinite(angle))
     throw new Error('Enter a finite member angle and positive length.');

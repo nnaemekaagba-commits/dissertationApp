@@ -1,4 +1,4 @@
-import { fbdBodyCorners, fbdEndpointLabels, fbdMemberEndpointLabelPositions,
+import { fbdBodyCorners, fbdBodyEndpointLabelPositions, fbdEndpointLabels, fbdMemberEndpointLabelPositions,
   type FBDPoint, type FBDState } from './statics/fbdState';
 import { fbdJointSymbol } from './statics/fbdJointSymbol';
 import type { StaticsWorkspace } from './statics/model';
@@ -44,10 +44,10 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
       <polygon points={fbdBodyCorners(body).map((point) => `${sx(point.x)},${sy(point.y)}`).join(' ')}
         fill="none" stroke="#059669" strokeWidth="3" />
       {fbdEndpointLabels(body.label || body.id) ? <>
-        {text(fbdEndpointLabels(body.label || body.id)![0], {
-          x: fbdBodyCorners(body)[3].x, y: fbdBodyCorners(body)[3].y + span * 0.05 }, '#047857')}
-        {text(fbdEndpointLabels(body.label || body.id)![1], {
-          x: fbdBodyCorners(body)[2].x, y: fbdBodyCorners(body)[2].y + span * 0.05 }, '#047857')}
+        {text(fbdEndpointLabels(body.label || body.id)![0],
+          fbdBodyEndpointLabelPositions(body, Math.max(0.28, span * 0.075))[0], '#047857', 0)}
+        {text(fbdEndpointLabels(body.label || body.id)![1],
+          fbdBodyEndpointLabelPositions(body, Math.max(0.28, span * 0.075))[1], '#047857', 0)}
       </> : body.label && text(body.label, { x: (fbdBodyCorners(body)[0].x + fbdBodyCorners(body)[2].x) / 2,
         y: (fbdBodyCorners(body)[0].y + fbdBodyCorners(body)[2].y) / 2 }, '#047857')}</g>)}
     {(state.members || []).map((member) => <g key={member.id}>{line(member.start, member.end, '#059669', 7)}

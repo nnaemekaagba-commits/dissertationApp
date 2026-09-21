@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDLabel,
-  fbdBodyCorners, fbdMemberEndFromAngle, fbdEndpointLabels,
+  fbdBodyCorners, fbdBodyEndpointLabelPositions, fbdMemberEndFromAngle, fbdEndpointLabels,
   fbdMemberEndpointLabelPositions,
   editFBDPrimitive, deleteFBDElement, createEmptyFBDState, hasStudentFBDElements,
   resetStudentFBDElements, parseFBDState, saveFBDState, loadFBDState,
@@ -163,6 +163,22 @@ test('clear and delete controls explain empty or unselected states instead of di
   assert.match(panel, /Select an element in the diagram or from the list below to delete it\./);
   assert.match(panel, /if \(selectedElement\) deleteSelected\(\);\s*else if \(selectedPrimitiveElement\) deleteSelectedPrimitive\(\);/);
   assert.doesNotMatch(panel, /disabled=\{!hasStudentFBDElements\(fbdState\)\}/);
+});
+
+test('rotated body endpoint letters are centered and outside both longitudinal ends', () => {
+  const horizontal = fbdBodyEndpointLabelPositions({ ...body, origin: { x: 0, y: 0 },
+    width: 4, height: 0.6, angle: 0 }, 0.5);
+  assert.deepEqual(horizontal, [{ x: -0.5, y: 0.3 }, { x: 4.5, y: 0.3 }]);
+  const vertical = fbdBodyEndpointLabelPositions({ ...body, origin: { x: 0, y: 0 },
+    width: 4, height: 0.6, angle: 90 }, 0.5);
+  assert.ok(Math.abs(vertical[0].x + 0.3) < 1e-9);
+  assert.ok(Math.abs(vertical[0].y + 0.5) < 1e-9);
+  assert.ok(Math.abs(vertical[1].x + 0.3) < 1e-9);
+  assert.ok(Math.abs(vertical[1].y - 4.5) < 1e-9);
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /fbdBodyEndpointLabelPositions\(body/);
+  assert.match(replay, /fbdBodyEndpointLabelPositions\(body/);
 });
 
 test('first student-created element starts diagram; all geometry and labels are manual FBDState data', () => {

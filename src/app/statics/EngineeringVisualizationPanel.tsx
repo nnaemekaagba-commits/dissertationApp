@@ -11,7 +11,7 @@ import { visibleCalculation, type RequestedVisualCalculation } from './calculati
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
 import { DISPLAY_MODES, displayModeLayout, type EngineeringDisplayMode } from './displayMode';
-import { fbdBodyCorners, fbdEndpointLabels, fbdMemberEndFromAngle,
+import { fbdBodyCorners, fbdBodyEndpointLabelPositions, fbdEndpointLabels, fbdMemberEndFromAngle,
   fbdMemberEndpointLabelPositions,
   hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget,
   addFBDBody, addFBDJoint, addFBDMember, editFBDPrimitive,
@@ -136,10 +136,11 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       corners[index], corners[index + 1], selectedPrimitive?.kind === 'body' && selectedPrimitive.id === body.id ? 0xc2410c : 0x059669);
     const bodyEnds = fbdEndpointLabels(body.label || body.id);
     if (bodyEnds) {
-      for (const [text, point] of [[bodyEnds[0], corners[3]],
-        [bodyEnds[1], corners[2]]] as const) {
-        const label = textSprite(text, '#047857', 0.42);
-        if (label) { label.position.set(point.x, point.y + Math.max(0.24, span * 0.07), 0.2);
+      const labelPoints = fbdBodyEndpointLabelPositions(body, Math.max(0.28, span * 0.075));
+      for (const [text, point] of [[bodyEnds[0], labelPoints[0]],
+        [bodyEnds[1], labelPoints[1]]] as const) {
+        const label = textSprite(text, '#047857', 0.54);
+        if (label) { label.position.set(point.x, point.y, 0.24);
           label.userData.fbdPrimitive = { kind: 'body', id: body.id }; outline.add(label); }
       }
     } else if (body.label) {
