@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDLabel,
   fbdBodyCorners, fbdMemberEndFromAngle, fbdEndpointLabels,
+  fbdMemberEndpointLabelPositions,
   editFBDPrimitive, deleteFBDElement, createEmptyFBDState, hasStudentFBDElements,
   resetStudentFBDElements, parseFBDState, saveFBDState, loadFBDState,
   createFBDHistory, applyFBDChange, undoFBDChange, redoFBDChange } from './fbdState.ts';
@@ -15,6 +16,22 @@ const workspace = createSimplySupportedBeamWorkspace();
 const body = { id: 'Body-1', origin: { x: 0, y: 0 }, width: 4, height: 0.6, label: 'My body' };
 const joint = { id: 'Point-1', at: { x: 1, y: 0 }, label: 'J1' };
 const member = { id: 'Line-1', start: { x: 0, y: 0 }, end: { x: 3, y: 2 }, label: 'My line' };
+
+test('member endpoint letters sit beyond the exact ends for every orientation', () => {
+  const horizontal = fbdMemberEndpointLabelPositions({ ...member,
+    start: { x: 0, y: 0 }, end: { x: 4, y: 0 } }, 0.5);
+  assert.deepEqual(horizontal, [{ x: -0.5, y: 0 }, { x: 4.5, y: 0 }]);
+  const vertical = fbdMemberEndpointLabelPositions({ ...member,
+    start: { x: 0, y: 0 }, end: { x: 0, y: 4 } }, 0.5);
+  assert.deepEqual(vertical, [{ x: 0, y: -0.5 }, { x: 0, y: 4.5 }]);
+  const inclined = fbdMemberEndpointLabelPositions({ ...member,
+    start: { x: 0, y: 0 }, end: { x: 3, y: 4 } }, 0.5);
+  assert.deepEqual(inclined, [{ x: -0.3, y: -0.4 }, { x: 3.3, y: 4.4 }]);
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /fbdMemberEndpointLabelPositions\(member/);
+  assert.match(replay, /fbdMemberEndpointLabelPositions\(member/);
+});
 
 test('body tilt rotates corners; member tilt sets endpoint; force already stores direction angle', () => {
   const tilted = addFBDBody(createEmptyFBDState(workspace), { ...body, angle: 90 });

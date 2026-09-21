@@ -47,6 +47,21 @@ export function fbdMemberEndFromAngle(start: FBDPoint, length: number, angle: nu
   return { x: start.x + length * Math.cos(radians), y: start.y + length * Math.sin(radians) };
 }
 
+/** Places endpoint names outside the member so they never cover its line. */
+export function fbdMemberEndpointLabelPositions(member: FBDMember, gap: number): [FBDPoint, FBDPoint] {
+  const dx = member.end.x - member.start.x;
+  const dy = member.end.y - member.start.y;
+  const length = Math.hypot(dx, dy);
+  if (!Number.isFinite(gap) || gap <= 0 || length < 1e-9)
+    throw new Error('Enter a positive label gap for a valid member.');
+  const ux = dx / length;
+  const uy = dy / length;
+  return [
+    { x: member.start.x - ux * gap, y: member.start.y - uy * gap },
+    { x: member.end.x + ux * gap, y: member.end.y + uy * gap },
+  ];
+}
+
 /** Student-created diagram data. EngineeringState is never copied or edited here. */
 export interface FBDState {
   version: 1;

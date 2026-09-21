@@ -12,6 +12,7 @@ import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
 import { DISPLAY_MODES, displayModeLayout, type EngineeringDisplayMode } from './displayMode';
 import { fbdBodyCorners, fbdEndpointLabels, fbdMemberEndFromAngle,
+  fbdMemberEndpointLabelPositions,
   hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget,
   addFBDBody, addFBDJoint, addFBDMember, editFBDPrimitive,
   addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
@@ -160,10 +161,11 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     group.add(beam);
     const memberEnds = fbdEndpointLabels(member.label || member.id);
     if (memberEnds) {
-      for (const [text, point] of [[memberEnds[0], member.start],
-        [memberEnds[1], member.end]] as const) {
-        const label = textSprite(text, '#047857', 0.42);
-        if (label) { label.position.set(point.x, point.y + Math.max(0.24, span * 0.07), 0.2);
+      const labelPoints = fbdMemberEndpointLabelPositions(member, Math.max(0.28, span * 0.075));
+      for (const [text, point] of [[memberEnds[0], labelPoints[0]],
+        [memberEnds[1], labelPoints[1]]] as const) {
+        const label = textSprite(text, '#047857', 0.54);
+        if (label) { label.position.set(point.x, point.y, 0.24);
           label.userData.fbdPrimitive = { kind: 'member', id: member.id }; group.add(label); }
       }
     } else if (member.label) {

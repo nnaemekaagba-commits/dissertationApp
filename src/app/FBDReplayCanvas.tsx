@@ -1,4 +1,5 @@
-import { fbdBodyCorners, fbdEndpointLabels, type FBDPoint, type FBDState } from './statics/fbdState';
+import { fbdBodyCorners, fbdEndpointLabels, fbdMemberEndpointLabelPositions,
+  type FBDPoint, type FBDState } from './statics/fbdState';
 import { fbdJointSymbol } from './statics/fbdJointSymbol';
 import type { StaticsWorkspace } from './statics/model';
 
@@ -23,8 +24,9 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
   const sy = (y: number) => 220 - (y - (minY + maxY) / 2) * scale;
   const line = (a: FBDPoint, b: FBDPoint, color: string, width = 2) =>
     <line x1={sx(a.x)} y1={sy(a.y)} x2={sx(b.x)} y2={sy(b.y)} stroke={color} strokeWidth={width} />;
-  const text = (value: string, at: FBDPoint, color: string) =>
-    <text x={sx(at.x)} y={sy(at.y) - 8} textAnchor="middle" fill={color} fontSize="16"
+  const text = (value: string, at: FBDPoint, color: string, yOffset = -8) =>
+    <text x={sx(at.x)} y={sy(at.y) + yOffset} textAnchor="middle" dominantBaseline="middle"
+      fill={color} fontSize="16"
       fontWeight="600" stroke="white" strokeWidth="4" paintOrder="stroke">{value}</text>;
   const anglePoint = (at: FBDPoint, radians: number, length: number) =>
     ({ x: at.x + Math.cos(radians) * length, y: at.y + Math.sin(radians) * length });
@@ -50,10 +52,10 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
         y: (fbdBodyCorners(body)[0].y + fbdBodyCorners(body)[2].y) / 2 }, '#047857')}</g>)}
     {(state.members || []).map((member) => <g key={member.id}>{line(member.start, member.end, '#059669', 7)}
       {fbdEndpointLabels(member.label || member.id) ? <>
-        {text(fbdEndpointLabels(member.label || member.id)![0], { x: member.start.x,
-          y: member.start.y + span * 0.05 }, '#047857')}
-        {text(fbdEndpointLabels(member.label || member.id)![1], { x: member.end.x,
-          y: member.end.y + span * 0.05 }, '#047857')}
+        {text(fbdEndpointLabels(member.label || member.id)![0],
+          fbdMemberEndpointLabelPositions(member, Math.max(0.28, span * 0.075))[0], '#047857', 0)}
+        {text(fbdEndpointLabels(member.label || member.id)![1],
+          fbdMemberEndpointLabelPositions(member, Math.max(0.28, span * 0.075))[1], '#047857', 0)}
       </> : member.label && text(member.label, { x: (member.start.x + member.end.x) / 2,
         y: (member.start.y + member.end.y) / 2 }, '#047857')}</g>)}
     {(state.joints || []).map((node) => <g key={node.id}>
