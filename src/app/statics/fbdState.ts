@@ -2,7 +2,7 @@ import type { StaticsWorkspace } from './model.ts';
 
 export type FBDTarget = { kind: 'body' | 'member' | 'joint'; id: string };
 export type FBDPoint = { x: number; y: number };
-export type FBDBody = { id: string; origin: FBDPoint; width: number; height: number; label?: string };
+export type FBDBody = { id: string; origin: FBDPoint; width: number; height: number; angle?: number; label?: string };
 export type FBDJointKind = 'free' | 'pin' | 'roller' | 'fixed';
 export type FBDJoint = { id: string; at: FBDPoint; kind?: FBDJointKind; label?: string };
 export type FBDMember = { id: string; start: FBDPoint; end: FBDPoint; label?: string };
@@ -26,6 +26,25 @@ export type FBDElement = FBDPrimitive | FBDForce | FBDMoment | FBDDimension | FB
 export function fbdEndpointLabels(label?: string): [string, string] | null {
   const name = label?.trim();
   return name && /^[A-Za-z]{2}$/.test(name) ? [name[0], name[1]] : null;
+}
+
+/** Rectangle rotated counterclockwise around its origin; angles are degrees from +X. */
+export function fbdBodyCorners(body: FBDBody): [FBDPoint, FBDPoint, FBDPoint, FBDPoint] {
+  const radians = (body.angle ?? 0) * Math.PI / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const at = (x: number, y: number): FBDPoint => ({
+    x: body.origin.x + x * cos - y * sin,
+    y: body.origin.y + x * sin + y * cos,
+  });
+  return [at(0, 0), at(body.width, 0), at(body.width, body.height), at(0, body.height)];
+}
+
+export function fbdMemberEndFromAngle(start: FBDPoint, length: number, angle: number): FBDPoint {
+  if (!validPoint(start) || !Number.isFinite(length) || length <= 0 || !Number.isFinite(angle))
+    throw new Error('Enter a finite member angle and positive length.');
+  const radians = angle * Math.PI / 180;
+  return { x: start.x + length * Math.cos(radians), y: start.y + length * Math.sin(radians) };
 }
 
 /** Student-created diagram data. EngineeringState is never copied or edited here. */
@@ -84,7 +103,8 @@ const uniquePrimitiveId = (state: FBDState, id: string) => id.trim() &&
 export function addFBDBody(state: FBDState, body: FBDBody): FBDState {
   if (!uniquePrimitiveId(state, body.id) || !validPoint(body.origin) ||
     !Number.isFinite(body.width) || body.width <= 0 ||
-    !Number.isFinite(body.height) || body.height <= 0 || !validText(body.label))
+    !Number.isFinite(body.height) || body.height <= 0 ||
+    (body.angle !== undefined && !Number.isFinite(body.angle)) || !validText(body.label))
     throw new Error('Enter a unique body ID, finite origin, positive size, and optional label.');
   return { ...state, bodies: [...state.bodies, { ...body, origin: { ...body.origin } }] };
 }
@@ -392,6 +412,7 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
     version: 1, sourceStructureKey: id(root.sourceStructureKey), selectedTarget,
     bodies: rows(root.bodies ?? [], (row) => ({ id: id(row.id), origin: point(row.origin),
       width: number(row.width), height: number(row.height),
+      ...(row.angle === undefined ? {} : { angle: number(row.angle) }),
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),
     joints: rows(root.joints ?? [], (row) => ({ id: id(row.id), at: point(row.at),
       ...(row.kind === undefined ? {} : { kind: ['free', 'pin', 'roller', 'fixed'].includes(String(row.kind))

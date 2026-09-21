@@ -1,6 +1,6 @@
 import type { StaticsWorkspace } from './model.ts';
 import { addFBDAngle, addFBDDimension, addFBDForce, addFBDLabel, addFBDMoment,
-  addFBDBody, addFBDJoint, addFBDMember, editFBDPrimitive,
+  addFBDBody, addFBDJoint, addFBDMember, editFBDPrimitive, fbdMemberEndFromAngle,
   deleteFBDElement, editFBDAngle, editFBDDimension, editFBDForce, editFBDLabel,
   editFBDMoment, getFBDElement, repositionFBDLabel, selectFBDTarget,
   type FBDBody, type FBDJoint, type FBDMember, type FBDPrimitiveKind,
@@ -63,10 +63,10 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
   if (/^fbd_(add|edit)_(body|joint|member)$/.test(name)) {
     const [, operation, kind] = /^fbd_(add|edit)_(body|joint|member)$/.exec(name)!;
     const editing = operation === 'edit';
-    const geometry = kind === 'body' ? ['x', 'y', 'width', 'height'] :
-      kind === 'joint' ? ['x', 'y', 'jointKind'] : ['startX', 'startY', 'endX', 'endY'];
+    const geometry = kind === 'body' ? ['x', 'y', 'width', 'height', 'angle'] :
+      kind === 'joint' ? ['x', 'y', 'jointKind'] : ['startX', 'startY', 'endX', 'endY', 'angle', 'length'];
     const row = args(value, [...(editing ? ['id'] : []), ...geometry, 'label'],
-      editing ? ['id'] : kind === 'joint' ? ['x', 'y'] : geometry);
+      editing ? ['id'] : kind === 'joint' ? ['x', 'y'] : kind === 'body' ? ['x', 'y', 'width', 'height'] : ['startX', 'startY']);
     const id = editing ? str(row, 'id', 128) : newId();
     const old = editing ? getFBDElement(state, kind as FBDPrimitiveKind, id) : undefined;
     if (editing && !old) throw new Error(`Unknown FBD ${kind}.`);
@@ -78,17 +78,32 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
       x: coordinate('x', (old as FBDBody | undefined)?.origin.x ?? 0),
       y: coordinate('y', (old as FBDBody | undefined)?.origin.y ?? 0) },
       width: coordinate('width', (old as FBDBody | undefined)?.width ?? 0),
-      height: coordinate('height', (old as FBDBody | undefined)?.height ?? 0), ...withLabel } :
+      height: coordinate('height', (old as FBDBody | undefined)?.height ?? 0),
+      angle: coordinate('angle', (old as FBDBody | undefined)?.angle ?? 0), ...withLabel } :
       kind === 'joint' ? { id, at: {
         x: coordinate('x', (old as FBDJoint | undefined)?.at.x ?? 0),
         y: coordinate('y', (old as FBDJoint | undefined)?.at.y ?? 0) },
         kind: row.jointKind === undefined ? (old as FBDJoint | undefined)?.kind || 'free'
           : str(row, 'jointKind') as FBDJoint['kind'], ...withLabel } :
-        { id, start: {
-          x: coordinate('startX', (old as FBDMember | undefined)?.start.x ?? 0),
-          y: coordinate('startY', (old as FBDMember | undefined)?.start.y ?? 0) }, end: {
-          x: coordinate('endX', (old as FBDMember | undefined)?.end.x ?? 0),
-          y: coordinate('endY', (old as FBDMember | undefined)?.end.y ?? 0) }, ...withLabel };
+        (() => {
+          const previous = old as FBDMember | undefined;
+          const start = { x: coordinate('startX', previous?.start.x ?? 0),
+            y: coordinate('startY', previous?.start.y ?? 0) };
+          const oldLength = previous ? Math.hypot(previous.end.x - previous.start.x,
+            previous.end.y - previous.start.y) : 0;
+          const oldAngle = previous ? Math.atan2(previous.end.y - previous.start.y,
+            previous.end.x - previous.start.x) * 180 / Math.PI : 0;
+          const polar = row.angle !== undefined || row.length !== undefined;
+          if (!editing && !polar && (row.endX === undefined || row.endY === undefined))
+            throw new Error('Specify a member endpoint or an angle and length.');
+          if (!editing && polar && (row.angle === undefined || row.length === undefined))
+            throw new Error('Specify both member angle and length.');
+          const end = polar ? fbdMemberEndFromAngle(start,
+            coordinate('length', oldLength), coordinate('angle', oldAngle)) : {
+            x: coordinate('endX', previous?.end.x ?? 0),
+            y: coordinate('endY', previous?.end.y ?? 0) };
+          return { id, start, end, ...withLabel };
+        })();
     return editing ? editFBDPrimitive(state, kind as FBDPrimitiveKind, id, item) :
       kind === 'body' ? addFBDBody(state, item as FBDBody) :
         kind === 'joint' ? addFBDJoint(state, item as FBDJoint) : addFBDMember(state, item as FBDMember);

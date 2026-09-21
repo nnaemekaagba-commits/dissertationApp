@@ -1,12 +1,11 @@
-import { fbdEndpointLabels, type FBDPoint, type FBDState } from './statics/fbdState';
+import { fbdBodyCorners, fbdEndpointLabels, type FBDPoint, type FBDState } from './statics/fbdState';
 import { fbdJointSymbol } from './statics/fbdJointSymbol';
 import type { StaticsWorkspace } from './statics/model';
 
 export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?: StaticsWorkspace }) {
   void workspace;
   const points: FBDPoint[] = [
-    ...(state.bodies || []).flatMap((item) => [item.origin,
-      { x: item.origin.x + item.width, y: item.origin.y + item.height }]),
+    ...(state.bodies || []).flatMap((item) => fbdBodyCorners(item)),
     ...(state.joints || []).map((item) => item.at),
     ...(state.members || []).flatMap((item) => [item.start, item.end]),
     ...state.forces.map((item) => item.at), ...state.moments.map((item) => item.at),
@@ -40,15 +39,15 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
       <marker id="replay-moment-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5"
         orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#7c3aed" /></marker></defs>
     {(state.bodies || []).map((body) => <g key={body.id}>
-      <rect x={sx(body.origin.x)} y={sy(body.origin.y + body.height)} width={body.width * scale}
-        height={body.height * scale} fill="none" stroke="#059669" strokeWidth="3" />
+      <polygon points={fbdBodyCorners(body).map((point) => `${sx(point.x)},${sy(point.y)}`).join(' ')}
+        fill="none" stroke="#059669" strokeWidth="3" />
       {fbdEndpointLabels(body.label || body.id) ? <>
-        {text(fbdEndpointLabels(body.label || body.id)![0], { x: body.origin.x,
-          y: body.origin.y + body.height + span * 0.05 }, '#047857')}
-        {text(fbdEndpointLabels(body.label || body.id)![1], { x: body.origin.x + body.width,
-          y: body.origin.y + body.height + span * 0.05 }, '#047857')}
-      </> : body.label && text(body.label, { x: body.origin.x + body.width / 2,
-        y: body.origin.y + body.height / 2 }, '#047857')}</g>)}
+        {text(fbdEndpointLabels(body.label || body.id)![0], {
+          x: fbdBodyCorners(body)[3].x, y: fbdBodyCorners(body)[3].y + span * 0.05 }, '#047857')}
+        {text(fbdEndpointLabels(body.label || body.id)![1], {
+          x: fbdBodyCorners(body)[2].x, y: fbdBodyCorners(body)[2].y + span * 0.05 }, '#047857')}
+      </> : body.label && text(body.label, { x: (fbdBodyCorners(body)[0].x + fbdBodyCorners(body)[2].x) / 2,
+        y: (fbdBodyCorners(body)[0].y + fbdBodyCorners(body)[2].y) / 2 }, '#047857')}</g>)}
     {(state.members || []).map((member) => <g key={member.id}>{line(member.start, member.end, '#059669', 7)}
       {fbdEndpointLabels(member.label || member.id) ? <>
         {text(fbdEndpointLabels(member.label || member.id)![0], { x: member.start.x,

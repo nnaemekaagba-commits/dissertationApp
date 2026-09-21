@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
-import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDLabel, fbdEndpointLabels,
+import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDLabel,
+  fbdBodyCorners, fbdMemberEndFromAngle, fbdEndpointLabels,
   editFBDPrimitive, deleteFBDElement, createEmptyFBDState, hasStudentFBDElements,
   resetStudentFBDElements, parseFBDState, saveFBDState, loadFBDState,
   createFBDHistory, applyFBDChange, undoFBDChange, redoFBDChange } from './fbdState.ts';
@@ -14,6 +15,40 @@ const workspace = createSimplySupportedBeamWorkspace();
 const body = { id: 'Body-1', origin: { x: 0, y: 0 }, width: 4, height: 0.6, label: 'My body' };
 const joint = { id: 'Point-1', at: { x: 1, y: 0 }, label: 'J1' };
 const member = { id: 'Line-1', start: { x: 0, y: 0 }, end: { x: 3, y: 2 }, label: 'My line' };
+
+test('body tilt rotates corners; member tilt sets endpoint; force already stores direction angle', () => {
+  const tilted = addFBDBody(createEmptyFBDState(workspace), { ...body, angle: 90 });
+  const corners = fbdBodyCorners(tilted.bodies[0]);
+  assert.ok(Math.abs(corners[1].x) < 1e-9);
+  assert.ok(Math.abs(corners[1].y - 4) < 1e-9);
+  assert.equal(parseFBDState(JSON.parse(JSON.stringify(tilted)), workspace).bodies[0].angle, 90);
+  assert.throws(() => addFBDBody(createEmptyFBDState(workspace), { ...body, angle: Infinity }));
+  const end = fbdMemberEndFromAngle({ x: 0, y: 0 }, 4, 30);
+  assert.ok(Math.abs(end.x - 2 * Math.sqrt(3)) < 1e-9);
+  assert.ok(Math.abs(end.y - 2) < 1e-9);
+  const forceState = addFBDForce(createEmptyFBDState(workspace),
+    { at: { x: 1, y: 0 }, angle: 30, label: 'P' }, workspace, 'P1');
+  assert.equal(forceState.forces[0].angle, 30);
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /Body tilt \(degrees from \+X\)/);
+  assert.match(panel, /Member tilt \(degrees from \+X\)/);
+  assert.match(panel, /Force tilt \/ direction \(degrees from \+X\)/);
+  assert.match(replay, /fbdBodyCorners\(body\)/);
+});
+
+test('explicit chat tilt uses the same FBD geometry without solving', () => {
+  const calls = [
+    { id: 'body', name: 'fbd_add_body', arguments: { x: 0, y: 0, width: 4, height: 0.6, angle: 20 } },
+    { id: 'member', name: 'fbd_add_member', arguments: { startX: 0, startY: 0, length: 4, angle: 30 } },
+  ];
+  let index = 0;
+  const result = executeFBDChatToolBatch(workspace, createEmptyFBDState(workspace), calls,
+    'Draw a body at 20 degrees and member at 30 degrees.', undefined, () => `tilt-${++index}`);
+  assert.deepEqual(result.results.map((item) => item.success), [true, true]);
+  assert.equal(result.state.bodies[0].angle, 20);
+  assert.ok(Math.abs(result.state.members[0].end.y - 2) < 1e-9);
+});
 
 test('each joint kind has its own drafting geometry in the live canvas and replay', () => {
   const free = fbdJointSymbol('free');

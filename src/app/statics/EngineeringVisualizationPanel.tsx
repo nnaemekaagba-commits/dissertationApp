@@ -11,7 +11,8 @@ import { visibleCalculation, type RequestedVisualCalculation } from './calculati
 import type { EngineeringView } from './engineeringTools';
 import type { StaticsWorkspace } from './model';
 import { DISPLAY_MODES, displayModeLayout, type EngineeringDisplayMode } from './displayMode';
-import { fbdEndpointLabels, hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget,
+import { fbdBodyCorners, fbdEndpointLabels, fbdMemberEndFromAngle,
+  hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget,
   addFBDBody, addFBDJoint, addFBDMember, editFBDPrimitive,
   addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
@@ -109,8 +110,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   selectedPrimitive: { kind: FBDPrimitiveKind; id: string } | null = null) {
   const group = new THREE.Group();
   const pointData = [
-    ...fbdState.bodies.flatMap((item) => [item.origin,
-      { x: item.origin.x + item.width, y: item.origin.y + item.height }]),
+    ...fbdState.bodies.flatMap((item) => fbdBodyCorners(item)),
     ...fbdState.joints.map((item) => item.at),
     ...fbdState.members.flatMap((item) => [item.start, item.end]),
     ...(!baseOnly ? [
@@ -129,27 +129,22 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   for (const body of fbdState.bodies) {
     const outline = new THREE.Group();
     outline.userData.fbdPrimitive = { kind: 'body', id: body.id };
-    const corners = [
-      new THREE.Vector3(body.origin.x, body.origin.y, 0),
-      new THREE.Vector3(body.origin.x + body.width, body.origin.y, 0),
-      new THREE.Vector3(body.origin.x + body.width, body.origin.y + body.height, 0),
-      new THREE.Vector3(body.origin.x, body.origin.y + body.height, 0),
-      new THREE.Vector3(body.origin.x, body.origin.y, 0),
-    ];
+    const corners = fbdBodyCorners(body).map((point) => new THREE.Vector3(point.x, point.y, 0));
+    corners.push(corners[0]);
     for (let index = 0; index < 4; index++) addLine(outline,
       corners[index], corners[index + 1], selectedPrimitive?.kind === 'body' && selectedPrimitive.id === body.id ? 0xc2410c : 0x059669);
     const bodyEnds = fbdEndpointLabels(body.label || body.id);
     if (bodyEnds) {
-      const labelY = body.origin.y + body.height + Math.max(0.24, span * 0.07);
-      for (const [text, x] of [[bodyEnds[0], body.origin.x],
-        [bodyEnds[1], body.origin.x + body.width]] as const) {
+      for (const [text, point] of [[bodyEnds[0], corners[3]],
+        [bodyEnds[1], corners[2]]] as const) {
         const label = textSprite(text, '#047857', 0.42);
-        if (label) { label.position.set(x, labelY, 0.2);
+        if (label) { label.position.set(point.x, point.y + Math.max(0.24, span * 0.07), 0.2);
           label.userData.fbdPrimitive = { kind: 'body', id: body.id }; outline.add(label); }
       }
     } else if (body.label) {
       const label = textSprite(body.label, '#047857', 0.42);
-      if (label) { label.position.set(body.origin.x + body.width / 2, body.origin.y + body.height / 2, 0.2); outline.add(label); }
+      if (label) { label.position.copy(corners[0]).add(corners[2]).multiplyScalar(0.5);
+        label.position.z = 0.2; outline.add(label); }
     }
     group.add(outline);
   }
@@ -658,7 +653,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [primitiveMode, setPrimitiveMode] = useState<FBDPrimitiveKind | null>(null);
   const [primitiveEditing, setPrimitiveEditing] = useState(false);
   const [primitiveDraft, setPrimitiveDraft] = useState({ id: '', label: '', x: '0', y: '0',
-    endX: '4', endY: '0', width: '4', height: '0.6', jointKind: 'free' });
+    endX: '4', endY: '0', width: '4', height: '0.6', angle: '0', length: '4', jointKind: 'free' });
   const [primitiveError, setPrimitiveError] = useState('');
   const [diagramActionNotice, setDiagramActionNotice] = useState('');
   const [moveDraft, setMoveDraft] = useState({ dx: '0', dy: '0' });
@@ -1344,11 +1339,12 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const openPrimitiveForm = (kind: FBDPrimitiveKind, editing = false) => {
     const item = editing && selectedPrimitive?.kind === kind ? selectedPrimitiveElement : undefined;
     const draft = { id: item?.id || '', label: item && 'label' in item ? item.label || '' : '',
-      x: '0', y: '0', endX: '4', endY: '0', width: '4', height: '0.6', jointKind: 'free' };
+      x: '0', y: '0', endX: '4', endY: '0', width: '4', height: '0.6', angle: '0', length: '4', jointKind: 'free' };
     if (item && kind === 'body') {
       const body = item as FBDBody;
       draft.x = String(body.origin.x); draft.y = String(body.origin.y);
       draft.width = String(body.width); draft.height = String(body.height);
+      draft.angle = String(body.angle ?? 0);
     } else if (item && kind === 'joint') {
       const joint = item as FBDJoint;
       draft.x = String(joint.at.x); draft.y = String(joint.at.y); draft.jointKind = joint.kind || 'free';
@@ -1356,8 +1352,34 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       const member = item as FBDMember;
       draft.x = String(member.start.x); draft.y = String(member.start.y);
       draft.endX = String(member.end.x); draft.endY = String(member.end.y);
+      draft.angle = String(Math.atan2(member.end.y - member.start.y,
+        member.end.x - member.start.x) * 180 / Math.PI);
+      draft.length = String(Math.hypot(member.end.x - member.start.x,
+        member.end.y - member.start.y));
     }
     setPrimitiveDraft(draft); setPrimitiveEditing(editing); setPrimitiveMode(kind); setPrimitiveError('');
+  };
+  const updateMemberCoordinate = (key: 'x' | 'y' | 'endX' | 'endY', value: string) => {
+    const draft = { ...primitiveDraft, [key]: value };
+    const x = Number(draft.x); const y = Number(draft.y);
+    const endX = Number(draft.endX); const endY = Number(draft.endY);
+    if ([draft.x, draft.y, draft.endX, draft.endY].every((item) => item.trim() !== '') &&
+      [x, y, endX, endY].every(Number.isFinite)) {
+      draft.length = String(Math.hypot(endX - x, endY - y));
+      draft.angle = String(Math.atan2(endY - y, endX - x) * 180 / Math.PI);
+    }
+    setPrimitiveDraft(draft);
+  };
+  const updateMemberPolar = (key: 'angle' | 'length', value: string) => {
+    const draft = { ...primitiveDraft, [key]: value };
+    const angle = Number(draft.angle); const length = Number(draft.length);
+    if (draft.angle.trim() && draft.length.trim() && Number.isFinite(angle) &&
+      Number.isFinite(length) && length > 0) {
+      const end = fbdMemberEndFromAngle({ x: Number(draft.x), y: Number(draft.y) }, length, angle);
+      draft.endX = String(Number(end.x.toFixed(6)));
+      draft.endY = String(Number(end.y.toFixed(6)));
+    }
+    setPrimitiveDraft(draft);
   };
   const submitPrimitive = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1368,6 +1390,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     try {
       const item = primitiveMode === 'body'
         ? { id, origin: at, width: Number(primitiveDraft.width), height: Number(primitiveDraft.height),
+          angle: Number(primitiveDraft.angle),
           ...(label ? { label } : {}) } as FBDBody
         : primitiveMode === 'joint' ? { id, at, kind: primitiveDraft.jointKind as FBDJoint['kind'],
           ...(label ? { label } : {}) } as FBDJoint
@@ -1570,7 +1593,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             className="block w-full rounded border px-2 py-1" /></label>
           {(['x', 'y'] as const).map((key) => <label key={key}>{primitiveMode === 'member' ? 'Start ' : 'Position '}{key.toUpperCase()}
             <input required type="number" step="any" value={primitiveDraft[key]}
-              onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, [key]: event.target.value })}
+              onChange={(event) => primitiveMode === 'member'
+                ? updateMemberCoordinate(key, event.target.value)
+                : setPrimitiveDraft({ ...primitiveDraft, [key]: event.target.value })}
               className="block w-full rounded border px-2 py-1" /></label>)}
           {primitiveMode === 'joint' && <label>Joint type<select aria-label="Joint type"
             value={primitiveDraft.jointKind}
@@ -1583,10 +1608,22 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             <input required type="number" min="0.000001" step="any" value={primitiveDraft[key]}
               onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, [key]: event.target.value })}
               className="block w-full rounded border px-2 py-1" /></label>)}
+          {primitiveMode === 'body' && <label>Body tilt (degrees from +X)
+            <input required type="number" step="any" value={primitiveDraft.angle}
+              onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, angle: event.target.value })}
+              className="block w-full rounded border px-2 py-1" /></label>}
           {primitiveMode === 'member' && (['endX', 'endY'] as const).map((key) => <label key={key}>End {key.slice(-1)}
             <input required type="number" step="any" value={primitiveDraft[key]}
-              onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, [key]: event.target.value })}
+              onChange={(event) => updateMemberCoordinate(key, event.target.value)}
               className="block w-full rounded border px-2 py-1" /></label>)}
+          {primitiveMode === 'member' && <>
+            <label>Member length<input required type="number" min="0.000001" step="any"
+              value={primitiveDraft.length} onChange={(event) => updateMemberPolar('length', event.target.value)}
+              className="block w-full rounded border px-2 py-1" /></label>
+            <label>Member tilt (degrees from +X)<input required type="number" step="any"
+              value={primitiveDraft.angle} onChange={(event) => updateMemberPolar('angle', event.target.value)}
+              className="block w-full rounded border px-2 py-1" /></label>
+          </>}
           <div className="col-span-2 flex gap-2"><button type="submit" className="rounded bg-emerald-700 px-2 py-1 text-white">Save {primitiveMode}</button>
             <button type="button" onClick={() => setPrimitiveMode(null)} className="rounded bg-white px-2 py-1">Cancel</button></div>
           {primitiveError && <p role="alert" className="col-span-2 text-red-700">{primitiveError}</p>}
@@ -1753,7 +1790,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           <label>Force label<input required maxLength={80} value={forceDraft.label}
             onChange={(event) => setForceDraft({ ...forceDraft, label: event.target.value })}
             className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
-          <label>Direction (degrees from +X)<input required type="number" step="any" list="fbd-force-angles" value={forceDraft.angle}
+          <label>Force tilt / direction (degrees from +X)<input required type="number" step="any" list="fbd-force-angles" value={forceDraft.angle}
             onChange={(event) => setForceDraft({ ...forceDraft, angle: event.target.value })}
             className="block w-full rounded border border-slate-300 px-2 py-1" />
             <datalist id="fbd-force-angles"><option value="0" /><option value="90" /><option value="180" /><option value="-90" /></datalist></label>
