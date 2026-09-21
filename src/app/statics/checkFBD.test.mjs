@@ -131,7 +131,8 @@ test('a single selected student body is inferred without the optional problem-ob
   const check = checkStudentFBD(workspace, state);
   assert.deepEqual(check.selectedTarget, { kind: 'body', id: 'structure' });
   assert.ok(!check.issues.some((issue) => issue.kind === 'select_target'));
-  assert.ok(check.issues.some((issue) => issue.kind === 'omitted_applied_load'));
+  assert.ok(!check.issues.some((issue) => issue.kind === 'omitted_applied_load'));
+  assert.ok(check.limitations.some((item) => item.includes('omitted problem loads cannot be verified')));
 });
 
 test('a single student member is matched to the engineering member by endpoint label', () => {
@@ -140,4 +141,29 @@ test('a single student member is matched to the engineering member by endpoint l
   const check = checkStudentFBD(workspace, state);
   assert.deepEqual(check.selectedTarget, { kind: 'member', id: 'AB' });
   assert.ok(!check.issues.some((issue) => issue.kind === 'select_target'));
+});
+
+test('scratch body check uses its translated supports and external loads instead of legacy node names', () => {
+  const state = { ...empty, selectedTarget: null,
+    bodies: [{ id: 'body-CD', label: 'CD', origin: { x: 0, y: 0 }, width: 4, height: 0.4,
+      startJointKind: 'pin' }],
+    forces: [
+      { id: 'external', at: { x: 2, y: 0 }, angle: -90, label: 'P', magnitude: 5 },
+      { id: 'Cx', at: { x: 0, y: 0.2 }, angle: 0, label: 'C_x', role: 'reaction' },
+      { id: 'Cy', at: { x: 0, y: 0.2 }, angle: 90, label: 'C_y', role: 'reaction' },
+    ] };
+  const check = checkStudentFBD(workspace, state);
+  assert.ok(!check.issues.some((issue) => issue.kind === 'diagram_context_mismatch' || issue.kind === 'select_target'));
+  assert.equal(check.checked.appliedForces, 1);
+  assert.equal(check.checked.supportForceComponents, 2);
+  assert.ok(check.limitations.some((item) => item.includes('translated from this student-created diagram')));
+});
+
+test('scratch body check reports a missing reaction from its selected endpoint support', () => {
+  const state = { ...empty, selectedTarget: null,
+    bodies: [{ id: 'body-CD', label: 'CD', origin: { x: 0, y: 0 }, width: 4, height: 0.4,
+      endJointKind: 'roller' }], forces: [] };
+  const check = checkStudentFBD(workspace, state);
+  assert.ok(check.issues.some((issue) => issue.kind === 'missing_force' && issue.description.includes('Roller')));
+  assert.ok(!check.issues.some((issue) => issue.kind === 'diagram_context_mismatch'));
 });

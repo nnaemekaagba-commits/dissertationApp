@@ -1,5 +1,6 @@
 import type { StaticsWorkspace } from './model.ts';
-import { engineeringStructureKey, type FBDForce, type FBDMoment, type FBDPoint, type FBDState } from './fbdState.ts';
+import { engineeringStructureKey, fbdBodyCorners, type FBDForce, type FBDJointKind, type FBDMoment,
+  type FBDPoint, type FBDState } from './fbdState.ts';
 import { DEFAULT_GIVEN_VISIBILITY, selectGivenFBDInformation } from './fbdGiven.ts';
 
 export type FBDCheckIssueKind = 'missing_force' | 'extra_force' | 'incorrect_force_direction' |
@@ -83,6 +84,53 @@ export function checkStudentFBD(workspace: StaticsWorkspace, inputState: FBDStat
   if (state.sourceStructureKey !== engineeringStructureKey(workspace)) {
     issues.push({ kind: 'stale_structure', description: 'The FBD belongs to an older structure. Reopen the diagram before checking it.' });
     return result('needs_revision');
+  }
+  if (inferredTarget) {
+    const body = state.bodies[0];
+    const member = state.members[0];
+    const endpoints: { id: string; at: FBDPoint; kind?: FBDJointKind }[] = [];
+    if (body) {
+      const corners = fbdBodyCorners(body);
+      endpoints.push(
+        { id: `${body.label || body.id}:start`,
+          at: { x: (corners[0].x + corners[3].x) / 2, y: (corners[0].y + corners[3].y) / 2 },
+          kind: body.startJointKind },
+        { id: `${body.label || body.id}:end`,
+          at: { x: (corners[1].x + corners[2].x) / 2, y: (corners[1].y + corners[2].y) / 2 },
+          kind: body.endJointKind });
+    } else if (member) endpoints.push(
+      { id: `${member.label || member.id}:start`, at: member.start, kind: member.startJointKind },
+      { id: `${member.label || member.id}:end`, at: member.end, kind: member.endJointKind });
+    const allPoints = endpoints.map((item) => item.at);
+    const span = Math.max(1, allPoints.length > 1 ? distance(allPoints[0], allPoints[1]) : 1);
+    const tolerance = Math.max(0.001, span * 0.03);
+    const reactions = state.forces.filter((force) => force.role === 'reaction');
+    const used = new Set<string>();
+    checked.appliedForces = state.forces.length - reactions.length;
+    checked.appliedMoments = state.moments.length;
+    for (const endpoint of endpoints.filter((item) => item.kind && item.kind !== 'free')) {
+      const axes = endpoint.kind === 'roller' ? [90] : [0, 90];
+      for (const axis of axes) {
+        checked.supportForceComponents++;
+        const candidate = reactions.find((force) => !used.has(force.id) &&
+          distance(force.at, endpoint.at) <= tolerance && axisGap(force.angle, axis) <= 15);
+        if (candidate) used.add(candidate.id);
+        else {
+          const component = axis === 0 ? 'horizontal' : 'vertical';
+          issues.push({ kind: 'missing_force', sourceId: endpoint.id,
+            description: `${endpoint.kind === 'roller' ? 'Roller' : endpoint.kind === 'pin' ? 'Pin' : 'Fixed'} support at ${endpoint.id} needs a ${component} reaction arrow.` });
+        }
+      }
+      if (endpoint.kind === 'fixed') {
+        checked.supportMoments++;
+        limitations.push(`The fixed-support reaction moment at ${endpoint.id} cannot be distinguished from an applied moment until moment types are marked.`);
+      }
+    }
+    for (const force of reactions.filter((item) => !used.has(item.id)))
+      issues.push({ kind: 'extra_force', elementId: force.id,
+        description: `Reaction ${force.label || force.id} does not match a selected support component.` });
+    limitations.push('Checked against the structure translated from this student-created diagram; omitted problem loads cannot be verified without matching problem data.');
+    return result();
   }
   const contextMismatch = diagramContextMismatch(workspace, state);
   if (contextMismatch) {
