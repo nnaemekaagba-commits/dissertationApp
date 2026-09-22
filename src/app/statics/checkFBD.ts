@@ -125,7 +125,7 @@ export function checkStudentFBD(workspace: StaticsWorkspace, inputState: FBDStat
     checked.appliedForces = state.forces.length - reactions.length;
     checked.appliedMoments = state.moments.length;
     const explicitSupportedEndpoints = endpoints.filter((item) => item.kind && item.kind !== 'free');
-    const inferredSupports = inferReactionSupports(reactions, explicitSupportedEndpoints.map((item) => item.at));
+    const inferredSupports = inferReactionSupports(reactions, explicitSupportedEndpoints.map((item) => item.at), state.moments);
     const supportedEndpoints = [
       ...explicitSupportedEndpoints.map((item) => ({ ...item, inferred: false })),
       ...inferredSupports.map((item) => ({ ...item, inferred: true })),

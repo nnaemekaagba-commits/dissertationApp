@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
-import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDLabel,
+import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDMoment, addFBDLabel,
   fbdBodyCorners, fbdBodyEndpointLabelPositions, fbdMemberEndFromAngle, fbdEndpointLabels,
   fbdMemberEndpointLabelPositions,
   editFBDPrimitive, deleteFBDElement, createEmptyFBDState, hasStudentFBDElements,
@@ -305,6 +305,18 @@ test('two independent reaction components become one pin and explicit supports t
     { id: 'reaction-support:Ax+Ay', at: { x: 0, y: 0 }, kind: 'pin' },
   ]);
   assert.deepEqual(inferReactionSupports(state.forces, [{ x: 0, y: 0 }]), []);
+});
+
+test('a support reaction moment converts coincident reaction components into a fixed support', () => {
+  let state = addFBDForce(createEmptyFBDState(workspace),
+    { at: { x: 4, y: 0 }, angle: 0, label: 'Dx', role: 'reaction' }, workspace, 'Dx');
+  state = addFBDForce(state,
+    { at: { x: 4, y: 0 }, angle: 90, label: 'Dy', role: 'reaction' }, workspace, 'Dy');
+  state = addFBDMoment(state,
+    { at: { x: 4, y: 0 }, clockwise: true, label: 'M_D', role: 'reaction' }, workspace, 'M_D');
+  assert.deepEqual(inferReactionSupports(state.forces, [], state.moments), [
+    { id: 'reaction-support:Dx+Dy+M_D', at: { x: 4, y: 0 }, kind: 'fixed' },
+  ]);
 });
 
 test('the sole student body or member is selected automatically for editing', () => {

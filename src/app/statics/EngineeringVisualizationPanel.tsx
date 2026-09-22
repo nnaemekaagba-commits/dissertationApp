@@ -240,7 +240,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   ] : [];
   const derivedJoints: FBDJoint[] = baseOnly ? [
     ...explicitStructureJoints,
-    ...inferReactionSupports(fbdState.forces, explicitStructureJoints.map((joint) => joint.at)),
+    ...inferReactionSupports(fbdState.forces, explicitStructureJoints.map((joint) => joint.at), fbdState.moments),
   ] : [];
   for (const node of derivedJoints) {
     const symbol = new THREE.Group();
