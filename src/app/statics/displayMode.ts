@@ -1,7 +1,7 @@
 export type EngineeringDisplayMode = 'structure' | 'fbd' | 'split';
 
 export const DISPLAY_MODES: { mode: EngineeringDisplayMode; label: string }[] = [
-  { mode: 'structure', label: 'Structure View' },
+  { mode: 'structure', label: 'Rigid Body View' },
   { mode: 'fbd', label: 'FBD View' },
   { mode: 'split', label: 'Split View' },
 ];
