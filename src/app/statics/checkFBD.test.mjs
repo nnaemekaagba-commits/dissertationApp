@@ -171,9 +171,9 @@ test('scratch checker recognizes marked reactions as translated supports without
   const state = { ...empty, selectedTarget: null,
     bodies: [{ id: 'body-BD', label: 'BD', origin: { x: 0, y: 0 }, width: 4, height: 0.4 }],
     forces: [
-      { id: 'reaction-B', at: { x: 0, y: 0.2 }, angle: 0, label: 'B_x', role: 'reaction' },
-      { id: 'reaction-D', at: { x: 4, y: 0.2 }, angle: 0, label: 'D_x', role: 'reaction' },
-      { id: 'external', at: { x: 2, y: 0.2 }, angle: -90, label: 'P', role: 'applied' },
+      { id: 'reaction-B', at: { x: 0, y: 0.2 }, angle: 0, label: 'B_x', magnitude: 6, role: 'reaction' },
+      { id: 'reaction-D', at: { x: 4, y: 0.2 }, angle: 0, label: 'D_x', magnitude: 2.6, role: 'reaction' },
+      { id: 'external', at: { x: 2, y: 0.2 }, angle: -90, label: 'P', magnitude: 5, role: 'applied' },
     ] };
   const check = checkStudentFBD(workspace, state);
   assert.equal(check.checked.supportForceComponents, 2);
@@ -181,6 +181,12 @@ test('scratch checker recognizes marked reactions as translated supports without
   assert.ok(!check.issues.some((issue) => issue.kind === 'missing_support_definition'));
   assert.ok(!check.issues.some((issue) => issue.kind === 'extra_force' && issue.elementId?.startsWith('reaction-')));
   assert.ok(check.limitations.some((item) => item.includes('Support symbols were inferred')));
+  const feedback = formatFBDCheckFeedback(check);
+  assert.match(feedback, /current FBD canvas/);
+  assert.match(feedback, /Body BD is the base object on the canvas/);
+  assert.match(feedback, /At \(0, 0\.2\), B_x \(entered 6 kN\) pointing right/);
+  assert.match(feedback, /At \(4, 0\.2\), D_x \(entered 2\.6 kN\) pointing right/);
+  assert.match(feedback, /Applied force P \(entered 5 kN\) pointing down is located at \(2, 0\.2\)/);
 });
 
 test('scratch checker explains missing support metadata and legacy force classification', () => {

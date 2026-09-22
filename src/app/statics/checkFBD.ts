@@ -13,6 +13,7 @@ export type FBDCheckIssue = { kind: FBDCheckIssueKind; description: string; elem
 export type FBDCheckResult = {
   status: 'no_discrepancies' | 'needs_revision' | 'limited';
   selectedTarget: FBDState['selectedTarget'];
+  observations: string[];
   issues: FBDCheckIssue[];
   limitations: string[];
   checked: { appliedForces: number; appliedMoments: number; supportForceComponents: number; supportMoments: number };
@@ -22,6 +23,18 @@ const degrees = (angle: number, units: StaticsWorkspace['units']) => units.angle
 const angleGap = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 const axisGap = (a: number, b: number) => Math.min(angleGap(a, b), angleGap(a, b + 180));
 const distance = (a: FBDPoint, b: FBDPoint) => Math.hypot(a.x - b.x, a.y - b.y);
+const coordinate = (value: number) => Number(value.toFixed(3));
+const pointDescription = (point: FBDPoint) => `(${coordinate(point.x)}, ${coordinate(point.y)})`;
+function directionDescription(angle: number): string {
+  const normalized = ((angle % 360) + 360) % 360;
+  if (angleGap(normalized, 0) <= 1) return 'right';
+  if (angleGap(normalized, 90) <= 1) return 'up';
+  if (angleGap(normalized, 180) <= 1) return 'left';
+  if (angleGap(normalized, 270) <= 1) return 'down';
+  return `${coordinate(normalized)}°`;
+}
+const forceDescription = (force: FBDForce, forceUnit: string) =>
+  `${force.label || force.id}${force.magnitude === undefined ? '' : ` (entered ${force.magnitude} ${forceUnit})`} pointing ${directionDescription(force.angle)}`;
 
 const diagramBaseNames = (state: FBDState) => [...state.bodies, ...state.members, ...state.joints]
   .map((item) => (item.label || item.id).trim()).filter(Boolean);
@@ -74,10 +87,11 @@ export function checkStudentFBD(workspace: StaticsWorkspace, inputState: FBDStat
   const state = inferredTarget ? { ...inputState, selectedTarget: inferredTarget } : inputState;
   const issues: FBDCheckIssue[] = [];
   const limitations: string[] = [];
+  const observations: string[] = [];
   const checked = { appliedForces: 0, appliedMoments: 0, supportForceComponents: 0, supportMoments: 0 };
   const result = (status?: FBDCheckResult['status']): FBDCheckResult => ({
     status: status ?? (issues.length ? 'needs_revision' : limitations.length ? 'limited' : 'no_discrepancies'),
-    selectedTarget: state.selectedTarget, issues, limitations, checked,
+    selectedTarget: state.selectedTarget, observations, issues, limitations, checked,
   });
   if (!state.selectedTarget) {
     issues.push({ kind: 'select_target', description: 'Select one student-created body or member before checking its FBD.' });
@@ -116,6 +130,19 @@ export function checkStudentFBD(workspace: StaticsWorkspace, inputState: FBDStat
       ...explicitSupportedEndpoints.map((item) => ({ ...item, inferred: false })),
       ...inferredSupports.map((item) => ({ ...item, inferred: true })),
     ];
+    const baseName = body ? `Body ${body.label || body.id}` : `Member ${member?.label || member?.id}`;
+    observations.push(`${baseName} is the base object on the canvas.`);
+    for (const support of inferredSupports) {
+      const components = reactions.filter((force) => distance(force.at, support.at) <= tolerance);
+      observations.push(`At ${pointDescription(support.at)}, ${components.map((force) =>
+        forceDescription(force, workspace.units.force)).join(' and ')} ${components.length === 1 ? 'was' : 'were'} marked as ` +
+        `support reaction${components.length === 1 ? '' : 's'}; this is represented as a ${support.kind} support in Structure View.`);
+    }
+    for (const force of state.forces.filter((item) => item.role !== 'reaction'))
+      observations.push(`Applied force ${forceDescription(force, workspace.units.force)} is located at ${pointDescription(force.at)}.`);
+    for (const moment of state.moments)
+      observations.push(`Moment ${moment.label || moment.id}${moment.magnitude === undefined ? '' : ` (entered ${moment.magnitude} ${workspace.units.force}·${workspace.units.length})`} ` +
+        `is ${moment.clockwise ? 'clockwise' : 'counterclockwise'} at ${pointDescription(moment.at)}.`);
     if (!supportedEndpoints.length) issues.push({ kind: 'missing_support_definition',
       description: `${body ? `Body ${body.label || body.id}` : `Member ${member?.label || member?.id}`} has no endpoint support selected. Edit the base element and set the supported endpoint to pin, roller, or fixed.` });
     else if (!reactions.length) issues.push({ kind: 'unclassified_reaction',
@@ -255,8 +282,11 @@ export function explicitlyRequestsFBDCheck(message: string): boolean {
 export function formatFBDCheckFeedback(check: FBDCheckResult): string {
   const heading = check.status === 'no_discrepancies'
     ? 'I found no discrepancies in the FBD elements this checker supports.'
-    : check.status === 'limited' ? 'I could only check part of this FBD.' : 'Here is what to review in your FBD:';
+    : check.status === 'limited' && check.observations.length
+      ? 'Here is what I checked on the current FBD canvas:'
+      : check.status === 'limited' ? 'I could only check part of this FBD.' : 'Here is what to review in your FBD:';
+  const observations = check.observations.map((item) => `- Canvas: ${item}`);
   const findings = check.issues.map((issue) => `- ${issue.description}`);
   const limits = check.limitations.map((item) => `- Check limit: ${item}`);
-  return [heading, ...findings, ...limits, '\nI did not change your FBD or calculate reaction values.'].join('\n');
+  return [heading, ...observations, ...findings, ...limits, '\nI did not change your FBD or calculate reaction values.'].join('\n');
 }
