@@ -12,6 +12,7 @@ import { executeFBDChatToolBatch } from './fbdChatTools.ts';
 import { fbdActionForVisualization } from './researchLog.ts';
 import { fbdJointSymbol } from './fbdJointSymbol.ts';
 import { fbdGridLineConflicts, fbdGridReading, fbdGridSpec } from './fbdGrid.ts';
+import { inferReactionSupports } from './fbdStructureTranslation.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
 const body = { id: 'Body-1', origin: { x: 0, y: 0 }, width: 4, height: 0.6, label: 'My body' };
@@ -261,11 +262,12 @@ test('FBD annotation tools remain available without an isolated problem target',
   assert.match(panel, /const body = fbdState\.bodies\[0\]/);
 });
 
-test('structure translation uses only selected joints and external applied forces', () => {
+test('structure translation keeps applied loads and converts reaction forces into support symbols', () => {
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
   assert.match(panel, /<option value="none">No joint<\/option>/);
   assert.match(panel, /body\.startJointKind && body\.startJointKind !== 'free'/);
   assert.match(panel, /!baseOnly \|\| \(item\.role \|\| 'applied'\) === 'applied'/);
+  assert.match(panel, /inferReactionSupports\(fbdState\.forces/);
   assert.match(panel, /<option value="applied">External applied force<\/option>/);
   const external = addFBDForce(createEmptyFBDState(workspace),
     { at: { x: 1, y: 0 }, angle: -90, label: 'P', role: 'applied' }, workspace, 'P');
@@ -274,6 +276,20 @@ test('structure translation uses only selected joints and external applied force
   const restored = parseFBDState(JSON.parse(JSON.stringify(reaction)), workspace);
   assert.equal(restored.forces[0].role, undefined);
   assert.equal(restored.forces[1].role, 'reaction');
+  assert.deepEqual(inferReactionSupports(restored.forces), [
+    { id: 'reaction-support:R', at: { x: 0, y: 0 }, kind: 'roller' },
+  ]);
+});
+
+test('two independent reaction components become one pin and explicit supports take precedence', () => {
+  let state = addFBDForce(createEmptyFBDState(workspace),
+    { at: { x: 0, y: 0 }, angle: 0, label: 'Ax', role: 'reaction' }, workspace, 'Ax');
+  state = addFBDForce(state,
+    { at: { x: 0, y: 0 }, angle: 90, label: 'Ay', role: 'reaction' }, workspace, 'Ay');
+  assert.deepEqual(inferReactionSupports(state.forces), [
+    { id: 'reaction-support:Ax+Ay', at: { x: 0, y: 0 }, kind: 'pin' },
+  ]);
+  assert.deepEqual(inferReactionSupports(state.forces, [{ x: 0, y: 0 }]), []);
 });
 
 test('the sole student body or member is selected automatically for editing', () => {

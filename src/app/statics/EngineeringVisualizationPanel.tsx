@@ -24,6 +24,7 @@ import { fbdBodyCorners, fbdBodyEndpointLabelPositions, fbdEndpointLabels, fbdMe
 import { buildFBDForceArrow } from './fbdForceScene';
 import { buildFBDMomentArrow } from './fbdMomentScene';
 import { fbdJointSymbol } from './fbdJointSymbol';
+import { inferReactionSupports } from './fbdStructureTranslation';
 import { fbdGridLineConflicts, fbdGridReading, fbdGridSpec } from './fbdGrid';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene';
 import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene';
@@ -220,7 +221,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
         label.userData.fbdPrimitive = { kind: 'member', id: member.id }; group.add(label); }
     }
   }
-  const derivedJoints: FBDJoint[] = baseOnly ? [
+  const explicitStructureJoints: FBDJoint[] = baseOnly ? [
     ...fbdState.bodies.flatMap((body) => {
       const corners = fbdBodyCorners(body);
       return [body.startJointKind && body.startJointKind !== 'free' ?
@@ -236,6 +237,10 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
         { id: `${member.id}:end`, at: member.end, kind: member.endJointKind } : null,
     ].filter((joint): joint is FBDJoint => joint !== null)),
     ...fbdState.joints,
+  ] : [];
+  const derivedJoints: FBDJoint[] = baseOnly ? [
+    ...explicitStructureJoints,
+    ...inferReactionSupports(fbdState.forces, explicitStructureJoints.map((joint) => joint.at)),
   ] : [];
   for (const node of derivedJoints) {
     const symbol = new THREE.Group();
