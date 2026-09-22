@@ -18,6 +18,7 @@ import { executeEngineeringToolBatch, formatEngineeringToolBatch,
 import { executeFBDChatToolBatch, formatFBDChatToolBatch, FBD_CHAT_TOOL_NAMES,
   type FBDChatBatch, type FBDChatToolCall } from './statics/fbdChatTools';
 import { checkStudentFBD, explicitlyRequestsFBDCheck, formatFBDCheckFeedback } from './statics/checkFBD';
+import { buildFBDCoachingRequest, FBD_CHECK_QUESTIONS } from './statics/fbdCheckConversation';
 import { explicitlyRequestsVisualCalculation, visualCalculationForRequest,
   type RequestedVisualCalculation } from './statics/calculationPolicy';
 import type { BeamReactionResult } from './statics/calculations';
@@ -1263,6 +1264,7 @@ export default function App() {
   const previousDisplayModeRef = useRef<EngineeringDisplayMode>('fbd');
   const [viewCommand, setViewCommand] = useState<{ view: EngineeringView; sequence: number }>();
   const [requestedVisualCalculation, setRequestedVisualCalculation] = useState<RequestedVisualCalculation | null>(null);
+  const [awaitingFBDCoachingDetails, setAwaitingFBDCoachingDetails] = useState(false);
   const staticsControllerRef = useRef<StaticsWorkspaceController | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [pendingInputModality, setPendingInputModality] = useState<'text' | 'audio'>('text');
@@ -1830,6 +1832,20 @@ export default function App() {
 
     return generatedImagePatterns.some((pattern) => pattern.test(normalized)) ? 'generate' : null;
   };
+  const beginFBDCoachingConversation = () => {
+    if (isTyping || awaitingFBDCoachingDetails) return;
+    setAwaitingFBDCoachingDetails(true);
+    const promptMessage: Message = {
+      id: `fbd-coaching-${Date.now()}`,
+      role: 'assistant',
+      content: FBD_CHECK_QUESTIONS,
+      timestamp: new Date(),
+      aiProvider: 'FBD Coach',
+      provider: selectedProviderRef.current,
+    };
+    setMessages((previous) => [...previous, promptMessage]);
+    void saveMessage(promptMessage);
+  };
   const handleSend = async (options?: {
     displayInput?: string;
     requestInput?: string;
@@ -1841,11 +1857,14 @@ export default function App() {
   }) => {
     if (isRecordingAudio || isTranscribingAudio) return;
     const displayInput = options?.displayInput ?? input;
-    const requestInput = options?.requestInput ?? displayInput;
+    const answeringFBDCoachingPrompt = awaitingFBDCoachingDetails && !options;
+    const requestInput = answeringFBDCoachingPrompt
+      ? buildFBDCoachingRequest(displayInput)
+      : options?.requestInput ?? displayInput;
     const requestProvider = normalizeChatProvider(options?.provider) ?? selectedProviderRef.current;
     if (!displayInput.trim()) return;
 
-    if (!options) {
+    if (!options && !answeringFBDCoachingPrompt) {
       const imageAction = getPromptImageAction(displayInput);
 
       if (imageAction === 'generate') {
@@ -1920,7 +1939,8 @@ export default function App() {
       setPendingInputModality('text');
       setTranscriptionSource(undefined);
     }
-    if (explicitlyRequestsFBDCheck(currentInput)) {
+    if (answeringFBDCoachingPrompt) setAwaitingFBDCoachingDetails(false);
+    if (!answeringFBDCoachingPrompt && explicitlyRequestsFBDCheck(currentInput)) {
       const controller = staticsControllerRef.current;
       const fbd = controller?.getFbdState();
       const comparison = controller && fbd ? checkStudentFBD(controller.getWorkspace(), fbd) : null;
@@ -2062,6 +2082,23 @@ ${data.response}` : data.response,
         isIncorrect: data.isIncorrect,
         isConflicting,
       };
+
+      if (answeringFBDCoachingPrompt && userId) {
+        try {
+          const controller = staticsControllerRef.current;
+          const fbd = controller?.getFbdState();
+          if (controller && fbd) {
+            const comparison = checkStudentFBD(controller.getWorkspace(), fbd);
+            const sessionId = getEngineeringSessionId(sessionStorage, userId);
+            const event = createFBDCheckResearchEvent(sessionId, messageContent, fbd,
+              comparison, assistantMessage.content);
+            if (event.kind === 'fbd_check') event.fbdResearch = createFBDResearchContext(
+              'request_fbd_check', fbd, fbd, nextFBDResearchSequence(sessionStorage, sessionId),
+              null, null, studentInput.inputModality, messageContent);
+            await recordEngineeringEvent(event);
+          }
+        } catch (error) { console.warn('FBD coaching event logging failed.', error); }
+      }
 
       if (engineeringBatch && userId) {
         try {
@@ -3423,9 +3460,7 @@ ${data.response}` : data.response,
               <EngineeringVisualizationPanel onClose={() => setShowEngineeringPanel(false)}
                 viewCommand={viewCommand} displayMode={displayMode} onDisplayModeChange={setDisplayMode}
                 requestedVisualCalculation={requestedVisualCalculation}
-                onCheckFBD={() => { if (!isTyping) void handleSend({
-                  displayInput: 'Check My FBD', requestInput: 'Check My FBD', preserveDraft: true,
-                }); }}
+                onCheckFBD={beginFBDCoachingConversation}
                 onVisualizationInteraction={recordVisualizationInteraction} />
             </Suspense>
           )}

@@ -1,13 +1,35 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { createEmptyFBDState, selectFBDTarget, addFBDForce, addFBDMoment,
   createFBDHistory } from './fbdState.ts';
 import { checkStudentFBD, explicitlyRequestsFBDCheck, formatFBDCheckFeedback } from './checkFBD.ts';
+import { buildFBDCoachingRequest, FBD_CHECK_QUESTIONS } from './fbdCheckConversation.ts';
 import { createFBDCheckResearchEvent } from './researchLog.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
 const empty = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'body', id: 'structure' }, workspace);
+
+test('Check My FBD starts a question-led coaching exchange grounded in the current canvas', () => {
+  assert.match(FBD_CHECK_QUESTIONS, /What questions do you have about your FBD\?/);
+  assert.match(FBD_CHECK_QUESTIONS, /describe the statics problem you are trying to solve\?/i);
+  const request = buildFBDCoachingRequest('Is my support model correct? The beam carries a downward point load.');
+  assert.match(request, /supplied FBD JSON/);
+  assert.match(request, /targeted hints/);
+  assert.match(request, /actual bodies, forces, moments, labels, directions, and locations/);
+  assert.match(request, /Do not modify the FBD/);
+  assert.match(request, /Do not call any engineering or FBD tools/);
+  assert.match(request, /Do not calculate reactions/);
+  assert.match(request, /Is my support model correct\?/);
+  assert.throws(() => buildFBDCoachingRequest('   '), /required/);
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /onCheckFBD=\{beginFBDCoachingConversation\}/);
+  assert.match(app, /answeringFBDCoachingPrompt/);
+  assert.match(app, /if \(!options && !answeringFBDCoachingPrompt\)/);
+  assert.match(app, /buildFBDCoachingRequest\(displayInput\)/);
+  assert.match(app, /studentInput\.inputModality, messageContent/);
+});
 const force = (state, id, x, angle, label, magnitude) => addFBDForce(state,
   { at: { x, y: 0 }, angle, label, ...(magnitude === undefined ? {} : { magnitude }) }, workspace, id);
 const correct = () => {
