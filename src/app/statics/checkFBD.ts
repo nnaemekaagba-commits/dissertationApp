@@ -172,9 +172,6 @@ export function checkStudentFBD(workspace: StaticsWorkspace, inputState: FBDStat
     for (const force of reactions.filter((item) => !used.has(item.id)))
       issues.push({ kind: 'extra_force', elementId: force.id,
         description: `Reaction ${force.label || force.id} does not match a selected support component.` });
-    if (inferredSupports.length) limitations.push(
-      'Support symbols were inferred from the marked reaction arrows: one reaction direction represents a roller and two independent directions represent a pin.');
-    limitations.push('Checked against the structure translated from this student-created diagram; omitted problem loads cannot be verified without matching problem data.');
     return result();
   }
   const contextMismatch = diagramContextMismatch(workspace, state);

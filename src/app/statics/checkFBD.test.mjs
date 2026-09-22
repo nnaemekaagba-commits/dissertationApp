@@ -121,7 +121,7 @@ test('visible matching scratch member uses translated structure instead of legac
   assert.ok(!check.issues.some((issue) => issue.kind === 'diagram_context_mismatch'));
   assert.ok(!check.issues.some((issue) => issue.kind === 'omitted_applied_load'));
   assert.ok(check.issues.some((issue) => issue.kind === 'missing_support_definition'));
-  assert.ok(check.limitations.some((item) => item.includes('translated from this student-created diagram')));
+  assert.deepEqual(check.limitations, []);
 });
 
 test('a single selected student body is inferred without the optional problem-object selector', () => {
@@ -131,7 +131,7 @@ test('a single selected student body is inferred without the optional problem-ob
   assert.deepEqual(check.selectedTarget, { kind: 'body', id: 'structure' });
   assert.ok(!check.issues.some((issue) => issue.kind === 'select_target'));
   assert.ok(!check.issues.some((issue) => issue.kind === 'omitted_applied_load'));
-  assert.ok(check.limitations.some((item) => item.includes('omitted problem loads cannot be verified')));
+  assert.deepEqual(check.limitations, []);
 });
 
 test('a single student member is matched to the engineering member by endpoint label', () => {
@@ -155,7 +155,7 @@ test('scratch body check uses its translated supports and external loads instead
   assert.ok(!check.issues.some((issue) => issue.kind === 'diagram_context_mismatch' || issue.kind === 'select_target'));
   assert.equal(check.checked.appliedForces, 1);
   assert.equal(check.checked.supportForceComponents, 2);
-  assert.ok(check.limitations.some((item) => item.includes('translated from this student-created diagram')));
+  assert.deepEqual(check.limitations, []);
 });
 
 test('scratch body check reports a missing reaction from its selected endpoint support', () => {
@@ -180,9 +180,11 @@ test('scratch checker recognizes marked reactions as translated supports without
   assert.equal(check.checked.appliedForces, 1);
   assert.ok(!check.issues.some((issue) => issue.kind === 'missing_support_definition'));
   assert.ok(!check.issues.some((issue) => issue.kind === 'extra_force' && issue.elementId?.startsWith('reaction-')));
-  assert.ok(check.limitations.some((item) => item.includes('Support symbols were inferred')));
+  assert.equal(check.status, 'no_discrepancies');
+  assert.deepEqual(check.limitations, []);
   const feedback = formatFBDCheckFeedback(check);
-  assert.match(feedback, /current FBD canvas/);
+  assert.match(feedback, /I found no discrepancies/);
+  assert.doesNotMatch(feedback, /Check limit|omitted problem loads/);
   assert.match(feedback, /Body BD is the base object on the canvas/);
   assert.match(feedback, /At \(0, 0\.2\), B_x \(entered 6 kN\) pointing right/);
   assert.match(feedback, /At \(4, 0\.2\), D_x \(entered 2\.6 kN\) pointing right/);
