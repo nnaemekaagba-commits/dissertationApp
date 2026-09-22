@@ -9,7 +9,7 @@ function samePoint(left: FBDPoint, right: FBDPoint): boolean {
 
 /**
  * Convert student-labelled reaction components into support symbols for the
- * translated Structure View. A single reaction direction represents a roller;
+ * translated Rigid Body View. A single reaction direction represents a roller;
  * two non-parallel reaction directions represent a pin. Explicitly authored
  * support metadata takes precedence at the same point.
  */

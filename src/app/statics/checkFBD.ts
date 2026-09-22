@@ -136,7 +136,7 @@ export function checkStudentFBD(workspace: StaticsWorkspace, inputState: FBDStat
       const components = reactions.filter((force) => distance(force.at, support.at) <= tolerance);
       observations.push(`At ${pointDescription(support.at)}, ${components.map((force) =>
         forceDescription(force, workspace.units.force)).join(' and ')} ${components.length === 1 ? 'was' : 'were'} marked as ` +
-        `support reaction${components.length === 1 ? '' : 's'}; this is represented as a ${support.kind} support in Structure View.`);
+        `support reaction${components.length === 1 ? '' : 's'}; this is represented as a ${support.kind} support in Rigid Body View.`);
     }
     for (const force of state.forces.filter((item) => item.role !== 'reaction'))
       observations.push(`Applied force ${forceDescription(force, workspace.units.force)} is located at ${pointDescription(force.at)}.`);

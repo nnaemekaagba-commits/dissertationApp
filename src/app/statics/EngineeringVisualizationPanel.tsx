@@ -1717,7 +1717,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
               className="block w-full rounded border px-2 py-1" /></label>
           </>}
           {(primitiveMode === 'body' || primitiveMode === 'member') && (['startJointKind', 'endJointKind'] as const).map((key) =>
-            <label key={key}>{key === 'startJointKind' ? 'Start joint in Structure View' : 'End joint in Structure View'}
+            <label key={key}>{key === 'startJointKind' ? 'Start joint in Rigid Body View' : 'End joint in Rigid Body View'}
               <select value={primitiveDraft[key]}
                 onChange={(event) => setPrimitiveDraft({ ...primitiveDraft, [key]: event.target.value })}
                 className="block w-full rounded border px-2 py-1">

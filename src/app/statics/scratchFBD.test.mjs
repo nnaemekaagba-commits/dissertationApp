@@ -165,7 +165,7 @@ test('structure panes render only student base geometry while FBD view retains a
   assert.match(panel, /No rigid body, joint, or member has been added yet\./);
   assert.doesNotMatch(panel, /Add Joint \/ Point/);
   assert.doesNotMatch(panel, /\(\['body', 'joint', 'member'\]/);
-  assert.match(panel, /Start joint in Structure View/);
+  assert.match(panel, /Start joint in Rigid Body View/);
   assert.match(panel, /const derivedJoints: FBDJoint\[\] = baseOnly/);
   for (const kind of ['free', 'pin', 'roller', 'fixed']) {
     const state = addFBDJoint(createEmptyFBDState(workspace), { ...joint, kind });
