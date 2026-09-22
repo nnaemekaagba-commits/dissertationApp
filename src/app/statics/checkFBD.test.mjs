@@ -19,9 +19,16 @@ test('Check My FBD starts a question-led coaching exchange grounded in the curre
   assert.match(request, /targeted hints/);
   assert.match(request, /actual bodies, forces, moments, labels, directions, and locations/);
   assert.match(request, /Do not modify the FBD/);
-  assert.match(request, /Do not call any engineering or FBD tools/);
-  assert.match(request, /Do not calculate reactions/);
+  assert.match(request, /do not call mutating engineering or FBD tools/i);
+  assert.match(request, /explicitly requests a calculation/);
+  assert.match(request, /deterministic calculation tool/);
+  assert.match(request, /report its validated result in chat/);
+  assert.match(request, /Do not invent numerical results/);
+  assert.match(request, /unless the student explicitly requests visual display/);
   assert.match(request, /Is my support model correct\?/);
+  const calculationRequest = buildFBDCoachingRequest('Please calculate the support reactions.');
+  assert.match(calculationRequest, /calculate the support reactions/);
+  assert.doesNotMatch(calculationRequest, /\bDo not calculate\b/i);
   assert.throws(() => buildFBDCoachingRequest('   '), /required/);
   const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
   assert.match(app, /onCheckFBD=\{beginFBDCoachingConversation\}/);
