@@ -167,6 +167,22 @@ test('scratch body check reports a missing reaction from its selected endpoint s
   assert.ok(!check.issues.some((issue) => issue.kind === 'diagram_context_mismatch'));
 });
 
+test('scratch checker recognizes marked reactions as translated supports without contradictory feedback', () => {
+  const state = { ...empty, selectedTarget: null,
+    bodies: [{ id: 'body-BD', label: 'BD', origin: { x: 0, y: 0 }, width: 4, height: 0.4 }],
+    forces: [
+      { id: 'reaction-B', at: { x: 0, y: 0.2 }, angle: 0, label: 'B_x', role: 'reaction' },
+      { id: 'reaction-D', at: { x: 4, y: 0.2 }, angle: 0, label: 'D_x', role: 'reaction' },
+      { id: 'external', at: { x: 2, y: 0.2 }, angle: -90, label: 'P', role: 'applied' },
+    ] };
+  const check = checkStudentFBD(workspace, state);
+  assert.equal(check.checked.supportForceComponents, 2);
+  assert.equal(check.checked.appliedForces, 1);
+  assert.ok(!check.issues.some((issue) => issue.kind === 'missing_support_definition'));
+  assert.ok(!check.issues.some((issue) => issue.kind === 'extra_force' && issue.elementId?.startsWith('reaction-')));
+  assert.ok(check.limitations.some((item) => item.includes('Support symbols were inferred')));
+});
+
 test('scratch checker explains missing support metadata and legacy force classification', () => {
   const noSupport = { ...empty, selectedTarget: null,
     bodies: [{ id: 'body-CD', label: 'CD', origin: { x: 0, y: 0 }, width: 4, height: 0.4 }],

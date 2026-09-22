@@ -2,6 +2,7 @@ import type { StaticsWorkspace } from './model.ts';
 import { engineeringStructureKey, fbdBodyCorners, type FBDForce, type FBDJointKind, type FBDMoment,
   type FBDPoint, type FBDState } from './fbdState.ts';
 import { DEFAULT_GIVEN_VISIBILITY, selectGivenFBDInformation } from './fbdGiven.ts';
+import { inferReactionSupports } from './fbdStructureTranslation.ts';
 
 export type FBDCheckIssueKind = 'missing_force' | 'extra_force' | 'incorrect_force_direction' |
   'missing_moment' | 'extra_moment' | 'incorrect_moment_direction' |
@@ -109,13 +110,22 @@ export function checkStudentFBD(workspace: StaticsWorkspace, inputState: FBDStat
     const used = new Set<string>();
     checked.appliedForces = state.forces.length - reactions.length;
     checked.appliedMoments = state.moments.length;
-    const supportedEndpoints = endpoints.filter((item) => item.kind && item.kind !== 'free');
+    const explicitSupportedEndpoints = endpoints.filter((item) => item.kind && item.kind !== 'free');
+    const inferredSupports = inferReactionSupports(reactions, explicitSupportedEndpoints.map((item) => item.at));
+    const supportedEndpoints = [
+      ...explicitSupportedEndpoints.map((item) => ({ ...item, inferred: false })),
+      ...inferredSupports.map((item) => ({ ...item, inferred: true })),
+    ];
     if (!supportedEndpoints.length) issues.push({ kind: 'missing_support_definition',
       description: `${body ? `Body ${body.label || body.id}` : `Member ${member?.label || member?.id}`} has no endpoint support selected. Edit the base element and set the supported endpoint to pin, roller, or fixed.` });
     else if (!reactions.length) issues.push({ kind: 'unclassified_reaction',
       description: 'No force is marked as a support reaction. Edit each reaction arrow and set Force type to Support reaction.' });
     for (const endpoint of supportedEndpoints) {
-      const axes = endpoint.kind === 'roller' ? [90] : [0, 90];
+      const inferredAxes = endpoint.inferred ? reactions
+        .filter((force) => distance(force.at, endpoint.at) <= tolerance)
+        .map((force) => force.angle)
+        .filter((axis, index, axes) => axes.findIndex((candidate) => axisGap(candidate, axis) <= 15) === index) : [];
+      const axes = inferredAxes.length ? inferredAxes : endpoint.kind === 'roller' ? [90] : [0, 90];
       for (const axis of axes) {
         checked.supportForceComponents++;
         const candidate = reactions.find((force) => !used.has(force.id) &&
@@ -135,6 +145,8 @@ export function checkStudentFBD(workspace: StaticsWorkspace, inputState: FBDStat
     for (const force of reactions.filter((item) => !used.has(item.id)))
       issues.push({ kind: 'extra_force', elementId: force.id,
         description: `Reaction ${force.label || force.id} does not match a selected support component.` });
+    if (inferredSupports.length) limitations.push(
+      'Support symbols were inferred from the marked reaction arrows: one reaction direction represents a roller and two independent directions represent a pin.');
     limitations.push('Checked against the structure translated from this student-created diagram; omitted problem loads cannot be verified without matching problem data.');
     return result();
   }
