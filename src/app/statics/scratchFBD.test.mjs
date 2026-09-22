@@ -19,6 +19,21 @@ const body = { id: 'Body-1', origin: { x: 0, y: 0 }, width: 4, height: 0.6, labe
 const joint = { id: 'Point-1', at: { x: 1, y: 0 }, label: 'J1' };
 const member = { id: 'Line-1', start: { x: 0, y: 0 }, end: { x: 3, y: 2 }, label: 'My line' };
 
+test('guest and signed-in students share the same engineering and FBD interface', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const provider = readFileSync(new URL('./StaticsWorkspaceProvider.tsx', import.meta.url), 'utf8');
+  const providerStart = app.indexOf('<StaticsWorkspaceProvider key={userId} userId={userId}');
+  const panelStart = app.indexOf('<EngineeringVisualizationPanel onClose=');
+  const providerEnd = app.lastIndexOf('</StaticsWorkspaceProvider>');
+  assert.ok(providerStart >= 0 && panelStart > providerStart && providerEnd > panelStart);
+  assert.equal((app.match(/<EngineeringVisualizationPanel onClose=/g) || []).length, 1);
+  assert.match(app, /const GUEST_USER_ID = 'guest'/);
+  assert.doesNotMatch(app.slice(panelStart, app.indexOf('/>', panelStart)), /guest|isGuest|authenticated/i);
+  assert.match(provider, /loadStaticsWorkspace\(localStorage, userId\)/);
+  assert.match(provider, /loadFBDState\(localStorage, userId, workspace\)/);
+  assert.match(provider, /saveFBDState\(localStorage, userId, fbdHistory\.present, workspace\)/);
+});
+
 test('adaptive gridlines include numeric coordinate readings and workspace units', () => {
   const grid = fbdGridSpec({ x: 2, y: 1 }, 4);
   assert.ok(grid.xValues.length >= 8 && grid.xValues.length <= 20);
