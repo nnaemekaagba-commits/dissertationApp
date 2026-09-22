@@ -1638,9 +1638,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         </div>}
         <div ref={containerRef} className={`relative min-h-0 bg-slate-50 touch-none ${displayMode === 'split' ? 'flex-1' : 'h-full'}`} aria-label={showFbd ? 'FBD canvas' : 'Structure canvas'}>
         {displayMode === 'split' && <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">FBD</span>}
-        {showFbd && fbdState.selectedTarget && <span className="pointer-events-none absolute right-2 top-2 z-10 max-w-[70%] truncate rounded border border-emerald-300 bg-white/95 px-2 py-1 text-xs font-semibold text-emerald-800">
-          Isolated: {targetOptions.find(({ target }) => target.kind === fbdState.selectedTarget?.kind && target.id === fbdState.selectedTarget?.id)?.label || fbdState.selectedTarget.id}
-        </span>}
         {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
         {!(showFbd ? hasStudentFBDElements(fbdState) : hasStudentFBDBaseGeometry(fbdState)) && !error &&
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
@@ -1739,24 +1736,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           <button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Move Selected</button>
         </form>}
         <div className="flex flex-wrap items-center gap-1.5">
-          <details className="w-full text-xs"><summary className="cursor-pointer font-medium text-slate-600">Optional problem object for FBD checking</summary>
-          <label className="text-xs font-medium text-slate-700" htmlFor="fbd-target-select">Select Body/Member/Joint</label>
-          <input type="search" aria-label="Search bodies, members, and joints" value={targetSearch}
-            onChange={(event) => setTargetSearch(event.target.value)} placeholder="Search joints or members"
-            className="w-44 max-w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs" />
-          <select id="fbd-target-select" aria-label="Select Body/Member/Joint"
-            className="max-w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs"
-            value={fbdState.selectedTarget ? JSON.stringify(fbdState.selectedTarget) : ''}
-            onChange={(event) => {
-              const option = targetOptions.find((item) => JSON.stringify(item.target) === event.target.value);
-              selectTarget(option?.target || null);
-            }}>
-            <option value="">Select a body, member, or joint</option>
-            {visibleTargetOptions.map(({ label, target }) =>
-              <option key={`${target.kind}:${target.id}`} value={JSON.stringify(target)}>{label}</option>)}
-          </select>
-          <span className="text-[11px] text-slate-500">Choosing a problem object does not draw it.</span>
-          </details>
           <button type="button" onClick={openForceForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Force</button>
           <button type="button" onClick={openMomentForm}

@@ -282,6 +282,13 @@ test('the sole student body or member is selected automatically for editing', ()
   assert.match(panel, /if \(bases\.length === 1\) setSelectedPrimitive\(bases\[0\]\)/);
 });
 
+test('scratch FBD interface has no stale isolated problem-object controls or badge', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(panel, /Isolated:/);
+  assert.doesNotMatch(panel, /Optional problem object for FBD checking/);
+  assert.doesNotMatch(panel, /id="fbd-target-select"/);
+});
+
 test('first student-created element starts diagram; all geometry and labels are manual FBDState data', () => {
   const before = JSON.stringify(workspace);
   let state = createEmptyFBDState(workspace);

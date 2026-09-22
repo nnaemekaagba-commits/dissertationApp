@@ -61,7 +61,7 @@ function diagramContextMismatch(workspace: StaticsWorkspace, state: FBDState): s
 export function checkStudentFBD(workspace: StaticsWorkspace, inputState: FBDState): FBDCheckResult {
   const bases = [...inputState.bodies.map((item) => ({ kind: 'body' as const, name: item.label || item.id })),
     ...inputState.members.map((item) => ({ kind: 'member' as const, name: item.label || item.id }))];
-  const inferredTarget = !inputState.selectedTarget && bases.length === 1 ? (() => {
+  const inferredTarget = bases.length === 1 ? (() => {
     const base = bases[0];
     if (base.kind === 'body') return { kind: 'body' as const, id: 'structure' };
     const name = base.name.toLowerCase();

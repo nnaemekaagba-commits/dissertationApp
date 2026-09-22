@@ -212,7 +212,7 @@ test('changing an isolated object clears only its annotations after confirmation
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
   assert.match(panel, /Confirm isolated object change/);
   assert.match(panel, /hasStudentFBDElements\(fbdState\).*setPendingTarget\(target\)/);
-  assert.match(panel, /Isolated: /);
+  assert.doesNotMatch(panel, /Isolated: /);
   assert.doesNotMatch(panel, /isolatedFBDGeometry\(fbdState, workspace\)/);
   assert.doesNotMatch(panel, /RingGeometry\(0\.13, 0\.18, 24\)/);
   assert.equal(JSON.stringify(workspace), engineeringBefore);

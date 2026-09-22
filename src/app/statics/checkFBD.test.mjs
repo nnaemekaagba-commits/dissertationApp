@@ -101,28 +101,27 @@ test('only an explicit checking request starts the checker', () => {
     'What does a pin support contribute?']) assert.equal(explicitlyRequestsFBDCheck(message), false);
 });
 
-test('checker refuses to assess scratch geometry against a different selected member', () => {
+test('visible scratch geometry overrides a stale selected problem member', () => {
   const state = { ...empty,
     selectedTarget: { kind: 'member', id: 'AB' },
     bodies: [{ id: 'body-AD', label: 'AD', origin: { x: 0, y: 0 }, width: 4, height: 0.4 }],
     forces: [{ id: 'student-force', at: { x: 2, y: 0 }, angle: -90, label: 'P' }] };
   const check = checkStudentFBD(workspace, state);
-  assert.equal(check.status, 'limited');
-  assert.equal(check.checked.appliedForces, 0);
-  assert.ok(check.issues.some((issue) => issue.kind === 'diagram_context_mismatch' &&
-    issue.description.includes('AD') && issue.description.includes('AB')));
-  assert.ok(check.limitations.some((item) => item.includes('wrong object')));
-  assert.doesNotMatch(formatFBDCheckFeedback(check), /missing from your FBD|needs a .*reaction/);
+  assert.ok(!check.issues.some((issue) => issue.kind === 'diagram_context_mismatch'));
+  assert.equal(check.checked.appliedForces, 1);
+  assert.ok(check.issues.some((issue) => issue.kind === 'missing_support_definition'));
 });
 
-test('checker continues when scratch geometry matches the selected problem member', () => {
+test('visible matching scratch member uses translated structure instead of legacy loads', () => {
   const state = { ...empty,
     selectedTarget: { kind: 'member', id: 'AB' },
     members: [{ id: 'student-AB', label: 'AB', start: { x: 0, y: 0 }, end: { x: 4, y: 0 } }] };
   const check = checkStudentFBD(workspace, state);
   assert.notEqual(check.status, 'limited');
   assert.ok(!check.issues.some((issue) => issue.kind === 'diagram_context_mismatch'));
-  assert.ok(check.issues.some((issue) => issue.kind === 'omitted_applied_load'));
+  assert.ok(!check.issues.some((issue) => issue.kind === 'omitted_applied_load'));
+  assert.ok(check.issues.some((issue) => issue.kind === 'missing_support_definition'));
+  assert.ok(check.limitations.some((item) => item.includes('translated from this student-created diagram')));
 });
 
 test('a single selected student body is inferred without the optional problem-object selector', () => {
