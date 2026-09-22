@@ -418,12 +418,16 @@ test('clockwise and counterclockwise moments are student data, persist, and supp
   const engineeringBefore = JSON.stringify(workspace);
   const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'member', id: 'AB' }, workspace);
   const clockwise = addFBDMoment(selected, { at: { x: 1, y: 0 }, clockwise: true,
-    label: 'M_A', magnitude: 6 }, workspace, 'moment-cw');
+    label: 'M_A', magnitude: 6, role: 'reaction' }, workspace, 'moment-cw');
   const both = addFBDMoment(clockwise, { at: { x: 3, y: 0 }, clockwise: false,
     label: 'M_B' }, workspace, 'moment-ccw');
   assert.deepEqual(both.moments.map((moment) => moment.clockwise), [true, false]);
   assert.equal(both.moments[0].magnitude, 6);
+  assert.equal(both.moments[0].role, 'reaction');
   assert.equal(both.moments[1].magnitude, undefined);
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /External applied moment/);
+  assert.match(panel, /Support reaction moment/);
   assert.equal(JSON.stringify(workspace), engineeringBefore);
   const records = new Map();
   const storage = { getItem: (key) => records.get(key) ?? null, setItem: (key, value) => records.set(key, value) };
@@ -439,6 +443,7 @@ test('moment creation validates point, direction, label, magnitude, and unique I
   assert.throws(() => addFBDMoment(selected, { ...input, clockwise: 'yes' }, workspace, 'moment-2'), /valid point/);
   assert.throws(() => addFBDMoment(selected, { ...input, at: { x: Infinity, y: 0 } }, workspace, 'moment-2'), /valid point/);
   assert.throws(() => addFBDMoment(selected, { ...input, magnitude: -2 }, workspace, 'moment-2'), /valid point/);
+  assert.throws(() => addFBDMoment(selected, { ...input, role: 'unknown' }, workspace, 'moment-2'), /valid point/);
   assert.equal(addFBDMoment(createEmptyFBDState(workspace), input, workspace, 'moment-2').moments.length, 1);
 });
 

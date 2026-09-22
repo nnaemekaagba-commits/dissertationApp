@@ -14,8 +14,9 @@ export type FBDForceRole = 'applied' | 'reaction';
 export type FBDForce = { id: string; at: FBDPoint; angle: number; magnitude?: number; label?: string;
   role?: FBDForceRole; labelPosition?: FBDPoint };
 export type FBDForceInput = { at: FBDPoint; angle: number; label: string; magnitude?: number; role?: FBDForceRole };
-export type FBDMoment = { id: string; at: FBDPoint; clockwise: boolean; magnitude?: number; label?: string; labelPosition?: FBDPoint };
-export type FBDMomentInput = { at: FBDPoint; clockwise: boolean; label: string; magnitude?: number };
+export type FBDMomentRole = 'applied' | 'reaction';
+export type FBDMoment = { id: string; at: FBDPoint; clockwise: boolean; magnitude?: number; label?: string; role?: FBDMomentRole; labelPosition?: FBDPoint };
+export type FBDMomentInput = { at: FBDPoint; clockwise: boolean; label: string; magnitude?: number; role?: FBDMomentRole };
 export type FBDDimension = { id: string; start: FBDPoint; end: FBDPoint; label?: string; labelPosition?: FBDPoint };
 export type FBDDimensionInput = { start: FBDPoint; end: FBDPoint; label: string };
 export type FBDAngle = { id: string; vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label?: string; labelPosition?: FBDPoint };
@@ -226,10 +227,12 @@ export function addFBDMoment(state: FBDState, input: FBDMomentInput, workspace: 
     throw new Error('Moment ID must be unique.');
   if (!Number.isFinite(input.at.x) || !Number.isFinite(input.at.y) ||
     typeof input.clockwise !== 'boolean' || !input.label.trim() || input.label.length > 80 ||
+    (input.role !== undefined && input.role !== 'applied' && input.role !== 'reaction') ||
     (input.magnitude !== undefined && (!Number.isFinite(input.magnitude) || input.magnitude < 0)))
     throw new Error('Enter a valid point, label, direction, and optional nonnegative magnitude.');
   const moment: FBDMoment = { id: momentId, at: { x: input.at.x, y: input.at.y },
     clockwise: input.clockwise, label: input.label.trim(),
+    ...(input.role === undefined ? {} : { role: input.role }),
     ...(input.magnitude === undefined ? {} : { magnitude: input.magnitude }) };
   return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
     moments: [...state.moments, moment] };
@@ -471,6 +474,7 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
     moments: rows(root.moments, (row) => ({ id: id(row.id), at: point(row.at),
       clockwise: typeof row.clockwise === 'boolean' ? row.clockwise : fail(),
       ...(row.magnitude === undefined ? {} : { magnitude: number(row.magnitude) }),
+      ...(row.role === undefined ? {} : { role: row.role === 'applied' || row.role === 'reaction' ? row.role : fail() }),
       ...(row.label === undefined ? {} : { label: label(row.label) }),
       ...(row.labelPosition === undefined ? {} : { labelPosition: point(row.labelPosition) }) })),
     dimensions: rows(root.dimensions, (row) => ({ id: id(row.id), start: point(row.start), end: point(row.end),

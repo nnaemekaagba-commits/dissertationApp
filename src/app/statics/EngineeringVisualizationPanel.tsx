@@ -704,7 +704,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [forceError, setForceError] = useState('');
   const [selectedForceId, setSelectedForceId] = useState<string | null>(null);
   const [momentFormOpen, setMomentFormOpen] = useState(false);
-  const [momentDraft, setMomentDraft] = useState({ x: '0', y: '0', label: 'M', clockwise: 'clockwise', magnitude: '' });
+  const [momentDraft, setMomentDraft] = useState({ x: '0', y: '0', label: 'M', clockwise: 'clockwise', magnitude: '', role: 'applied' });
   const [momentError, setMomentError] = useState('');
   const [selectedMomentId, setSelectedMomentId] = useState<string | null>(null);
   const [dimensionFormOpen, setDimensionFormOpen] = useState(false);
@@ -1226,6 +1226,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       const momentId = crypto.randomUUID();
       const input = { at: { x: Number(momentDraft.x), y: Number(momentDraft.y) },
         label: momentDraft.label, clockwise: momentDraft.clockwise === 'clockwise',
+        role: momentDraft.role === 'reaction' ? 'reaction' as const : 'applied' as const,
         ...(momentDraft.magnitude.trim() ? { magnitude: Number(momentDraft.magnitude) } : {}) };
       const next = addFBDMoment(fbdState, input, workspace, momentId);
       const moment = next.moments[next.moments.length - 1];
@@ -1376,6 +1377,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       }, workspace);
       else if (selectedKind === 'moment') next = editFBDMoment(fbdState, selectedId, {
         at: point('at'), clockwise: value('direction') === 'clockwise', label: value('label'),
+        role: value('role') === 'reaction' ? 'reaction' : 'applied',
         ...(value('magnitude').trim() ? { magnitude: number('magnitude') } : {}),
       }, workspace);
       else if (selectedKind === 'dimension') next = editFBDDimension(fbdState, selectedId, {
@@ -1800,6 +1802,10 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
                 className="block w-full rounded border border-slate-300 bg-white px-2 py-1">
                 <option value="clockwise">Clockwise</option><option value="counterclockwise">Counterclockwise</option>
               </select></label>
+              <label>Moment type<select name="role" defaultValue={item.role || 'applied'}
+                className="block w-full rounded border border-slate-300 bg-white px-2 py-1">
+                <option value="applied">External applied moment</option><option value="reaction">Support reaction moment</option>
+              </select></label>
               {editNumber('magnitude', `Magnitude (${workspace.units.force}·${workspace.units.length}, optional)`, item.magnitude, true)}</>;
           })()}
           {selectedKind === 'dimension' && (() => {
@@ -1912,6 +1918,11 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           <label>Magnitude ({workspace.units.force}·{workspace.units.length}, optional)<input type="number" min="0" step="any" value={momentDraft.magnitude}
             onChange={(event) => setMomentDraft({ ...momentDraft, magnitude: event.target.value })}
             className="block w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <label>Moment type<select value={momentDraft.role}
+            onChange={(event) => setMomentDraft({ ...momentDraft, role: event.target.value })}
+            className="block w-full rounded border border-slate-300 bg-white px-2 py-1">
+            <option value="applied">External applied moment</option><option value="reaction">Support reaction moment</option>
+          </select></label>
           <div className="flex items-end gap-2"><button type="submit" className="rounded bg-blue-600 px-2 py-1 text-white">Add moment</button>
             <button type="button" onClick={() => setMomentFormOpen(false)} className="rounded bg-slate-100 px-2 py-1">Cancel</button></div>
           {momentError && <p className="col-span-2 text-red-700" role="alert">{momentError}</p>}

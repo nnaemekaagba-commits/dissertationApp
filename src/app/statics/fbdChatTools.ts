@@ -52,6 +52,11 @@ const bool = (row: Record<string, unknown>, key: string): boolean => {
   if (typeof row[key] !== 'boolean') throw new Error(`Invalid ${key}.`);
   return row[key] as boolean;
 };
+const role = (row: Record<string, unknown>, key: string): 'applied' | 'reaction' => {
+  const value = str(row, key, 16);
+  if (value !== 'applied' && value !== 'reaction') throw new Error(`Invalid ${key}.`);
+  return value;
+};
 const patch = (row: Record<string, unknown>, id: string) => {
   if (!Object.keys(row).some((key) => key !== id)) throw new Error('Specify a property to change.');
 };
@@ -140,7 +145,7 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
   }
   if (name === 'fbd_add_moment' || name === 'fbd_edit_moment') {
     const editing = name === 'fbd_edit_moment';
-    const row = args(value, editing ? ['id', 'x', 'y', 'clockwise', 'label', 'magnitude'] : ['x', 'y', 'clockwise', 'label', 'magnitude'], editing ? ['id'] : ['x', 'y', 'clockwise', 'label']);
+    const row = args(value, editing ? ['id', 'x', 'y', 'clockwise', 'label', 'magnitude', 'role'] : ['x', 'y', 'clockwise', 'label', 'magnitude', 'role'], editing ? ['id'] : ['x', 'y', 'clockwise', 'label']);
     const id = editing ? str(row, 'id', 128) : newId();
     const old = editing ? state.moments.find((item) => item.id === id) : undefined;
     if (editing && !old) throw new Error('Unknown FBD moment.');
@@ -149,6 +154,7 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
       y: row.y === undefined ? old!.at.y : num(row, 'y') },
       clockwise: row.clockwise === undefined ? old!.clockwise : bool(row, 'clockwise'),
       label: row.label === undefined ? old!.label || '' : str(row, 'label', 80),
+      role: row.role === undefined ? old?.role || 'applied' : role(row, 'role'),
       ...(row.magnitude === undefined ? old?.magnitude === undefined ? {} : { magnitude: old.magnitude }
         : { magnitude: num(row, 'magnitude') }) };
     return editing ? editFBDMoment(state, id, input, workspace) : addFBDMoment(state, input, workspace, id);
