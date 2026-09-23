@@ -16,3 +16,20 @@ Do not modify the FBD and do not call mutating engineering or FBD tools. If the 
 Student's FBD question and problem description:
 ${response}`;
 }
+
+export function buildFBDGroundedChatRequest(studentRequest: string, engineeringState: unknown,
+  fbdState: unknown): string {
+  const request = studentRequest.trim();
+  if (!request) throw new Error('The student request is required.');
+  return `Answer the student's request using the current engineering canvas data below.
+The FBD JSON is the student's actual visible work. Inspect it before answering and refer specifically to its bodies, members, forces, moments, labels, directions, magnitudes, locations, and support metadata. Do not ask the student to repeat information already present in these snapshots. Do not invent canvas elements. Do not silently modify the diagram. If the request explicitly asks for a calculation, use an available deterministic calculation tool and place the validated result in chat; never substitute invented numerical results.
+
+Student request:
+${request}
+
+Current student-built FBD JSON:
+${JSON.stringify(fbdState)}
+
+Current engineering workspace JSON:
+${JSON.stringify(engineeringState)}`;
+}

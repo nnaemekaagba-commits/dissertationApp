@@ -5,7 +5,7 @@ import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { createEmptyFBDState, selectFBDTarget, addFBDForce, addFBDMoment,
   createFBDHistory } from './fbdState.ts';
 import { checkStudentFBD, explicitlyRequestsFBDCheck, formatFBDCheckFeedback } from './checkFBD.ts';
-import { buildFBDCoachingRequest, FBD_CHECK_QUESTIONS } from './fbdCheckConversation.ts';
+import { buildFBDCoachingRequest, buildFBDGroundedChatRequest, FBD_CHECK_QUESTIONS } from './fbdCheckConversation.ts';
 import { createFBDCheckResearchEvent } from './researchLog.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
@@ -66,6 +66,20 @@ test('an explicitly requested check recognizes a correct beam FBD without changi
   assert.deepEqual(event.fbdState, state);
   assert.deepEqual(event.comparisonResult, check);
   assert.equal(event.feedback, feedback);
+});
+
+test('ordinary chat is grounded in the live FBD without changing the visible student message', () => {
+  const state = addFBDForce(empty, { at: { x: 2, y: 0 }, angle: -90,
+    label: 'P', magnitude: 4, role: 'applied' }, workspace, 'P');
+  const request = buildFBDGroundedChatRequest('What is shown here?', workspace, state);
+  assert.match(request, /student's actual visible work/);
+  assert.match(request, /"label":"P"/);
+  assert.match(request, /"magnitude":4/);
+  assert.match(request, /Do not ask the student to repeat information already present/);
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /const hasVisibleFBD/);
+  assert.match(app, /buildFBDGroundedChatRequest\(requestContent, engineeringState, fbdState\)/);
+  assert.match(app, /content: studentInput\.content/);
 });
 
 test('checker finds omitted applied load and missing pin and roller reactions', () => {

@@ -18,7 +18,7 @@ import { executeEngineeringToolBatch, formatEngineeringToolBatch,
 import { executeFBDChatToolBatch, formatFBDChatToolBatch, FBD_CHAT_TOOL_NAMES,
   type FBDChatBatch, type FBDChatToolCall } from './statics/fbdChatTools';
 import { checkStudentFBD, explicitlyRequestsFBDCheck, formatFBDCheckFeedback } from './statics/checkFBD';
-import { buildFBDCoachingRequest, FBD_CHECK_QUESTIONS } from './statics/fbdCheckConversation';
+import { buildFBDCoachingRequest, buildFBDGroundedChatRequest, FBD_CHECK_QUESTIONS } from './statics/fbdCheckConversation';
 import { explicitlyRequestsVisualCalculation, visualCalculationForRequest,
   type RequestedVisualCalculation } from './statics/calculationPolicy';
 import type { BeamReactionResult } from './statics/calculations';
@@ -1897,14 +1897,21 @@ export default function App() {
       provider: requestProvider
     };
 
-    const currentInput = requestContent;
+    const engineeringState = staticsControllerRef.current?.getWorkspace();
+    const fbdState = staticsControllerRef.current?.getFbdState();
+    const hasVisibleFBD = Boolean(fbdState && (fbdState.bodies.length || fbdState.joints.length ||
+      fbdState.members.length || fbdState.forces.length || fbdState.moments.length ||
+      fbdState.dimensions.length || fbdState.angles.length || fbdState.labels.length));
+    const currentInput = !options && hasVisibleFBD
+      ? buildFBDGroundedChatRequest(requestContent, engineeringState, fbdState)
+      : requestContent;
     const conversationHistory = sanitizeConversationHistoryForChat(messages);
     const chatPayload = {
       message: currentInput,
       conversationHistory,
       provider: requestProvider,
-      engineeringState: staticsControllerRef.current?.getWorkspace(),
-      fbdState: staticsControllerRef.current?.getFbdState(),
+      engineeringState,
+      fbdState,
     };
     const maxGatewayPayloadBytes = 9_000_000;
 
