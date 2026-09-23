@@ -5,7 +5,7 @@ import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { createEmptyFBDState, selectFBDTarget, addFBDForce, addFBDMoment,
   createFBDHistory } from './fbdState.ts';
 import { checkStudentFBD, explicitlyRequestsFBDCheck, formatFBDCheckFeedback } from './checkFBD.ts';
-import { buildFBDCoachingRequest, buildFBDGroundedChatRequest, FBD_CHECK_QUESTIONS } from './fbdCheckConversation.ts';
+import { buildFBDCoachingRequest, buildFBDGroundedChatRequest, describeRigidBodyCanvas, FBD_CHECK_QUESTIONS } from './fbdCheckConversation.ts';
 import { createFBDCheckResearchEvent } from './researchLog.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
@@ -87,6 +87,22 @@ test('checker finds omitted applied load and missing pin and roller reactions', 
   assert.equal(check.status, 'needs_revision');
   assert.equal(check.issues.filter((issue) => issue.kind === 'omitted_applied_load').length, 1);
   assert.equal(check.issues.filter((issue) => issue.kind === 'missing_force').length, 3);
+});
+
+test('rigid-body chat context groups reaction components into one physical support', () => {
+  const fbd = { bodies: [{ id: 'BD', label: 'BD' }], joints: [], members: [], dimensions: [], angles: [], labels: [],
+    forces: [
+      { id: 'P', at: { x: 1, y: 0 }, angle: -90, magnitude: 4, role: 'applied' },
+      { id: 'Dx', at: { x: 4, y: 0 }, angle: 0, magnitude: 4.2, role: 'reaction' },
+      { id: 'Dy', at: { x: 4, y: 0 }, angle: 90, magnitude: 2, role: 'reaction' },
+    ], moments: [{ id: 'MD', at: { x: 4, y: 0 }, clockwise: true, magnitude: 25, role: 'reaction' }] };
+  const summary = describeRigidBodyCanvas(fbd);
+  assert.match(summary, /exactly 1 support: fixed support at \(4, 0\)/);
+  assert.match(summary, /external force P at \(1, 0\)/);
+  assert.match(summary, /reaction moment MD at \(4, 0\)/);
+  assert.match(summary, /Endpoint labels alone are not supports/);
+  const request = buildFBDGroundedChatRequest('Is this in equilibrium?', workspace, fbd);
+  assert.match(request, /Treat the summary's support count and classifications as authoritative/);
 });
 
 test('roller arrow on the wrong axis is identified as incorrect reaction representation', () => {
