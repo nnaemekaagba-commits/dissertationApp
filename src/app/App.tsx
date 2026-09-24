@@ -24,7 +24,7 @@ import { explicitlyRequestsVisualCalculation, visualCalculationForRequest,
 import type { BeamReactionResult } from './statics/calculations';
 import { createFBDCheckResearchEvent, createFBDToolResearchEvents, createToolResearchEvents,
   createVisualizationResearchEvent, getEngineeringSessionId, nextFBDResearchSequence,
-  createFBDResearchContext, fbdActionForVisualization, fbdToolElement,
+  createFBDResearchContext, fbdActionForVisualization, fbdToolElement, saveLocalResearchEvent,
   type EngineeringResearchEvent, type VisualizationAction } from './statics/researchLog';
 import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
   FBDElement, FBDElementKind, FBDPrimitiveKind, FBDState, FBDTarget } from './statics/fbdState';
@@ -1322,8 +1322,11 @@ export default function App() {
   );
 
   const researchEventQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const researchActorId = userId || 'guest';
   const recordEngineeringEvent = useCallback((event: EngineeringResearchEvent) => {
     const send = async () => {
+      saveLocalResearchEvent(localStorage, researchActorId, event);
+      if (!userId || !accessToken) return;
       const response = await fetch(`${API_BASE_URL}/engineering-events`, {
         method: 'POST', headers: buildApiHeaders(true), body: JSON.stringify(event),
       });
@@ -1332,7 +1335,7 @@ export default function App() {
     const pending = researchEventQueueRef.current.then(send, send);
     researchEventQueueRef.current = pending.catch(() => {});
     return pending;
-  }, [buildApiHeaders]);
+  }, [accessToken, buildApiHeaders, researchActorId, userId]);
 
   const recordVisualizationInteraction = useCallback((action: VisualizationAction, target?: FBDTarget,
     force?: FBDForce, moment?: FBDMoment, dimension?: FBDDimension, angle?: FBDAngle, label?: FBDLabel,
@@ -1340,8 +1343,7 @@ export default function App() {
       after: FBDElement | null; dragTarget?: 'label' | 'application' },
     history?: { before: FBDState; after: FBDState },
     primitive?: { kind: FBDPrimitiveKind; id: string }) => {
-    if (!userId) return;
-    const sessionId = getEngineeringSessionId(sessionStorage, userId);
+    const sessionId = getEngineeringSessionId(sessionStorage, researchActorId);
     const event = createVisualizationResearchEvent(sessionId, action,
       undefined, undefined, target, force, moment, dimension, angle, label, change, history);
     if (event.kind === 'visualization') {
@@ -1357,7 +1359,7 @@ export default function App() {
       }
     }
     void recordEngineeringEvent(event).catch((error) => console.warn('Visualization event logging failed.', error));
-  }, [recordEngineeringEvent, userId]);
+  }, [recordEngineeringEvent, researchActorId]);
 
   useEffect(() => {
     if (previousDisplayModeRef.current === displayMode) return;
@@ -3512,7 +3514,7 @@ ${data.response}` : data.response,
               
               <div className="flex-1 overflow-y-auto p-3">
                 {archiveTab === 'fbd' ? <Suspense fallback={<p className="text-sm text-slate-500">Loading FBD history…</p>}>
-                  <StudentFBDArchive key={userId} accessToken={accessToken} />
+                  <StudentFBDArchive key={userId || 'guest'} accessToken={accessToken} userId={researchActorId} />
                 </Suspense> : archiveEntries.map((entry, index) => (
                   <div
                     key={entry.id}

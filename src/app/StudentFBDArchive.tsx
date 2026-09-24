@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE_URL } from '/utils/api';
 import type { EngineeringResearchEvent } from './statics/researchLog';
+import { loadLocalResearchEvents } from './statics/researchLog';
 import { buildFBDReplay, replaySessions, replayStructureIndex } from './statics/fbdReplay';
 import { ReplayCanvas } from './FBDReplayCanvas';
 
 /** Reads only the signed-in student's research events; no replay action writes data. */
-export function StudentFBDArchive({ accessToken }: { accessToken: string | null }) {
+export function StudentFBDArchive({ accessToken, userId }: { accessToken: string | null; userId: string }) {
   const [events, setEvents] = useState<EngineeringResearchEvent[]>([]);
   const [sessionId, setSessionId] = useState('');
   const [stepIndex, setStepIndex] = useState(0);
@@ -18,32 +19,39 @@ export function StudentFBDArchive({ accessToken }: { accessToken: string | null 
   const step = steps[Math.min(stepIndex, steps.length - 1)];
 
   const load = useCallback(async () => {
-    if (!accessToken) return;
     setLoading(true); setError('');
     try {
+      const local = loadLocalResearchEvents(localStorage, userId);
+      if (!accessToken) {
+        setEvents(local); setSessionId((current) => replaySessions(local).includes(current)
+          ? current : replaySessions(local)[0] || ''); setStepIndex(0); setLoaded(true); return;
+      }
       const response = await fetch(`${API_BASE_URL}/engineering-events`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      if (!response.ok) throw new Error(response.status === 401
-        ? 'Sign in to view your FBD history.' : 'Could not load your FBD history.');
+      if (!response.ok) throw new Error('AWS FBD history is unavailable; showing this device’s saved history.');
       const data = await response.json();
-      const next = Array.isArray(data.events) ? data.events as EngineeringResearchEvent[] : [];
+      const remote = Array.isArray(data.events) ? data.events as EngineeringResearchEvent[] : [];
+      const byId = new Map([...local, ...remote].map((event) => [event.eventId, event]));
+      const next = [...byId.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
       setEvents(next);
       setSessionId((current) => replaySessions(next).includes(current) ? current : replaySessions(next)[0] || '');
       setStepIndex(0);
       setLoaded(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load your FBD history.');
+      const local = loadLocalResearchEvents(localStorage, userId);
+      setEvents(local); setSessionId((current) => replaySessions(local).includes(current)
+        ? current : replaySessions(local)[0] || ''); setStepIndex(0); setLoaded(true);
     } finally { setLoading(false); }
-  }, [accessToken]);
+  }, [accessToken, userId]);
 
   useEffect(() => { void load(); }, [load]);
 
-  if (!accessToken) return <p className="p-3 text-sm text-slate-600">Sign in to save and review your FBD history.</p>;
   return <section aria-label="My FBD History" className="space-y-3">
     <div className="flex items-center justify-between gap-2">
       <div><h3 className="font-semibold">My FBD History</h3>
-        <p className="text-xs text-slate-500">A read-only record of the FBDs created in your account.</p></div>
+        <p className="text-xs text-slate-500">A read-only record of FBD actions saved for this {accessToken ? 'account' : 'guest session'}.</p></div>
       <button type="button" onClick={() => void load()} disabled={loading}
         className="rounded border px-2 py-1 text-xs disabled:opacity-50">Refresh</button>
     </div>
