@@ -10,7 +10,7 @@ import { publicAnonKey } from '/utils/supabase/info';
 import { API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } from '/utils/api';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
-import { createStudentMessageInput, hasTransferredFiles, STUDENT_INPUT_NOTICE } from './studentInput';
+import { createStudentMessageInput, hasTransferredFiles, pastedImageFiles, IMAGE_PASTE_NOTICE, STUDENT_INPUT_NOTICE } from './studentInput';
 import { AuthPage } from './components/AuthPage';
 import { StaticsWorkspaceProvider, type StaticsWorkspaceController } from './statics/StaticsWorkspaceProvider';
 import { executeEngineeringToolBatch, formatEngineeringToolBatch,
@@ -271,6 +271,18 @@ const getBase64PayloadLength = (value: string) => {
 };
 
 const getApproxPayloadBytes = (value: unknown) => new Blob([JSON.stringify(value)]).size;
+
+const readImageFile = (file: File): Promise<UploadedFile> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve({
+    name: file.name || `pasted-image-${Date.now()}.png`,
+    type: file.type || 'image/png',
+    content: String(reader.result),
+    preview: String(reader.result),
+  });
+  reader.onerror = () => reject(reader.error || new Error('Could not read the pasted image.'));
+  reader.readAsDataURL(file);
+});
 
 const compressImageForAI = async (file: UploadedFile): Promise<UploadedFile> => {
   if (!file.type.startsWith('image/') || file.type === 'image/gif') {
@@ -1256,6 +1268,7 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [archiveMessages, setArchiveMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [pastedImages, setPastedImages] = useState<UploadedFile[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [archiveTab, setArchiveTab] = useState<'chat' | 'fbd'>('chat');
@@ -1858,7 +1871,8 @@ export default function App() {
     preserveDraft?: boolean;
   }) => {
     if (isRecordingAudio || isTranscribingAudio) return;
-    const displayInput = options?.displayInput ?? input;
+    const activeImages = options ? [] : pastedImages;
+    const displayInput = options?.displayInput ?? (input || (activeImages.length ? 'Please analyze this image.' : ''));
     const answeringFBDCoachingPrompt = awaitingFBDCoachingDetails && !options;
     const requestInput = answeringFBDCoachingPrompt
       ? buildFBDCoachingRequest(displayInput)
@@ -1896,7 +1910,8 @@ export default function App() {
       inputModality: studentInput.inputModality,
       transcriptionSource: studentInput.transcriptionSource,
       aiProvider: CHAT_PROVIDER_LABELS[requestProvider],
-      provider: requestProvider
+      provider: requestProvider,
+      attachments: activeImages,
     };
 
     const engineeringState = staticsControllerRef.current?.getWorkspace();
@@ -1914,6 +1929,7 @@ export default function App() {
       provider: requestProvider,
       engineeringState,
       fbdState,
+      files: activeImages.map(({ name, type, content }) => ({ name, type, content })),
     };
     const maxGatewayPayloadBytes = 9_000_000;
 
@@ -1945,6 +1961,7 @@ export default function App() {
       setMessages(prev => [...prev, userMessage]);
       saveMessage(userMessage);
       if (!options?.preserveDraft) setInput('');
+      if (!options?.preserveDraft) setPastedImages([]);
       setPendingInputModality('text');
       setTranscriptionSource(undefined);
     }
@@ -3126,7 +3143,28 @@ ${data.response}` : data.response,
     await runInternetImageSearch(imageSearchQuery, `**Pull Images from Internet**: ${imageSearchQuery.trim()}`);
   };
   const needsReflection = false;
-  const canSendMessage = !isRecordingAudio && !isTranscribingAudio && Boolean(input.trim());
+  const canSendMessage = !isRecordingAudio && !isTranscribingAudio && Boolean(input.trim() || pastedImages.length);
+
+  const handleImagePaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!hasTransferredFiles(event.clipboardData)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const images = pastedImageFiles(event.clipboardData);
+    if (!images.length) {
+      setAudioRecordingError(IMAGE_PASTE_NOTICE);
+      return;
+    }
+    try {
+      const next = await Promise.all(images.map(async (file) => {
+        const compressed = await compressImageForAI(await readImageFile(file));
+        return { ...compressed, preview: compressed.content };
+      }));
+      setPastedImages((current) => [...current, ...next].slice(0, 4));
+      setAudioRecordingError('');
+    } catch {
+      setAudioRecordingError('The pasted image could not be read. Please copy it and try again.');
+    }
+  };
   const archiveEntries = buildArchiveEntries(archiveMessages);
   const archiveQueryCount = archiveEntries.length;
   const prepareAiComparisonPrompt = (
@@ -3236,12 +3274,6 @@ ${data.response}` : data.response,
   return (
     <StaticsWorkspaceProvider key={userId} userId={userId} ref={staticsControllerRef}>
     <div className="h-screen bg-slate-50 flex"
-      onPasteCapture={(event) => {
-        if (hasTransferredFiles(event.clipboardData)) {
-          event.preventDefault();
-          setAudioRecordingError(STUDENT_INPUT_NOTICE);
-        }
-      }}
       onDragOverCapture={(event) => { if (hasTransferredFiles(event.dataTransfer)) event.preventDefault(); }}
       onDropCapture={(event) => {
         if (hasTransferredFiles(event.dataTransfer)) {
@@ -3376,10 +3408,24 @@ ${data.response}` : data.response,
                     >
                       <Send className="size-4" />
                     </Button>
+                    {pastedImages.length > 0 && (
+                      <div className="mb-1.5 flex flex-wrap gap-2" aria-label="Pasted images">
+                        {pastedImages.map((image, index) => (
+                          <div key={`${image.name}-${index}`} className="relative h-16 w-20 overflow-hidden rounded-md border bg-slate-50">
+                            <img src={image.preview || image.content} alt={image.name} className="h-full w-full object-cover" />
+                            <button type="button" aria-label={`Remove ${image.name}`}
+                              onClick={() => setPastedImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                              className="absolute right-0.5 top-0.5 rounded-full bg-black/70 p-0.5 text-white hover:bg-black">
+                              <X className="size-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <Textarea
                       value={input}
                       onChange={(e) => { setInput(e.target.value); if (!e.target.value.trim()) { setPendingInputModality('text'); setTranscriptionSource(undefined); } }}
-                      onPaste={(e) => { if (hasTransferredFiles(e.clipboardData)) { e.preventDefault(); setAudioRecordingError(STUDENT_INPUT_NOTICE); } }}
+                      onPaste={handleImagePaste}
                       onDrop={(e) => { if (hasTransferredFiles(e.dataTransfer)) { e.preventDefault(); setAudioRecordingError(STUDENT_INPUT_NOTICE); } }}
                       onDragOver={(e) => { if (hasTransferredFiles(e.dataTransfer)) e.preventDefault(); }}
                       onKeyPress={handleKeyPress}

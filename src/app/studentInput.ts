@@ -1,6 +1,19 @@
 export type InputModality = 'text' | 'audio';
 export type TranscriptionSource = 'browser-speech' | 'recorded-audio';
 export const STUDENT_INPUT_NOTICE = 'For this activity, please communicate by typing or using voice input.';
+export const IMAGE_PASTE_NOTICE = 'Paste an image from your clipboard. Documents and other files are not supported.';
+
+export function pastedImageFiles(
+  transfer: Pick<DataTransfer, 'files' | 'items'> | null | undefined,
+): File[] {
+  if (!transfer) return [];
+  const direct = Array.from(transfer.files).filter((file) => file.type.startsWith('image/'));
+  if (direct.length) return direct;
+  return Array.from(transfer.items)
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+}
 
 export function createStudentMessageInput(
   content: string,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { createStudentMessageInput, hasTransferredFiles, STUDENT_INPUT_NOTICE } from './studentInput.ts';
+import { createStudentMessageInput, hasTransferredFiles, pastedImageFiles, IMAGE_PASTE_NOTICE, STUDENT_INPUT_NOTICE } from './studentInput.ts';
 
 const transfer = (files = [], items = [], types = ['text/plain'], data = {}) =>
   ({ files, items, types, getData: (type) => data[type] || '' });
@@ -30,7 +30,7 @@ test('drag and drop files are rejected', () => {
   assert.equal(hasTransferredFiles(transfer([], [{ kind: 'file', type: 'application/pdf' }], ['Files'])), true);
 });
 
-test('pasted image and file objects are rejected while pasted text is allowed', () => {
+test('pasted images are identified while other files remain transfers', () => {
   assert.equal(hasTransferredFiles(transfer([], [{ kind: 'file', type: 'image/png' }], ['image/png'])), true);
   assert.equal(hasTransferredFiles(transfer([], [{ kind: 'file', type: 'application/pdf' }], ['Files'])), true);
   assert.equal(hasTransferredFiles(transfer([], [{ kind: 'string', type: 'text/plain' }], ['text/plain'])), false);
@@ -39,11 +39,21 @@ test('pasted image and file objects are rejected while pasted text is allowed', 
   assert.equal(hasTransferredFiles(transfer([], [], ['text/html', 'text/plain'], { 'text/html': '<b>plain words</b>', 'text/plain': 'plain words' })), false);
 });
 
-test('student composer has no file picker or attachment button and guards paste/drop', () => {
+test('clipboard image extraction accepts images only', () => {
+  const image = { name: 'diagram.png', type: 'image/png' };
+  const document = { name: 'notes.pdf', type: 'application/pdf' };
+  assert.deepEqual(pastedImageFiles(transfer([image, document])), [image]);
+  assert.deepEqual(pastedImageFiles(transfer([], [{ kind: 'file', type: 'image/png', getAsFile: () => image }])), [image]);
+  assert.deepEqual(pastedImageFiles(transfer([document])), []);
+  assert.match(IMAGE_PASTE_NOTICE, /image/);
+});
+
+test('student composer has no file picker and handles image paste while guarding drop', () => {
   const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(app, /<input\s+[^>]*type=["']file["']/i);
   assert.doesNotMatch(app, /<Paperclip\b|title=["']Attach files["']/i);
-  assert.match(app, /onPasteCapture=/);
+  assert.match(app, /onPaste=\{handleImagePaste\}/);
+  assert.match(app, /aria-label="Pasted images"/);
   assert.match(app, /onDropCapture=/);
   assert.match(app, /onDragOverCapture=/);
   assert.match(app, /STUDENT_INPUT_NOTICE/);
