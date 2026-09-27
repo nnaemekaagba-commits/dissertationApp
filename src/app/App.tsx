@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback, lazy, Suspense } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Bot, Globe2, Search, Table, Pencil, Save } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Shuffle, Globe2, Search, Table, Pencil, Save } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -1096,8 +1096,8 @@ const MessageItem = memo(({
                 className="source-review-link source-review-ai"
                 onClick={() => onCompareWithAnotherAI(sourcePrompt || '', displayContent, message.provider || message.aiProvider, message.id)}
               >
-                <Bot className="size-4" />
-                <span>Ask another AI</span>
+                <Shuffle className="size-4" />
+                <span>Different explanation</span>
               </button>
               <button
                 type="button"
@@ -1291,6 +1291,7 @@ export default function App() {
   const [isSearchingImages, setIsSearchingImages] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<ChatProvider>('openai');
   const selectedProviderRef = useRef<ChatProvider>('openai');
+  const requestInFlightRef = useRef(false);
   const selectChatProvider = (provider: ChatProvider) => {
     selectedProviderRef.current = provider;
     setSelectedProvider(provider);
@@ -1870,7 +1871,7 @@ export default function App() {
     comparisonResponse?: boolean;
     preserveDraft?: boolean;
   }) => {
-    if (isRecordingAudio || isTranscribingAudio) return;
+    if (isRecordingAudio || isTranscribingAudio || requestInFlightRef.current) return;
     const activeImages = options ? [] : pastedImages;
     const displayInput = options?.displayInput ?? (input || (activeImages.length ? 'Please analyze this image.' : ''));
     const answeringFBDCoachingPrompt = awaitingFBDCoachingDetails && !options;
@@ -1893,6 +1894,8 @@ export default function App() {
         return;
       }
     }
+
+    requestInFlightRef.current = true;
 
     if (isListening) {
       recognitionRef.current?.stop();
@@ -1935,6 +1938,7 @@ export default function App() {
 
     if (getApproxPayloadBytes(chatPayload) > maxGatewayPayloadBytes) {
       alert('This message is too large to send. Please shorten the text.');
+      requestInFlightRef.current = false;
       return;
     }
 
@@ -1987,6 +1991,7 @@ export default function App() {
         } catch (error) { console.warn('FBD check event logging failed.', error); }
       }
       insertAssistantMessage(assistantMessage);
+      requestInFlightRef.current = false;
       return;
     }
     if (userId && (displayMode !== 'structure' ||
@@ -2176,6 +2181,7 @@ ${data.response}` : data.response,
       insertAssistantMessage(assistantMessage);
     } finally {
       setIsTyping(false);
+      requestInFlightRef.current = false;
     }
   };
 
@@ -3175,19 +3181,19 @@ ${data.response}` : data.response,
   ) => {
     const nextProvider = getAlternateChatProvider(sourceProvider);
     const requestPrompt = [
-      'Answer the original query as a second AI reviewer.',
-      'Give a complete, normal response to the query first. Then briefly mention any important differences from the previous AI response.',
+      'Explain the answer to the original query again using a clearly different teaching approach.',
+      'Be specific to the student’s question. Avoid repeating sentences or the same structure from the previous explanation.',
       '',
       'Original query:',
       sourcePrompt,
       '',
-      'Previous AI response for context:',
+      'Previous explanation to avoid duplicating:',
       responseContent,
     ].join('\n');
 
     selectChatProvider(nextProvider);
     void handleSend({
-      displayInput: sourcePrompt || 'Ask another AI to review the previous response',
+      displayInput: sourcePrompt || 'Give me a different explanation',
       requestInput: requestPrompt,
       provider: nextProvider,
       skipUserMessage: true,

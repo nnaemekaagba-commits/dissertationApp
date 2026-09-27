@@ -54,6 +54,10 @@ test('student composer has no file picker and handles image paste while guarding
   assert.doesNotMatch(app, /<Paperclip\b|title=["']Attach files["']/i);
   assert.match(app, /onPaste=\{handleImagePaste\}/);
   assert.match(app, /aria-label="Pasted images"/);
+  assert.match(app, /<Shuffle className="size-4" \/>/);
+  assert.match(app, /<span>Different explanation<\/span>/);
+  assert.match(app, /requestInFlightRef\.current/);
+  assert.doesNotMatch(app, /<span>Ask another AI<\/span>/);
   assert.match(app, /onDropCapture=/);
   assert.match(app, /onDragOverCapture=/);
   assert.match(app, /STUDENT_INPUT_NOTICE/);
