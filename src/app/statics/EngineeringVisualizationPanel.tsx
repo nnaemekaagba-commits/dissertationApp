@@ -887,7 +887,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       if (!object) continue;
       const annotation = object.userData.fbdDragLabel as { kind: FBDElementKind; id: string } | undefined;
       const applicationId = object.userData.fbdDragApplication as string | undefined;
-      if (!annotation && (!applicationId || applicationId !== selectedForceId)) continue;
+      if (!annotation && !applicationId) continue;
       const controls = controlsRef.current;
       const originalApplication = applicationId
         ? fbdState.forces.find((force) => force.id === applicationId)?.at
@@ -1794,7 +1794,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
               </select></label>
               {editNumber('magnitude', `Magnitude (${workspace.units.force}, optional)`, item.magnitude, true)}
               <div className="col-span-2 rounded bg-slate-100 px-2 py-1 text-slate-700">
-                Drag the selected force arrow to move its application point. You can also edit Point X and Point Y above.
+                Drag a force arrow to move its application point. You can also edit Point X and Point Y above.
               </div></>;
           })()}
           {selectedKind === 'moment' && (() => {

@@ -766,8 +766,8 @@ test('pointer interaction provides direct drag and coordinate alternatives witho
   assert.match(panel, /addEventListener\('pointermove', handlePointerMove, true\)/);
   assert.match(panel, /addEventListener\('pointerup', handlePointerUp, true\)/);
   assert.match(panel, /fbdDragLabel/);
-  assert.match(panel, /applicationId !== selectedForceId/);
-  assert.match(panel, /Drag the selected force arrow to move its application point/);
+  assert.match(panel, /if \(!annotation && !applicationId\) continue/);
+  assert.match(panel, /Drag a force arrow to move its application point/);
   assert.match(panel, /aria-label="Position selected FBD label"/);
   assert.match(panel, /fbd_element_drag/);
 });
