@@ -30,11 +30,13 @@ import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene';
 import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene';
 import { DEFAULT_GIVEN_VISIBILITY, GIVEN_TOGGLES, type GivenVisibility } from './fbdGiven';
 import { buildGivenFBDOverlay } from './fbdGivenScene';
+import { forceApplicationPointAfterDrag } from './fbdDrag';
 
 type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
 type FBDDrag = { pointerId: number; kind: FBDElementKind; id: string;
   target: 'label' | 'application'; object: THREE.Object3D;
   start: THREE.Vector3; original: THREE.Vector3; current: THREE.Vector3;
+  originalApplication?: { x: number; y: number };
   clientX: number; clientY: number; moved: boolean; controlsEnabled: boolean };
 const VIEW_BUTTONS: { label: string; mode: Exclude<ViewMode, 'free'> }[] = [
   { label: 'Front', mode: 'front' },
@@ -887,9 +889,13 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       const applicationId = object.userData.fbdDragApplication as string | undefined;
       if (!annotation && (!applicationId || applicationId !== selectedForceId)) continue;
       const controls = controlsRef.current;
+      const originalApplication = applicationId
+        ? fbdState.forces.find((force) => force.id === applicationId)?.at
+        : undefined;
       dragRef.current = { pointerId: event.pointerId, kind: annotation?.kind || 'force',
         id: annotation?.id || applicationId!, target: annotation ? 'label' : 'application', object,
         start: start.clone(), original: object.position.clone(), current: object.position.clone(),
+        originalApplication: originalApplication ? { ...originalApplication } : undefined,
         clientX: event.clientX, clientY: event.clientY, moved: false,
         controlsEnabled: controls?.enabled ?? true };
       if (controls) controls.enabled = false;
@@ -930,7 +936,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     }
     const before = getFBDElement(fbdState, drag.kind, drag.id);
     if (!before) return;
-    const at = { x: drag.current.x, y: drag.current.y };
+    const at = drag.target === 'application' && drag.originalApplication
+      ? forceApplicationPointAfterDrag(drag.originalApplication, drag.original, drag.current)
+      : { x: drag.current.x, y: drag.current.y };
     const next = drag.target === 'application'
       ? moveFBDForceApplication(fbdState, drag.id, at, workspace)
       : repositionFBDLabel(fbdState, drag.kind, drag.id, at);
