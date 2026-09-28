@@ -13,6 +13,7 @@ import type { StaticsWorkspace } from './model';
 import { DISPLAY_MODES, displayModeLayout, type EngineeringDisplayMode } from './displayMode';
 import { fbdBodyCorners, fbdBodyEndpointLabelPositions, fbdEndpointLabels, fbdMemberEndFromAngle,
   fbdMemberEndpointLabelPositions,
+  fbdStateForMemberCanvas,
   hasStudentFBDElements, resetStudentFBDElements, selectFBDTarget,
   addFBDBody, addFBDJoint, addFBDMember, editFBDPrimitive,
   addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
@@ -742,6 +743,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [labelError, setLabelError] = useState('');
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
   const [selectedPrimitive, setSelectedPrimitive] = useState<{ kind: FBDPrimitiveKind; id: string } | null>(null);
+  const activeMemberId = selectedPrimitive?.kind === 'member' ? selectedPrimitive.id : fbdState.members[0]?.id ?? null;
   const [primitiveMode, setPrimitiveMode] = useState<FBDPrimitiveKind | null>(null);
   const [primitiveEditing, setPrimitiveEditing] = useState(false);
   const [primitiveDraft, setPrimitiveDraft] = useState({ id: '', label: '', x: '0', y: '0',
@@ -1108,7 +1110,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       scene.remove(modelRef.current);
       disposeGroup(modelRef.current);
     }
-    const model = buildFBDModel(workspace, fbdState, selectedForceId, selectedMomentId,
+    const visibleFbdState = showFbd ? fbdStateForMemberCanvas(fbdState, activeMemberId) : fbdState;
+    const model = buildFBDModel(workspace, visibleFbdState, selectedForceId, selectedMomentId,
       selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility,
       !showFbd, selectedPrimitive);
     modelRef.current = model.group;
@@ -1119,7 +1122,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       framedRef.current = true;
       framedSpanRef.current = model.span;
     }
-  }, [ready, workspace, showFbd, fbdState, selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility, selectedPrimitive]);
+  }, [ready, workspace, showFbd, fbdState, activeMemberId, selectedForceId, selectedMomentId, selectedDimensionId, selectedAngleId, selectedLabelId, givenVisibility, selectedPrimitive]);
 
   const resetView = () => {
     const bounds = viewBoundsRef.current;
@@ -1235,6 +1238,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     try {
       const forceId = crypto.randomUUID();
       const input = { at: { x: Number(forceDraft.x), y: Number(forceDraft.y) },
+        ...(activeMemberId ? { canvasMemberId: activeMemberId } : {}),
         label: forceDraft.label, angle: Number(forceDraft.angle), role: forceDraft.role as 'applied' | 'reaction',
         ...(forceDraft.magnitude.trim() ? { magnitude: Number(forceDraft.magnitude) } : {}) };
       const next = addFBDForce(fbdState, input, workspace, forceId);
@@ -1268,6 +1272,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     try {
       const momentId = crypto.randomUUID();
       const input = { at: { x: Number(momentDraft.x), y: Number(momentDraft.y) },
+        ...(activeMemberId ? { canvasMemberId: activeMemberId } : {}),
         label: momentDraft.label, clockwise: momentDraft.clockwise === 'clockwise',
         role: momentDraft.role === 'reaction' ? 'reaction' as const : 'applied' as const,
         ...(momentDraft.magnitude.trim() ? { magnitude: Number(momentDraft.magnitude) } : {}) };
@@ -1311,6 +1316,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       const dimensionId = crypto.randomUUID();
       const input = { start: { x: Number(dimensionDraft.startX), y: Number(dimensionDraft.startY) },
         end: { x: Number(dimensionDraft.endX), y: Number(dimensionDraft.endY) },
+        ...(activeMemberId ? { canvasMemberId: activeMemberId } : {}),
         label: dimensionDraft.label };
       const next = addFBDDimension(fbdState, input, workspace, dimensionId);
       const dimension = next.dimensions[next.dimensions.length - 1];
@@ -1351,6 +1357,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       const input = { vertex: { x: Number(angleDraft.vertexX), y: Number(angleDraft.vertexY) },
         from: { x: Number(angleDraft.fromX), y: Number(angleDraft.fromY) },
         to: { x: Number(angleDraft.toX), y: Number(angleDraft.toY) },
+        ...(activeMemberId ? { canvasMemberId: activeMemberId } : {}),
         label: angleDraft.label };
       const next = addFBDAngle(fbdState, input, workspace, angleId);
       const angle = next.angles[next.angles.length - 1];
@@ -1383,6 +1390,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       const association = labelAssociations.find((item) => item.value === labelDraft.association);
       if (labelDraft.association && !association) throw new Error('Unknown FBD label association.');
       const input = { at: { x: Number(labelDraft.x), y: Number(labelDraft.y) }, text: labelDraft.text,
+        ...(activeMemberId ? { canvasMemberId: activeMemberId } : {}),
         ...(association ? { associatedWith: {
           kind: labelDraft.association.split(':')[0] as FBDLabelAssociation['kind'],
           id: labelDraft.association.slice(labelDraft.association.indexOf(':') + 1),
@@ -1705,8 +1713,10 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             disabled={!selectedPrimitiveElement || selectedPrimitive?.kind !== 'member'}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Edit Member</button>
         </div>
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-          <label>Student member<select aria-label="Select student-created member"
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs"
+          aria-label="Member canvas selector">
+          <strong>Member canvas</strong>
+          <label className="sr-only">Select member canvas<select aria-label="Select student-created member canvas"
             value={selectedPrimitive ? `${selectedPrimitive.kind}:${selectedPrimitive.id}` : ''}
             onChange={(event) => { const [kind, ...parts] = event.target.value.split(':');
               setSelectedPrimitive(kind ? { kind: kind as FBDPrimitiveKind, id: parts.join(':') } : null);
@@ -1716,6 +1726,16 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             <option value="">Choose element</option>
             {fbdState.members.map((item) => <option key={`member:${item.id}`} value={`member:${item.id}`}>Member · {item.label || item.id}</option>)}
           </select></label>
+          {fbdState.members.map((item, index) => <button key={item.id} type="button"
+            aria-pressed={activeMemberId === item.id}
+            onClick={() => { setSelectedPrimitive({ kind: 'member', id: item.id });
+              setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
+              setSelectedAngleId(null); setSelectedLabelId(null); }}
+            className={`rounded px-2 py-1 ${activeMemberId === item.id
+              ? 'bg-emerald-600 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-300'}`}>
+            Canvas {index + 1}: {item.label || item.id}
+          </button>)}
+          {!fbdState.members.length && <span className="text-slate-500">Add a member to create its canvas.</span>}
         </div>
         {primitiveMode && <form onSubmit={submitPrimitive} className="mb-2 grid grid-cols-2 gap-2 rounded border border-emerald-200 bg-emerald-50 p-2 text-xs"
           aria-label={`${primitiveEditing ? 'Edit' : 'Add'} ${primitiveMode} details`}>

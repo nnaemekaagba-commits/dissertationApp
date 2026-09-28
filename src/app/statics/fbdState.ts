@@ -11,19 +11,20 @@ export type FBDMember = { id: string; start: FBDPoint; end: FBDPoint; label?: st
 export type FBDPrimitiveKind = 'body' | 'joint' | 'member';
 export type FBDPrimitive = FBDBody | FBDJoint | FBDMember;
 export type FBDForceRole = 'applied' | 'reaction';
-export type FBDForce = { id: string; at: FBDPoint; angle: number; magnitude?: number; label?: string;
+export type FBDCanvasElement = { canvasMemberId?: string };
+export type FBDForce = FBDCanvasElement & { id: string; at: FBDPoint; angle: number; magnitude?: number; label?: string;
   role?: FBDForceRole; labelPosition?: FBDPoint };
-export type FBDForceInput = { at: FBDPoint; angle: number; label: string; magnitude?: number; role?: FBDForceRole };
+export type FBDForceInput = FBDCanvasElement & { at: FBDPoint; angle: number; label: string; magnitude?: number; role?: FBDForceRole };
 export type FBDMomentRole = 'applied' | 'reaction';
-export type FBDMoment = { id: string; at: FBDPoint; clockwise: boolean; magnitude?: number; label?: string; role?: FBDMomentRole; labelPosition?: FBDPoint };
-export type FBDMomentInput = { at: FBDPoint; clockwise: boolean; label: string; magnitude?: number; role?: FBDMomentRole };
-export type FBDDimension = { id: string; start: FBDPoint; end: FBDPoint; label?: string; labelPosition?: FBDPoint };
-export type FBDDimensionInput = { start: FBDPoint; end: FBDPoint; label: string };
-export type FBDAngle = { id: string; vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label?: string; labelPosition?: FBDPoint };
-export type FBDAngleInput = { vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label: string };
+export type FBDMoment = FBDCanvasElement & { id: string; at: FBDPoint; clockwise: boolean; magnitude?: number; label?: string; role?: FBDMomentRole; labelPosition?: FBDPoint };
+export type FBDMomentInput = FBDCanvasElement & { at: FBDPoint; clockwise: boolean; label: string; magnitude?: number; role?: FBDMomentRole };
+export type FBDDimension = FBDCanvasElement & { id: string; start: FBDPoint; end: FBDPoint; label?: string; labelPosition?: FBDPoint };
+export type FBDDimensionInput = FBDCanvasElement & { start: FBDPoint; end: FBDPoint; label: string };
+export type FBDAngle = FBDCanvasElement & { id: string; vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label?: string; labelPosition?: FBDPoint };
+export type FBDAngleInput = FBDCanvasElement & { vertex: FBDPoint; from: FBDPoint; to: FBDPoint; label: string };
 export type FBDLabelAssociation = { kind: 'body' | 'joint' | 'force' | 'moment' | 'node' | 'member' | 'dimension' | 'angle'; id: string };
-export type FBDLabel = { id: string; at: FBDPoint; text: string; associatedWith?: FBDLabelAssociation };
-export type FBDLabelInput = { at: FBDPoint; text: string; associatedWith?: FBDLabelAssociation };
+export type FBDLabel = FBDCanvasElement & { id: string; at: FBDPoint; text: string; associatedWith?: FBDLabelAssociation };
+export type FBDLabelInput = FBDCanvasElement & { at: FBDPoint; text: string; associatedWith?: FBDLabelAssociation };
 export type FBDElementKind = FBDPrimitiveKind | 'force' | 'moment' | 'dimension' | 'angle' | 'label';
 export type FBDElement = FBDPrimitive | FBDForce | FBDMoment | FBDDimension | FBDAngle | FBDLabel;
 
@@ -122,6 +123,18 @@ export function hasStudentFBDElements(state: FBDState): boolean {
     state.angles.length + state.labels.length > 0;
 }
 
+/** Returns one member's independent drawing canvas. Legacy annotations belong to the first member. */
+export function fbdStateForMemberCanvas(state: FBDState, memberId: string | null): FBDState {
+  if (!memberId) return { ...state, members: [], forces: [], moments: [], dimensions: [], angles: [], labels: [] };
+  const firstMemberId = state.members[0]?.id;
+  const belongs = (item: FBDCanvasElement) => item.canvasMemberId === memberId ||
+    (item.canvasMemberId === undefined && memberId === firstMemberId);
+  return { ...state, bodies: [], joints: [], members: state.members.filter((item) => item.id === memberId),
+    forces: state.forces.filter(belongs), moments: state.moments.filter(belongs),
+    dimensions: state.dimensions.filter(belongs), angles: state.angles.filter(belongs),
+    labels: state.labels.filter(belongs) };
+}
+
 /** Clears only student annotations, retaining the selected body and structure association. */
 export function resetStudentFBDElements(state: FBDState): FBDState {
   if (!hasStudentFBDElements(state)) return state;
@@ -214,6 +227,7 @@ export function addFBDForce(state: FBDState, input: FBDForceInput, workspace: St
     throw new Error('Enter a valid point, label, direction, and optional nonnegative magnitude.');
   const force: FBDForce = { id: forceId, at: { x: input.at.x, y: input.at.y },
     angle: input.angle, label: input.label.trim(),
+    ...(input.canvasMemberId ? { canvasMemberId: input.canvasMemberId } : {}),
     ...(input.role === 'reaction' ? { role: 'reaction' as const } : {}),
     ...(input.magnitude === undefined ? {} : { magnitude: input.magnitude }) };
   return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
@@ -232,6 +246,7 @@ export function addFBDMoment(state: FBDState, input: FBDMomentInput, workspace: 
     throw new Error('Enter a valid point, label, direction, and optional nonnegative magnitude.');
   const moment: FBDMoment = { id: momentId, at: { x: input.at.x, y: input.at.y },
     clockwise: input.clockwise, label: input.label.trim(),
+    ...(input.canvasMemberId ? { canvasMemberId: input.canvasMemberId } : {}),
     ...(input.role === undefined ? {} : { role: input.role }),
     ...(input.magnitude === undefined ? {} : { magnitude: input.magnitude }) };
   return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
@@ -250,6 +265,7 @@ export function addFBDDimension(state: FBDState, input: FBDDimensionInput,
     throw new Error('Enter two distinct points and dimension text.');
   const dimension: FBDDimension = { id: dimensionId,
     start: { x: start.x, y: start.y }, end: { x: end.x, y: end.y }, label: input.label.trim() };
+  if (input.canvasMemberId) dimension.canvasMemberId = input.canvasMemberId;
   return { ...state, sourceStructureKey: engineeringStructureKey(workspace),
     dimensions: [...state.dimensions, dimension] };
 }
@@ -274,6 +290,7 @@ export function addFBDAngle(state: FBDState, input: FBDAngleInput,
   const angle: FBDAngle = { id: angleId,
     vertex: { x: vertex.x, y: vertex.y }, from: { x: from.x, y: from.y },
     to: { x: to.x, y: to.y }, label: input.label.trim() };
+  if (input.canvasMemberId) angle.canvasMemberId = input.canvasMemberId;
   return { ...state, sourceStructureKey: engineeringStructureKey(workspace), angles: [...state.angles, angle] };
 }
 
@@ -300,6 +317,7 @@ export function addFBDLabel(state: FBDState, input: FBDLabelInput,
   if (input.associatedWith && !validLabelAssociation(state, workspace, input.associatedWith))
     throw new Error('Unknown FBD label association.');
   const label: FBDLabel = { id: labelId, at: { ...input.at }, text: input.text.trim(),
+    ...(input.canvasMemberId ? { canvasMemberId: input.canvasMemberId } : {}),
     ...(input.associatedWith ? { associatedWith: { ...input.associatedWith } } : {}) };
   return { ...state, sourceStructureKey: engineeringStructureKey(workspace), labels: [...state.labels, label] };
 }
@@ -333,6 +351,8 @@ export function moveFBDForceApplication(state: FBDState, id: string, at: FBDPoin
   const force = state.forces.find((item) => item.id === id);
   if (!force) throw new Error('Unknown FBD force.');
   return editFBDForce(state, id, { at, angle: force.angle, label: force.label || '',
+    ...(force.canvasMemberId ? { canvasMemberId: force.canvasMemberId } : {}),
+    ...(force.role ? { role: force.role } : {}),
     ...(force.magnitude === undefined ? {} : { magnitude: force.magnitude }) }, workspace);
 }
 
@@ -345,45 +365,51 @@ function replaceElement<T extends { id: string }>(items: T[], id: string, replac
 /** Validate edits through the same constructors used to add each student annotation. */
 export function editFBDForce(state: FBDState, id: string, input: FBDForceInput,
   workspace: StaticsWorkspace): FBDState {
-  if (!state.forces.some((item) => item.id === id)) throw new Error('Unknown FBD force.');
+  const existing = state.forces.find((item) => item.id === id);
+  if (!existing) throw new Error('Unknown FBD force.');
   const valid = addFBDForce({ ...state, selectedTarget: editTarget,
-    forces: state.forces.filter((item) => item.id !== id) }, input, workspace, id).forces.at(-1)!;
-  const existing = state.forces.find((item) => item.id === id)!;
+    forces: state.forces.filter((item) => item.id !== id) },
+  { ...input, canvasMemberId: input.canvasMemberId ?? existing.canvasMemberId }, workspace, id).forces.at(-1)!;
   return { ...state, forces: replaceElement(state.forces, id,
     existing.labelPosition ? { ...valid, labelPosition: { ...existing.labelPosition } } : valid) };
 }
 export function editFBDMoment(state: FBDState, id: string, input: FBDMomentInput,
   workspace: StaticsWorkspace): FBDState {
-  if (!state.moments.some((item) => item.id === id)) throw new Error('Unknown FBD moment.');
+  const existing = state.moments.find((item) => item.id === id);
+  if (!existing) throw new Error('Unknown FBD moment.');
   const valid = addFBDMoment({ ...state, selectedTarget: editTarget,
-    moments: state.moments.filter((item) => item.id !== id) }, input, workspace, id).moments.at(-1)!;
-  const existing = state.moments.find((item) => item.id === id)!;
+    moments: state.moments.filter((item) => item.id !== id) },
+  { ...input, canvasMemberId: input.canvasMemberId ?? existing.canvasMemberId }, workspace, id).moments.at(-1)!;
   return { ...state, moments: replaceElement(state.moments, id,
     existing.labelPosition ? { ...valid, labelPosition: { ...existing.labelPosition } } : valid) };
 }
 export function editFBDDimension(state: FBDState, id: string, input: FBDDimensionInput,
   workspace: StaticsWorkspace): FBDState {
-  if (!state.dimensions.some((item) => item.id === id)) throw new Error('Unknown FBD dimension.');
+  const existing = state.dimensions.find((item) => item.id === id);
+  if (!existing) throw new Error('Unknown FBD dimension.');
   const valid = addFBDDimension({ ...state, selectedTarget: editTarget,
-    dimensions: state.dimensions.filter((item) => item.id !== id) }, input, workspace, id).dimensions.at(-1)!;
-  const existing = state.dimensions.find((item) => item.id === id)!;
+    dimensions: state.dimensions.filter((item) => item.id !== id) },
+  { ...input, canvasMemberId: input.canvasMemberId ?? existing.canvasMemberId }, workspace, id).dimensions.at(-1)!;
   return { ...state, dimensions: replaceElement(state.dimensions, id,
     existing.labelPosition ? { ...valid, labelPosition: { ...existing.labelPosition } } : valid) };
 }
 export function editFBDAngle(state: FBDState, id: string, input: FBDAngleInput,
   workspace: StaticsWorkspace): FBDState {
-  if (!state.angles.some((item) => item.id === id)) throw new Error('Unknown FBD angle.');
+  const existing = state.angles.find((item) => item.id === id);
+  if (!existing) throw new Error('Unknown FBD angle.');
   const valid = addFBDAngle({ ...state, selectedTarget: editTarget,
-    angles: state.angles.filter((item) => item.id !== id) }, input, workspace, id).angles.at(-1)!;
-  const existing = state.angles.find((item) => item.id === id)!;
+    angles: state.angles.filter((item) => item.id !== id) },
+  { ...input, canvasMemberId: input.canvasMemberId ?? existing.canvasMemberId }, workspace, id).angles.at(-1)!;
   return { ...state, angles: replaceElement(state.angles, id,
     existing.labelPosition ? { ...valid, labelPosition: { ...existing.labelPosition } } : valid) };
 }
 export function editFBDLabel(state: FBDState, id: string, input: FBDLabelInput,
   workspace: StaticsWorkspace): FBDState {
-  if (!state.labels.some((item) => item.id === id)) throw new Error('Unknown FBD label.');
+  const existing = state.labels.find((item) => item.id === id);
+  if (!existing) throw new Error('Unknown FBD label.');
   const valid = addFBDLabel({ ...state, selectedTarget: editTarget,
-    labels: state.labels.filter((item) => item.id !== id) }, input, workspace, id).labels.at(-1)!;
+    labels: state.labels.filter((item) => item.id !== id) },
+  { ...input, canvasMemberId: input.canvasMemberId ?? existing.canvasMemberId }, workspace, id).labels.at(-1)!;
   return { ...state, labels: replaceElement(state.labels, id, valid) };
 }
 
@@ -403,11 +429,15 @@ export function deleteFBDElement(state: FBDState, kind: FBDElementKind, id: stri
     bodies: kind === 'body' ? state.bodies.filter((item) => item.id !== id) : state.bodies,
     joints: kind === 'joint' ? state.joints.filter((item) => item.id !== id) : state.joints,
     members: kind === 'member' ? state.members.filter((item) => item.id !== id) : state.members,
-    forces: kind === 'force' ? state.forces.filter((item) => item.id !== id) : state.forces,
-    moments: kind === 'moment' ? state.moments.filter((item) => item.id !== id) : state.moments,
-    dimensions: kind === 'dimension' ? state.dimensions.filter((item) => item.id !== id) : state.dimensions,
-    angles: kind === 'angle' ? state.angles.filter((item) => item.id !== id) : state.angles,
-    labels: remainingLabels };
+    forces: kind === 'force' ? state.forces.filter((item) => item.id !== id) :
+      kind === 'member' ? state.forces.filter((item) => item.canvasMemberId !== id) : state.forces,
+    moments: kind === 'moment' ? state.moments.filter((item) => item.id !== id) :
+      kind === 'member' ? state.moments.filter((item) => item.canvasMemberId !== id) : state.moments,
+    dimensions: kind === 'dimension' ? state.dimensions.filter((item) => item.id !== id) :
+      kind === 'member' ? state.dimensions.filter((item) => item.canvasMemberId !== id) : state.dimensions,
+    angles: kind === 'angle' ? state.angles.filter((item) => item.id !== id) :
+      kind === 'member' ? state.angles.filter((item) => item.canvasMemberId !== id) : state.angles,
+    labels: kind === 'member' ? remainingLabels.filter((item) => item.canvasMemberId !== id) : remainingLabels };
 }
 
 export interface FBDHistory { present: FBDState; past: FBDState[]; future: FBDState[] }
@@ -467,20 +497,24 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
       ...(row.endJointKind === undefined ? {} : { endJointKind: ['free', 'pin', 'roller', 'fixed'].includes(String(row.endJointKind)) ? row.endJointKind as FBDJointKind : fail() }),
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),
     forces: rows(root.forces, (row) => ({ id: id(row.id), at: point(row.at), angle: number(row.angle),
+      ...(row.canvasMemberId === undefined ? {} : { canvasMemberId: id(row.canvasMemberId) }),
       ...(row.magnitude === undefined ? {} : { magnitude: number(row.magnitude) }),
       ...(row.role === undefined ? {} : { role: row.role === 'applied' || row.role === 'reaction' ? row.role : fail() }),
       ...(row.label === undefined ? {} : { label: label(row.label) }),
       ...(row.labelPosition === undefined ? {} : { labelPosition: point(row.labelPosition) }) })),
     moments: rows(root.moments, (row) => ({ id: id(row.id), at: point(row.at),
+      ...(row.canvasMemberId === undefined ? {} : { canvasMemberId: id(row.canvasMemberId) }),
       clockwise: typeof row.clockwise === 'boolean' ? row.clockwise : fail(),
       ...(row.magnitude === undefined ? {} : { magnitude: number(row.magnitude) }),
       ...(row.role === undefined ? {} : { role: row.role === 'applied' || row.role === 'reaction' ? row.role : fail() }),
       ...(row.label === undefined ? {} : { label: label(row.label) }),
       ...(row.labelPosition === undefined ? {} : { labelPosition: point(row.labelPosition) }) })),
     dimensions: rows(root.dimensions, (row) => ({ id: id(row.id), start: point(row.start), end: point(row.end),
+      ...(row.canvasMemberId === undefined ? {} : { canvasMemberId: id(row.canvasMemberId) }),
       ...(row.label === undefined ? {} : { label: label(row.label) }),
       ...(row.labelPosition === undefined ? {} : { labelPosition: point(row.labelPosition) }) })),
     angles: rows(root.angles, (row) => ({ id: id(row.id), vertex: point(row.vertex),
+      ...(row.canvasMemberId === undefined ? {} : { canvasMemberId: id(row.canvasMemberId) }),
       from: point(row.from), to: point(row.to), ...(row.label === undefined ? {} : { label: label(row.label) }),
       ...(row.labelPosition === undefined ? {} : { labelPosition: point(row.labelPosition) }) })),
     labels: rows(root.labels, (row) => {
@@ -490,6 +524,7 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
         kind === 'member' || kind === 'dimension' || kind === 'angle';
       if (association && !validKind) fail();
       return { id: id(row.id), at: point(row.at), text: id(row.text),
+        ...(row.canvasMemberId === undefined ? {} : { canvasMemberId: id(row.canvasMemberId) }),
         ...(association ? { associatedWith: { kind: kind as FBDLabelAssociation['kind'], id: id(association.id) } } : {}) };
     }),
   };

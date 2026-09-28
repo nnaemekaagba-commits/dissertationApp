@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { createEmptyFBDState, hasStudentFBDElements, resetStudentFBDElements, isolatedFBDGeometry,
-  engineeringStructureKey, fbdStorageKey, loadFBDState,
+  engineeringStructureKey, fbdStorageKey, loadFBDState, fbdStateForMemberCanvas,
   saveFBDState, selectFBDTarget, addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle,
   addFBDLabel, moveFBDLabel,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
@@ -23,6 +23,21 @@ import { buildGivenFBDOverlay } from './fbdGivenScene.ts';
 import { DISPLAY_MODES, displayModeLayout } from './displayMode.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
+
+test('each member has an independent persistent canvas', () => {
+  const base = { ...createEmptyFBDState(workspace), members: [
+    { id: 'AB', start: { x: 0, y: 0 }, end: { x: 4, y: 0 } },
+    { id: 'CD', start: { x: 0, y: 1 }, end: { x: 3, y: 1 } },
+  ] };
+  const withFirst = addFBDForce(base, { at: { x: 1, y: 0 }, angle: -90, label: 'P', canvasMemberId: 'AB' }, workspace, 'p');
+  const withBoth = addFBDForce(withFirst, { at: { x: 2, y: 1 }, angle: 90, label: 'R', canvasMemberId: 'CD' }, workspace, 'r');
+  assert.deepEqual(fbdStateForMemberCanvas(withBoth, 'AB').members.map((item) => item.id), ['AB']);
+  assert.deepEqual(fbdStateForMemberCanvas(withBoth, 'AB').forces.map((item) => item.id), ['p']);
+  assert.deepEqual(fbdStateForMemberCanvas(withBoth, 'CD').members.map((item) => item.id), ['CD']);
+  assert.deepEqual(fbdStateForMemberCanvas(withBoth, 'CD').forces.map((item) => item.id), ['r']);
+  const restored = loadFBDState({ getItem: () => JSON.stringify(withBoth), setItem() {} }, 'student', workspace);
+  assert.equal(restored.forces[1].canvasMemberId, 'CD');
+});
 
 test('an isolated target alone does not draw an FBD member; student work starts the drawing', () => {
   const selected = selectFBDTarget(createEmptyFBDState(workspace),

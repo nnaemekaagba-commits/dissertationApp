@@ -167,6 +167,9 @@ test('structure panes render only student base geometry while FBD view retains a
   assert.doesNotMatch(panel, />Add Body<\/button>/);
   assert.doesNotMatch(panel, /Add Member \/ Line/);
   assert.match(panel, /FBD_MEMBER_HEIGHT = 0\.1/);
+  assert.match(panel, /aria-label="Member canvas selector"/);
+  assert.match(panel, /Canvas \{index \+ 1\}/);
+  assert.match(panel, /fbdStateForMemberCanvas\(fbdState, activeMemberId\)/);
   assert.doesNotMatch(panel, /Add Joint \/ Point/);
   assert.doesNotMatch(panel, /\(\['body', 'joint', 'member'\]/);
   assert.match(panel, /Start joint in Rigid Body View/);
