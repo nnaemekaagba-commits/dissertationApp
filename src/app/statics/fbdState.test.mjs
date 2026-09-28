@@ -17,7 +17,7 @@ import { buildFBDMomentArrow, momentArcPoints } from './fbdMomentScene.ts';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene.ts';
 import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene.ts';
 import { createVisualizationResearchEvent } from './researchLog.ts';
-import { forceApplicationPointAfterDrag } from './fbdDrag.ts';
+import { forceApplicationPointAfterDrag, pointAfterSceneDrag } from './fbdDrag.ts';
 import { DEFAULT_GIVEN_VISIBILITY, GIVEN_TOGGLES, selectGivenFBDInformation } from './fbdGiven.ts';
 import { buildGivenFBDOverlay } from './fbdGivenScene.ts';
 import { DISPLAY_MODES, displayModeLayout } from './displayMode.ts';
@@ -766,7 +766,7 @@ test('pointer interaction provides direct drag and coordinate alternatives witho
   assert.match(panel, /addEventListener\('pointermove', handlePointerMove, true\)/);
   assert.match(panel, /addEventListener\('pointerup', handlePointerUp, true\)/);
   assert.match(panel, /fbdDragLabel/);
-  assert.match(panel, /if \(!annotation && !applicationId\) continue/);
+  assert.match(panel, /if \(!annotation && !applicationId && !bodyId\) continue/);
   assert.match(panel, /Drag a force arrow to move its application point/);
   assert.match(panel, /aria-label="Position selected FBD label"/);
   assert.match(panel, /fbd_element_drag/);
@@ -779,4 +779,15 @@ test('force drag drop adds the scene delta to the original application point', (
   assert.deepEqual(forceApplicationPointAfterDrag(
     { x: -2, y: 3 }, { x: 1, y: 1 }, { x: 1.25, y: 2 }),
     { x: -1.75, y: 4 });
+});
+
+test('body drag drop adds scene movement to the original body origin', () => {
+  assert.deepEqual(pointAfterSceneDrag(
+    { x: 2, y: -1 }, { x: 0, y: 0 }, { x: -0.5, y: 1.25 }),
+    { x: 1.5, y: 0.25 });
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /fbdDragBody/);
+  assert.match(panel, /target: annotation \? 'label' : bodyId \? 'body' : 'application'/);
+  assert.match(panel, /fbd_body_move/);
+  assert.match(panel, /Drag the body directly or use ΔX and ΔY/);
 });

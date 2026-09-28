@@ -30,11 +30,11 @@ import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene';
 import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene';
 import { DEFAULT_GIVEN_VISIBILITY, GIVEN_TOGGLES, type GivenVisibility } from './fbdGiven';
 import { buildGivenFBDOverlay } from './fbdGivenScene';
-import { forceApplicationPointAfterDrag } from './fbdDrag';
+import { forceApplicationPointAfterDrag, pointAfterSceneDrag } from './fbdDrag';
 
 type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
 type FBDDrag = { pointerId: number; kind: FBDElementKind; id: string;
-  target: 'label' | 'application'; object: THREE.Object3D;
+  target: 'label' | 'application' | 'body'; object: THREE.Object3D;
   start: THREE.Vector3; original: THREE.Vector3; current: THREE.Vector3;
   originalApplication?: { x: number; y: number };
   clientX: number; clientY: number; moved: boolean; controlsEnabled: boolean };
@@ -169,6 +169,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   for (const body of fbdState.bodies) {
     const outline = new THREE.Group();
     outline.userData.fbdPrimitive = { kind: 'body', id: body.id };
+    outline.userData.fbdDragBody = body.id;
     const corners = fbdBodyCorners(body).map((point) => new THREE.Vector3(point.x, point.y, 0));
     const maskShape = new THREE.Shape();
     maskShape.moveTo(corners[0].x, corners[0].y);
@@ -883,17 +884,20 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     if (!start) return;
     for (const hit of ray.intersectObjects(modelRef.current.children, true)) {
       let object: THREE.Object3D | null = hit.object;
-      while (object && !object.userData.fbdDragLabel && !object.userData.fbdDragApplication) object = object.parent;
+      while (object && !object.userData.fbdDragLabel && !object.userData.fbdDragApplication &&
+        !object.userData.fbdDragBody) object = object.parent;
       if (!object) continue;
       const annotation = object.userData.fbdDragLabel as { kind: FBDElementKind; id: string } | undefined;
       const applicationId = object.userData.fbdDragApplication as string | undefined;
-      if (!annotation && !applicationId) continue;
+      const bodyId = object.userData.fbdDragBody as string | undefined;
+      if (!annotation && !applicationId && !bodyId) continue;
       const controls = controlsRef.current;
       const originalApplication = applicationId
         ? fbdState.forces.find((force) => force.id === applicationId)?.at
-        : undefined;
-      dragRef.current = { pointerId: event.pointerId, kind: annotation?.kind || 'force',
-        id: annotation?.id || applicationId!, target: annotation ? 'label' : 'application', object,
+        : bodyId ? fbdState.bodies.find((body) => body.id === bodyId)?.origin : undefined;
+      dragRef.current = { pointerId: event.pointerId, kind: annotation?.kind || (bodyId ? 'body' : 'force'),
+        id: annotation?.id || applicationId || bodyId!,
+        target: annotation ? 'label' : bodyId ? 'body' : 'application', object,
         start: start.clone(), original: object.position.clone(), current: object.position.clone(),
         originalApplication: originalApplication ? { ...originalApplication } : undefined,
         clientX: event.clientX, clientY: event.clientY, moved: false,
@@ -936,11 +940,14 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     }
     const before = getFBDElement(fbdState, drag.kind, drag.id);
     if (!before) return;
-    const at = drag.target === 'application' && drag.originalApplication
+    const at = (drag.target === 'application' || drag.target === 'body') && drag.originalApplication
       ? forceApplicationPointAfterDrag(drag.originalApplication, drag.original, drag.current)
       : { x: drag.current.x, y: drag.current.y };
     const next = drag.target === 'application'
       ? moveFBDForceApplication(fbdState, drag.id, at, workspace)
+      : drag.target === 'body'
+        ? editFBDPrimitive(fbdState, 'body', drag.id,
+          { ...(before as FBDBody), origin: pointAfterSceneDrag((before as FBDBody).origin, drag.original, drag.current) })
       : repositionFBDLabel(fbdState, drag.kind, drag.id, at);
     const after = getFBDElement(next, drag.kind, drag.id)!;
     setFbdState(next);
@@ -949,11 +956,17 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     setSelectedDimensionId(drag.kind === 'dimension' ? drag.id : null);
     setSelectedAngleId(drag.kind === 'angle' ? drag.id : null);
     setSelectedLabelId(drag.kind === 'label' ? drag.id : null);
+    if (drag.target === 'body') setSelectedPrimitive({ kind: 'body', id: drag.id });
     suppressClickRef.current = true;
     setTimeout(() => { suppressClickRef.current = false; }, 0);
-    onVisualizationInteraction('fbd_element_drag', undefined, undefined, undefined, undefined,
-      undefined, undefined, { elementKind: drag.kind, elementId: drag.id, before, after,
-        dragTarget: drag.target }, { before: fbdState, after: next });
+    if (drag.target === 'body') {
+      onVisualizationInteraction('fbd_body_move', undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, { before: fbdState, after: next }, { kind: 'body', id: drag.id });
+    } else {
+      onVisualizationInteraction('fbd_element_drag', undefined, undefined, undefined, undefined,
+        undefined, undefined, { elementKind: drag.kind, elementId: drag.id, before, after,
+          dragTarget: drag.target }, { before: fbdState, after: next });
+    }
   };
 
   const frameModel = (center: THREE.Vector3, span: number, mode: ViewMode | 'reset') => {
@@ -1740,6 +1753,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         {selectedPrimitiveElement && <form onSubmit={moveSelectedPrimitive} className="mb-2 flex flex-wrap items-end gap-2 text-xs"
           aria-label="Move selected FBD base element">
           <strong>Move {selectedPrimitive?.kind} {selectedPrimitive?.id}</strong>
+          {selectedPrimitive?.kind === 'body' && <span className="text-slate-600">Drag the body directly or use ΔX and ΔY.</span>}
           <label>ΔX<input type="number" step="any" required value={moveDraft.dx}
             onChange={(event) => setMoveDraft({ ...moveDraft, dx: event.target.value })}
             className="ml-1 w-20 rounded border px-2 py-1" /></label>

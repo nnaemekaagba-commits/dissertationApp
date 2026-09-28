@@ -401,7 +401,7 @@ test('chat modifies primitives only after an explicit request and never invokes 
 
 test('force arrows can be selected and dragged in one gesture without a second activation mode', () => {
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
-  assert.match(panel, /if \(!annotation && !applicationId\) continue/);
+  assert.match(panel, /if \(!annotation && !applicationId && !bodyId\) continue/);
   assert.doesNotMatch(panel, /applicationId !== selectedForceId/);
   assert.doesNotMatch(panel, /forceApplicationArmed/);
   assert.match(panel, /Drag a force arrow to move its application point/);
