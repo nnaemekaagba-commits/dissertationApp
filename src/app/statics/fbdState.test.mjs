@@ -766,7 +766,7 @@ test('pointer interaction provides direct drag and coordinate alternatives witho
   assert.match(panel, /addEventListener\('pointermove', handlePointerMove, true\)/);
   assert.match(panel, /addEventListener\('pointerup', handlePointerUp, true\)/);
   assert.match(panel, /fbdDragLabel/);
-  assert.match(panel, /if \(!annotation && !applicationId && !bodyId\) continue/);
+  assert.match(panel, /if \(!annotation && !applicationId && !bodyId && !memberId\) continue/);
   assert.match(panel, /Drag a force arrow to move its application point/);
   assert.match(panel, /aria-label="Position selected FBD label"/);
   assert.match(panel, /fbd_element_drag/);
@@ -787,7 +787,9 @@ test('body drag drop adds scene movement to the original body origin', () => {
     { x: 1.5, y: 0.25 });
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
   assert.match(panel, /fbdDragBody/);
-  assert.match(panel, /target: annotation \? 'label' : bodyId \? 'body' : 'application'/);
-  assert.match(panel, /fbd_body_move/);
-  assert.match(panel, /Drag the body directly or use ΔX and ΔY/);
+  assert.match(panel, /fbdDragMember/);
+  assert.match(panel, /target: 'label' \| 'application' \| 'body' \| 'member'/);
+  assert.match(panel, /memberId \? 'member' : 'application'/);
+  assert.match(panel, /`fbd_\$\{drag\.target\}_move`/);
+  assert.match(panel, /Drag the member directly or use ΔX and ΔY/);
 });

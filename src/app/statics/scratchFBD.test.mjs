@@ -162,7 +162,11 @@ test('structure panes render only student base geometry while FBD view retains a
   assert.match(panel, /DEFAULT_GIVEN_VISIBILITY, true\);/);
   assert.match(panel, /givenVisibility,\s*!showFbd, selectedPrimitive\);/);
   assert.match(panel, /function hasStudentFBDBaseGeometry/);
-  assert.match(panel, /No rigid body, joint, or member has been added yet\./);
+  assert.match(panel, /No member has been added yet\./);
+  assert.match(panel, />Add Member<\/button>/);
+  assert.doesNotMatch(panel, />Add Body<\/button>/);
+  assert.doesNotMatch(panel, /Add Member \/ Line/);
+  assert.match(panel, /FBD_MEMBER_HEIGHT = 0\.1/);
   assert.doesNotMatch(panel, /Add Joint \/ Point/);
   assert.doesNotMatch(panel, /\(\['body', 'joint', 'member'\]/);
   assert.match(panel, /Start joint in Rigid Body View/);
@@ -401,7 +405,7 @@ test('chat modifies primitives only after an explicit request and never invokes 
 
 test('force arrows can be selected and dragged in one gesture without a second activation mode', () => {
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
-  assert.match(panel, /if \(!annotation && !applicationId && !bodyId\) continue/);
+  assert.match(panel, /if \(!annotation && !applicationId && !bodyId && !memberId\) continue/);
   assert.doesNotMatch(panel, /applicationId !== selectedForceId/);
   assert.doesNotMatch(panel, /forceApplicationArmed/);
   assert.match(panel, /Drag a force arrow to move its application point/);

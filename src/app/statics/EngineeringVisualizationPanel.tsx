@@ -33,8 +33,9 @@ import { buildGivenFBDOverlay } from './fbdGivenScene';
 import { forceApplicationPointAfterDrag, pointAfterSceneDrag } from './fbdDrag';
 
 type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
+const FBD_MEMBER_HEIGHT = 0.1;
 type FBDDrag = { pointerId: number; kind: FBDElementKind; id: string;
-  target: 'label' | 'application' | 'body'; object: THREE.Object3D;
+  target: 'label' | 'application' | 'body' | 'member'; object: THREE.Object3D;
   start: THREE.Vector3; original: THREE.Vector3; current: THREE.Vector3;
   originalApplication?: { x: number; y: number };
   clientX: number; clientY: number; moved: boolean; controlsEnabled: boolean };
@@ -203,12 +204,26 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     const from = new THREE.Vector3(member.start.x, member.start.y, 0);
     const to = new THREE.Vector3(member.end.x, member.end.y, 0);
     const vector = to.clone().sub(from);
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, vector.length(), 12),
-      new THREE.MeshStandardMaterial({ color: selectedPrimitive?.kind === 'member' && selectedPrimitive.id === member.id ? 0xc2410c : 0x059669 }));
-    beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), vector.normalize());
-    beam.position.copy(from).add(to).multiplyScalar(0.5);
-    beam.userData.fbdPrimitive = { kind: 'member', id: member.id };
-    group.add(beam);
+    const memberGroup = new THREE.Group();
+    memberGroup.userData.fbdPrimitive = { kind: 'member', id: member.id };
+    memberGroup.userData.fbdDragMember = member.id;
+    const normal = vector.lengthSq() > 0
+      ? new THREE.Vector3(-vector.y, vector.x, 0).normalize().multiplyScalar(FBD_MEMBER_HEIGHT / 2)
+      : new THREE.Vector3(0, FBD_MEMBER_HEIGHT / 2, 0);
+    const corners = [from.clone().add(normal), to.clone().add(normal),
+      to.clone().sub(normal), from.clone().sub(normal)];
+    const maskShape = new THREE.Shape();
+    maskShape.moveTo(corners[0].x, corners[0].y);
+    for (let index = 1; index < corners.length; index++) maskShape.lineTo(corners[index].x, corners[index].y);
+    maskShape.closePath();
+    const mask = new THREE.Mesh(new THREE.ShapeGeometry(maskShape),
+      new THREE.MeshBasicMaterial({ color: 0xf8fafc, side: THREE.DoubleSide, depthTest: true }));
+    mask.position.z = -0.08;
+    memberGroup.add(mask);
+    const color = selectedPrimitive?.kind === 'member' && selectedPrimitive.id === member.id ? 0xc2410c : 0x059669;
+    for (let index = 0; index < corners.length; index++)
+      addLine(memberGroup, corners[index], corners[(index + 1) % corners.length], color);
+    group.add(memberGroup);
     const memberEnds = fbdEndpointLabels(member.label || member.id);
     if (memberEnds) {
       const labelPoints = fbdMemberEndpointLabelPositions(member, Math.max(0.28, span * 0.075));
@@ -220,7 +235,7 @@ function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       }
     } else if (member.label) {
       const label = textSprite(member.label, '#047857', 0.42);
-      if (label) { label.position.copy(beam.position).add(new THREE.Vector3(0, 0.24, 0.2));
+      if (label) { label.position.copy(from).add(to).multiplyScalar(0.5).add(new THREE.Vector3(0, 0.24, 0.2));
         label.userData.fbdPrimitive = { kind: 'member', id: member.id }; group.add(label); }
     }
   }
@@ -885,19 +900,22 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     for (const hit of ray.intersectObjects(modelRef.current.children, true)) {
       let object: THREE.Object3D | null = hit.object;
       while (object && !object.userData.fbdDragLabel && !object.userData.fbdDragApplication &&
-        !object.userData.fbdDragBody) object = object.parent;
+        !object.userData.fbdDragBody && !object.userData.fbdDragMember) object = object.parent;
       if (!object) continue;
       const annotation = object.userData.fbdDragLabel as { kind: FBDElementKind; id: string } | undefined;
       const applicationId = object.userData.fbdDragApplication as string | undefined;
       const bodyId = object.userData.fbdDragBody as string | undefined;
-      if (!annotation && !applicationId && !bodyId) continue;
+      const memberId = object.userData.fbdDragMember as string | undefined;
+      if (!annotation && !applicationId && !bodyId && !memberId) continue;
       const controls = controlsRef.current;
       const originalApplication = applicationId
         ? fbdState.forces.find((force) => force.id === applicationId)?.at
-        : bodyId ? fbdState.bodies.find((body) => body.id === bodyId)?.origin : undefined;
-      dragRef.current = { pointerId: event.pointerId, kind: annotation?.kind || (bodyId ? 'body' : 'force'),
-        id: annotation?.id || applicationId || bodyId!,
-        target: annotation ? 'label' : bodyId ? 'body' : 'application', object,
+        : bodyId ? fbdState.bodies.find((body) => body.id === bodyId)?.origin
+        : memberId ? fbdState.members.find((member) => member.id === memberId)?.start : undefined;
+      dragRef.current = { pointerId: event.pointerId,
+        kind: annotation?.kind || (bodyId ? 'body' : memberId ? 'member' : 'force'),
+        id: annotation?.id || applicationId || bodyId || memberId!,
+        target: annotation ? 'label' : bodyId ? 'body' : memberId ? 'member' : 'application', object,
         start: start.clone(), original: object.position.clone(), current: object.position.clone(),
         originalApplication: originalApplication ? { ...originalApplication } : undefined,
         clientX: event.clientX, clientY: event.clientY, moved: false,
@@ -940,7 +958,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     }
     const before = getFBDElement(fbdState, drag.kind, drag.id);
     if (!before) return;
-    const at = (drag.target === 'application' || drag.target === 'body') && drag.originalApplication
+    const at = (drag.target === 'application' || drag.target === 'body' || drag.target === 'member') && drag.originalApplication
       ? forceApplicationPointAfterDrag(drag.originalApplication, drag.original, drag.current)
       : { x: drag.current.x, y: drag.current.y };
     const next = drag.target === 'application'
@@ -948,6 +966,12 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       : drag.target === 'body'
         ? editFBDPrimitive(fbdState, 'body', drag.id,
           { ...(before as FBDBody), origin: pointAfterSceneDrag((before as FBDBody).origin, drag.original, drag.current) })
+      : drag.target === 'member'
+        ? editFBDPrimitive(fbdState, 'member', drag.id, {
+          ...(before as FBDMember),
+          start: pointAfterSceneDrag((before as FBDMember).start, drag.original, drag.current),
+          end: pointAfterSceneDrag((before as FBDMember).end, drag.original, drag.current),
+        })
       : repositionFBDLabel(fbdState, drag.kind, drag.id, at);
     const after = getFBDElement(next, drag.kind, drag.id)!;
     setFbdState(next);
@@ -956,12 +980,12 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     setSelectedDimensionId(drag.kind === 'dimension' ? drag.id : null);
     setSelectedAngleId(drag.kind === 'angle' ? drag.id : null);
     setSelectedLabelId(drag.kind === 'label' ? drag.id : null);
-    if (drag.target === 'body') setSelectedPrimitive({ kind: 'body', id: drag.id });
+    if (drag.target === 'body' || drag.target === 'member') setSelectedPrimitive({ kind: drag.target, id: drag.id });
     suppressClickRef.current = true;
     setTimeout(() => { suppressClickRef.current = false; }, 0);
-    if (drag.target === 'body') {
-      onVisualizationInteraction('fbd_body_move', undefined, undefined, undefined, undefined,
-        undefined, undefined, undefined, { before: fbdState, after: next }, { kind: 'body', id: drag.id });
+    if (drag.target === 'body' || drag.target === 'member') {
+      onVisualizationInteraction(`fbd_${drag.target}_move`, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, { before: fbdState, after: next }, { kind: drag.target, id: drag.id });
     } else {
       onVisualizationInteraction('fbd_element_drag', undefined, undefined, undefined, undefined,
         undefined, undefined, { elementKind: drag.kind, elementId: drag.id, before, after,
@@ -1659,7 +1683,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           <StructurePreview workspace={workspace} fbdState={fbdState} />
           {!hasStudentFBDBaseGeometry(fbdState) &&
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
-              No rigid body, joint, or member has been added yet.
+              No member has been added yet.
             </div>}
         </div>}
         <div ref={containerRef} className={`relative min-h-0 bg-slate-50 touch-none ${displayMode === 'split' ? 'flex-1' : 'h-full'}`} aria-label={showFbd ? 'FBD canvas' : 'Structure canvas'}>
@@ -1668,22 +1692,21 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         {!(showFbd ? hasStudentFBDElements(fbdState) : hasStudentFBDBaseGeometry(fbdState)) && !error &&
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
             {showFbd ? 'No diagram yet. Start building your free-body diagram.' :
-              'No rigid body, joint, or member has been added yet.'}
+              'No member has been added yet.'}
           </div>}
         </div>
       </div>
       {showFbd && <div className="max-h-[45%] min-h-0 shrink-0 overflow-y-auto border-t border-slate-200 px-3 py-2" aria-label="FBD construction toolbar">
         <p className="mb-2 text-xs text-slate-600">Build the diagram yourself. Nothing is copied from the engineering problem into this canvas.</p>
         <div className="mb-2 flex flex-wrap gap-1.5" aria-label="FBD base geometry tools">
-          {(['body', 'member'] as const).map((kind) => <button key={kind} type="button"
-            onClick={() => openPrimitiveForm(kind)} className="rounded bg-emerald-100 px-2 py-1 text-xs text-emerald-900">
-            Add {kind === 'member' ? 'Member / Line' : 'Body'}
-          </button>)}
-          <button type="button" onClick={() => selectedPrimitive && openPrimitiveForm(selectedPrimitive.kind, true)}
-            disabled={!selectedPrimitiveElement} className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Edit Base Element</button>
+          <button type="button" onClick={() => openPrimitiveForm('member')}
+            className="rounded bg-emerald-100 px-2 py-1 text-xs text-emerald-900">Add Member</button>
+          <button type="button" onClick={() => selectedPrimitive?.kind === 'member' && openPrimitiveForm('member', true)}
+            disabled={!selectedPrimitiveElement || selectedPrimitive?.kind !== 'member'}
+            className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Edit Member</button>
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-          <label>Student base element<select aria-label="Select student-created body or member"
+          <label>Student member<select aria-label="Select student-created member"
             value={selectedPrimitive ? `${selectedPrimitive.kind}:${selectedPrimitive.id}` : ''}
             onChange={(event) => { const [kind, ...parts] = event.target.value.split(':');
               setSelectedPrimitive(kind ? { kind: kind as FBDPrimitiveKind, id: parts.join(':') } : null);
@@ -1691,7 +1714,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
               setSelectedAngleId(null); setSelectedLabelId(null); }}
             className="ml-1 max-w-48 rounded border border-slate-300 bg-white px-2 py-1">
             <option value="">Choose element</option>
-            {fbdState.bodies.map((item) => <option key={`body:${item.id}`} value={`body:${item.id}`}>Body · {item.label || item.id}</option>)}
             {fbdState.members.map((item) => <option key={`member:${item.id}`} value={`member:${item.id}`}>Member · {item.label || item.id}</option>)}
           </select></label>
         </div>
@@ -1753,7 +1775,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         {selectedPrimitiveElement && <form onSubmit={moveSelectedPrimitive} className="mb-2 flex flex-wrap items-end gap-2 text-xs"
           aria-label="Move selected FBD base element">
           <strong>Move {selectedPrimitive?.kind} {selectedPrimitive?.id}</strong>
-          {selectedPrimitive?.kind === 'body' && <span className="text-slate-600">Drag the body directly or use ΔX and ΔY.</span>}
+          {selectedPrimitive?.kind === 'member' && <span className="text-slate-600">Drag the member directly or use ΔX and ΔY.</span>}
           <label>ΔX<input type="number" step="any" required value={moveDraft.dx}
             onChange={(event) => setMoveDraft({ ...moveDraft, dx: event.target.value })}
             className="ml-1 w-20 rounded border px-2 py-1" /></label>
