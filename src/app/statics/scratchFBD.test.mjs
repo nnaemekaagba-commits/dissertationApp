@@ -398,3 +398,11 @@ test('chat modifies primitives only after an explicit request and never invokes 
   assert.equal(fbdActionForVisualization('fbd_body_add'), 'add_body');
   assert.equal(fbdActionForVisualization('fbd_blank_workspace'), 'enter_blank_workspace');
 });
+
+test('selected force arrows can be dragged directly without a second activation mode', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(panel, /applicationId !== selectedForceId/);
+  assert.doesNotMatch(panel, /forceApplicationArmed/);
+  assert.match(panel, /Drag the selected force arrow to move its application point/);
+  assert.match(panel, /Point X and Point Y/);
+});

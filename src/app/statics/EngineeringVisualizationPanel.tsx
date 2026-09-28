@@ -744,14 +744,12 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [labelMoveMode, setLabelMoveMode] = useState(false);
   const [targetSearch, setTargetSearch] = useState('');
   const [editError, setEditError] = useState('');
-  const [forceApplicationArmed, setForceApplicationArmed] = useState(false);
   const dragRef = useRef<FBDDrag | null>(null);
   const suppressClickRef = useRef(false);
   useEffect(() => {
     if (selectedForceId && !fbdState.forces.some((force) => force.id === selectedForceId))
       setSelectedForceId(null);
   }, [fbdState.forces, selectedForceId]);
-  useEffect(() => { if (!selectedForceId) setForceApplicationArmed(false); }, [selectedForceId]);
   useEffect(() => {
     if (selectedMomentId && !fbdState.moments.some((moment) => moment.id === selectedMomentId))
       setSelectedMomentId(null);
@@ -887,7 +885,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       if (!object) continue;
       const annotation = object.userData.fbdDragLabel as { kind: FBDElementKind; id: string } | undefined;
       const applicationId = object.userData.fbdDragApplication as string | undefined;
-      if (!annotation && (!applicationId || !forceApplicationArmed || applicationId !== selectedForceId)) continue;
+      if (!annotation && (!applicationId || applicationId !== selectedForceId)) continue;
       const controls = controlsRef.current;
       dragRef.current = { pointerId: event.pointerId, kind: annotation?.kind || 'force',
         id: annotation?.id || applicationId!, target: annotation ? 'label' : 'application', object,
@@ -910,6 +908,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     if (drag.moved) {
       drag.current = drag.original.clone().add(point.sub(drag.start));
       drag.object.position.copy(drag.current);
+      event.preventDefault();
     }
   };
   pointerUpRef.current = (event) => {
@@ -942,7 +941,6 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     setSelectedDimensionId(drag.kind === 'dimension' ? drag.id : null);
     setSelectedAngleId(drag.kind === 'angle' ? drag.id : null);
     setSelectedLabelId(drag.kind === 'label' ? drag.id : null);
-    setForceApplicationArmed(false);
     suppressClickRef.current = true;
     setTimeout(() => { suppressClickRef.current = false; }, 0);
     onVisualizationInteraction('fbd_element_drag', undefined, undefined, undefined, undefined,
@@ -1787,11 +1785,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
                 <option value="applied">External applied force</option><option value="reaction">Support reaction</option>
               </select></label>
               {editNumber('magnitude', `Magnitude (${workspace.units.force}, optional)`, item.magnitude, true)}
-              <button type="button" aria-pressed={forceApplicationArmed}
-                onClick={() => setForceApplicationArmed((current) => !current)}
-                className={`col-span-2 rounded px-2 py-1 ${forceApplicationArmed ? 'bg-amber-200' : 'bg-slate-100'}`}>
-                {forceApplicationArmed ? 'Drag arrow to new application point' : 'Move application point (drag arrow)'}
-              </button></>;
+              <div className="col-span-2 rounded bg-slate-100 px-2 py-1 text-slate-700">
+                Drag the selected force arrow to move its application point. You can also edit Point X and Point Y above.
+              </div></>;
           })()}
           {selectedKind === 'moment' && (() => {
             const item = selectedElement as FBDMoment;
