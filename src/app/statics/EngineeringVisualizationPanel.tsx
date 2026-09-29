@@ -699,7 +699,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     history?: { before: FBDState; after: FBDState },
     primitive?: { kind: FBDPrimitiveKind; id: string }) => void;
 }) {
-  const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd } = useStaticsWorkspace();
+  const { workspace, fbdState, setFbdState, undoFbd, redoFbd, canUndoFbd, canRedoFbd,
+    activeFbdMemberId, setActiveFbdMemberId } = useStaticsWorkspace();
   const { showFbd } = displayModeLayout(displayMode);
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -743,7 +744,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [labelError, setLabelError] = useState('');
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
   const [selectedPrimitive, setSelectedPrimitive] = useState<{ kind: FBDPrimitiveKind; id: string } | null>(null);
-  const activeMemberId = selectedPrimitive?.kind === 'member' ? selectedPrimitive.id : fbdState.members[0]?.id ?? null;
+  const activeMemberId = activeFbdMemberId ?? fbdState.members[0]?.id ?? null;
   const [primitiveMode, setPrimitiveMode] = useState<FBDPrimitiveKind | null>(null);
   const [primitiveEditing, setPrimitiveEditing] = useState(false);
   const [primitiveDraft, setPrimitiveDraft] = useState({ id: '', label: '', x: '0', y: '0',
@@ -1550,6 +1551,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             addFBDMember(fbdState, item as FBDMember);
       recordPrimitiveChange(primitiveMode, primitiveEditing ? 'edit' : 'add', id, next);
       setSelectedPrimitive({ kind: primitiveMode, id });
+      if (primitiveMode === 'member') setActiveFbdMemberId(id);
       setPrimitiveMode(null); setPrimitiveError('');
     } catch (caught) { setPrimitiveError(caught instanceof Error ? caught.message : 'Could not save FBD element.'); }
   };
@@ -1719,7 +1721,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           <label className="sr-only">Select member canvas<select aria-label="Select student-created member canvas"
             value={selectedPrimitive ? `${selectedPrimitive.kind}:${selectedPrimitive.id}` : ''}
             onChange={(event) => { const [kind, ...parts] = event.target.value.split(':');
-              setSelectedPrimitive(kind ? { kind: kind as FBDPrimitiveKind, id: parts.join(':') } : null);
+              const id = parts.join(':');
+              setSelectedPrimitive(kind ? { kind: kind as FBDPrimitiveKind, id } : null);
+              setActiveFbdMemberId(kind === 'member' ? id : null);
               setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
               setSelectedAngleId(null); setSelectedLabelId(null); }}
             className="ml-1 max-w-48 rounded border border-slate-300 bg-white px-2 py-1">
@@ -1729,6 +1733,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           {fbdState.members.map((item, index) => <button key={item.id} type="button"
             aria-pressed={activeMemberId === item.id}
             onClick={() => { setSelectedPrimitive({ kind: 'member', id: item.id });
+              setActiveFbdMemberId(item.id);
               setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
               setSelectedAngleId(null); setSelectedLabelId(null); }}
             className={`rounded px-2 py-1 ${activeMemberId === item.id

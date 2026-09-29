@@ -26,7 +26,7 @@ import { createFBDCheckResearchEvent, createFBDToolResearchEvents, createToolRes
   createVisualizationResearchEvent, getEngineeringSessionId, nextFBDResearchSequence,
   createFBDResearchContext, fbdActionForVisualization, fbdToolElement, saveLocalResearchEvent,
   type EngineeringResearchEvent, type VisualizationAction } from './statics/researchLog';
-import type { FBDAngle, FBDDimension, FBDForce, FBDMoment, FBDLabel,
+import { fbdStateForMemberCanvas, type FBDAngle, type FBDDimension, type FBDForce, type FBDMoment, type FBDLabel,
   FBDElement, FBDElementKind, FBDPrimitiveKind, FBDState, FBDTarget } from './statics/fbdState';
 import { displayModeLayout, type EngineeringDisplayMode } from './statics/displayMode';
 
@@ -1918,10 +1918,11 @@ export default function App() {
     };
 
     const engineeringState = staticsControllerRef.current?.getWorkspace();
-    const fbdState = staticsControllerRef.current?.getFbdState();
-    const hasVisibleFBD = Boolean(fbdState && (fbdState.bodies.length || fbdState.joints.length ||
-      fbdState.members.length || fbdState.forces.length || fbdState.moments.length ||
-      fbdState.dimensions.length || fbdState.angles.length || fbdState.labels.length));
+    const completeFbdState = staticsControllerRef.current?.getFbdState();
+    const activeFbdMemberId = staticsControllerRef.current?.getActiveFbdMemberId() ?? completeFbdState?.members[0]?.id ?? null;
+    const fbdState = completeFbdState ? fbdStateForMemberCanvas(completeFbdState, activeFbdMemberId) : undefined;
+    const hasVisibleFBD = Boolean(fbdState && (fbdState.members.length || fbdState.forces.length ||
+      fbdState.moments.length || fbdState.dimensions.length || fbdState.angles.length || fbdState.labels.length));
     const currentInput = !options && hasVisibleFBD
       ? buildFBDGroundedChatRequest(requestContent, engineeringState, fbdState)
       : requestContent;

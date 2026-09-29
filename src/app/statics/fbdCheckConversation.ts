@@ -26,6 +26,7 @@ export function describeRigidBodyCanvas(fbdState: unknown): string {
   const state = fbdState && typeof fbdState === 'object' ? fbdState as CanvasRow : {};
   const forces = rows(state, 'forces');
   const moments = rows(state, 'moments');
+  const members = rows(state, 'members');
   const reactionForces = forces.filter((item) => item.role === 'reaction');
   const reactionMoments = moments.filter((item) => item.role === 'reaction');
   const supportPoints = new Map<string, { at: CanvasRow; forceAngles: number[]; hasMoment: boolean }>();
@@ -56,8 +57,11 @@ export function describeRigidBodyCanvas(fbdState: unknown): string {
     ` at ${pointText(item)}, angle ${Number(item.angle)}°, magnitude ${item.magnitude ?? 'unspecified'}`);
   const momentList = moments.map((item) => `${item.role === 'reaction' ? 'reaction' : 'external'} moment ${item.label || item.id}` +
     ` at ${pointText(item)}, ${item.clockwise ? 'clockwise' : 'counterclockwise'}, magnitude ${item.magnitude ?? 'unspecified'}`);
-  return [`Rigid Body View contains exactly ${supports.length} support${supports.length === 1 ? '' : 's'}: ${supports.join('; ') || 'none explicitly or inferably defined'}.`,
+  const memberList = members.map((item) => String(item.label || item.id));
+  return [`Active canvas contains exactly ${members.length} member${members.length === 1 ? '' : 's'}: ${memberList.join(', ') || 'none'}.`,
+    `Rigid Body View contains exactly ${supports.length} support${supports.length === 1 ? '' : 's'}: ${supports.join('; ') || 'none explicitly or inferably defined'}.`,
     `Forces: ${forceList.join('; ') || 'none'}.`, `Moments: ${momentList.join('; ') || 'none'}.`,
+    'Distributed loads: none. The student FBD canvas has no distributed-load element.',
     'Endpoint labels alone are not supports. Multiple reaction components at the same point belong to one support.'].join('\n');
 }
 
@@ -66,18 +70,20 @@ export function buildFBDGroundedChatRequest(studentRequest: string, engineeringS
   const request = studentRequest.trim();
   if (!request) throw new Error('The student request is required.');
   const rigidBodySummary = describeRigidBodyCanvas(fbdState);
+  const units = engineeringState && typeof engineeringState === 'object' && 'units' in engineeringState
+    ? (engineeringState as { units?: unknown }).units : undefined;
   return `Answer the student's request using the current engineering canvas data below.
-The FBD JSON is the student's actual visible work. Review both the FBD and the deterministic Rigid Body View summary before answering. Treat the summary's support count and classifications as authoritative. Refer specifically to actual bodies, members, forces, moments, labels, directions, magnitudes, and locations. Do not treat an endpoint label as a support. Do not ask the student to repeat information already present in these snapshots. Do not invent canvas elements. Do not silently modify the diagram. If the request explicitly asks for a calculation, use an available deterministic calculation tool and place the validated result in chat; never substitute invented numerical results.
+The FBD JSON is the student's actual visible work from ONE active member canvas. Hidden member canvases are deliberately excluded. The deterministic inventory below is exhaustive and authoritative. Treat the summary's support count and classifications as authoritative. Use the exact member name listed there. Never mention a different member name. If the inventory says distributed loads are none, do not mention or infer a distributed load. Do not use engineering workspace geometry or loads to describe what is visible on this FBD canvas. Refer specifically only to actual members, forces, moments, labels, directions, magnitudes, and locations in the inventory and JSON. Do not treat an endpoint label as a support. Do not ask the student to repeat information already present. Do not invent canvas elements. Do not silently modify the diagram. If the request explicitly asks for a calculation, use an available deterministic calculation tool and place the validated result in chat; never substitute invented numerical results.
 
 Student request:
 ${request}
 
-Deterministic Rigid Body View summary:
+Deterministic active-canvas inventory:
 ${rigidBodySummary}
 
 Current student-built FBD JSON:
 ${JSON.stringify(fbdState)}
 
-Current engineering workspace JSON:
-${JSON.stringify(engineeringState)}`;
+Engineering units only (not canvas geometry or loads):
+${JSON.stringify(units ?? null)}`;
 }

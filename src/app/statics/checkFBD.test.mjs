@@ -78,6 +78,7 @@ test('ordinary chat is grounded in the live FBD without changing the visible stu
   assert.match(request, /Do not ask the student to repeat information already present/);
   const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
   assert.match(app, /const hasVisibleFBD/);
+  assert.match(app, /fbdStateForMemberCanvas\(completeFbdState, activeFbdMemberId\)/);
   assert.match(app, /buildFBDGroundedChatRequest\(requestContent, engineeringState, fbdState\)/);
   assert.match(app, /content: studentInput\.content/);
 });
@@ -103,6 +104,21 @@ test('rigid-body chat context groups reaction components into one physical suppo
   assert.match(summary, /Endpoint labels alone are not supports/);
   const request = buildFBDGroundedChatRequest('Is this in equilibrium?', workspace, fbd);
   assert.match(request, /Treat the summary's support count and classifications as authoritative/);
+});
+
+test('chat inventory is limited to the active member and forbids invented distributed loads', () => {
+  const active = { ...empty,
+    members: [{ id: 'AB', label: 'AB', start: { x: 0, y: 0 }, end: { x: 4, y: 0 } }],
+    forces: [{ id: 'P', canvasMemberId: 'AB', at: { x: 2, y: 0 }, angle: -90, magnitude: 5, label: 'P' }] };
+  const summary = describeRigidBodyCanvas(active);
+  assert.match(summary, /exactly 1 member: AB/);
+  assert.match(summary, /Distributed loads: none/);
+  assert.doesNotMatch(summary, /\b(?:BD|AD)\b/);
+  const request = buildFBDGroundedChatRequest('Review this FBD',
+    { ...workspace, loads: [{ id: 'stale', kind: 'distributed', memberId: 'BD', startMagnitude: 1, endMagnitude: 1, angle: -90 }] }, active);
+  assert.match(request, /Never mention a different member name/);
+  assert.match(request, /do not mention or infer a distributed load/);
+  assert.doesNotMatch(request, /"memberId":"BD"/);
 });
 
 test('roller arrow on the wrong axis is identified as incorrect reaction representation', () => {
