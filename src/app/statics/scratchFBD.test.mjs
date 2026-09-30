@@ -41,7 +41,9 @@ test('adaptive gridlines include numeric coordinate readings and workspace units
   assert.ok(grid.xValues.includes(0));
   assert.equal(fbdGridReading(0), '0');
   assert.equal(fbdGridReading(1.5), '1.5');
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
   assert.match(panel, /fbdGridSpec\(center, span\)/);
   assert.match(panel, /x \(\$\{workspace\.units\.length\}\)/);
@@ -59,7 +61,9 @@ test('member endpoint letters sit beyond the exact ends for every orientation', 
   const inclined = fbdMemberEndpointLabelPositions({ ...member,
     start: { x: 0, y: 0 }, end: { x: 3, y: 4 } }, 0.5);
   assert.deepEqual(inclined, [{ x: -0.3, y: -0.4 }, { x: 3.3, y: 4.4 }]);
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
   assert.match(panel, /fbdMemberEndpointLabelPositions\(member/);
   assert.match(replay, /fbdMemberEndpointLabelPositions\(member/);
@@ -78,7 +82,9 @@ test('body tilt rotates corners; member tilt sets endpoint; force already stores
   const forceState = addFBDForce(createEmptyFBDState(workspace),
     { at: { x: 1, y: 0 }, angle: 30, label: 'P' }, workspace, 'P1');
   assert.equal(forceState.forces[0].angle, 30);
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
   assert.match(panel, /Body tilt \(degrees from \+X\)/);
   assert.match(panel, /Member tilt \(degrees from \+X\)/);
@@ -113,7 +119,9 @@ test('each joint kind has its own drafting geometry in the live canvas and repla
   assert.equal(fixed.circles.length, 1);
   assert.ok(fixed.strokes.length >= 4);
   assert.notDeepEqual(pin, roller);
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
   assert.match(panel, /fbdJointSymbol\(node\.kind\)/);
   assert.match(replay, /fbdJointSymbol\(node\.kind\)/);
@@ -132,7 +140,9 @@ test('two-letter body and member names display their endpoint labels without cre
     { ...body, id: 'AD', label: undefined }), { ...member, id: 'BC', label: undefined });
   assert.deepEqual(fbdEndpointLabels(idOnly.bodies[0].label || idOnly.bodies[0].id), ['A', 'D']);
   assert.deepEqual(fbdEndpointLabels(idOnly.members[0].label || idOnly.members[0].id), ['B', 'C']);
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
   assert.match(panel, /fbdEndpointLabels\(body\.label \|\| body\.id\)/);
   assert.match(panel, /fbdEndpointLabels\(member\.label \|\| member\.id\)/);
@@ -146,7 +156,9 @@ test('workspace starts blank and renders no engineering geometry or givens', () 
     empty.moments, empty.dimensions, empty.angles, empty.labels],
   [[], [], [], [], [], [], [], []]);
   assert.equal(hasStudentFBDElements(empty), false);
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
   const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
   assert.match(app, /useState<EngineeringDisplayMode>\('fbd'\)/);
@@ -158,7 +170,9 @@ test('workspace starts blank and renders no engineering geometry or givens', () 
 });
 
 test('structure panes render only student base geometry while FBD view retains annotations', () => {
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   assert.match(panel, /DEFAULT_GIVEN_VISIBILITY, true\);/);
   assert.match(panel, /givenVisibility,\s*!showFbd, selectedPrimitive\);/);
   assert.match(panel, /function hasStudentFBDBaseGeometry/);
@@ -194,7 +208,9 @@ test('body endpoint joints persist as structure metadata and reject unknown supp
 });
 
 test('FBD opens facing the diagram and restores front view when selected', () => {
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   assert.match(panel, /useState<ViewMode>\('front'\)/);
   assert.match(panel, /displayMode !== 'fbd' \|\| previous === 'fbd'/);
   assert.match(panel, /frameModel\(bounds.center, bounds.span, 'front'\)/);
@@ -202,7 +218,9 @@ test('FBD opens facing the diagram and restores front view when selected', () =>
 });
 
 test('clear diagram is visible above canvas and clears only student work', () => {
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   assert.ok(panel.indexOf('Clear Diagram') < panel.indexOf('aria-label={showFbd'));
   assert.match(panel, /aria-label="Confirm Reset FBD"/);
   const state = addFBDJoint(addFBDBody(createEmptyFBDState(workspace), body), joint);
@@ -214,7 +232,9 @@ test('clear diagram is visible above canvas and clears only student work', () =>
 });
 
 test('clear and delete controls explain empty or unselected states instead of disabling', () => {
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   assert.match(panel, /The diagram is already empty\./);
   assert.match(panel, /Select an element in the diagram or from the list below to delete it\./);
   assert.match(panel, /if \(selectedElement\) deleteSelected\(\);\s*else if \(selectedPrimitiveElement\) deleteSelectedPrimitive\(\);/);
@@ -231,14 +251,18 @@ test('rotated body endpoint letters are centered and outside both longitudinal e
   assert.ok(Math.abs(vertical[0].y + 0.5) < 1e-9);
   assert.ok(Math.abs(vertical[1].x + 0.3) < 1e-9);
   assert.ok(Math.abs(vertical[1].y - 4.5) < 1e-9);
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
   assert.match(panel, /fbdBodyEndpointLabelPositions\(body/);
   assert.match(replay, /fbdBodyEndpointLabelPositions\(body/);
 });
 
 test('body fill masks background gridlines without hiding its outline', () => {
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
   assert.match(panel, /new THREE\.ShapeGeometry\(maskShape\)/);
   assert.match(panel, /color: 0xf8fafc/);
@@ -255,14 +279,18 @@ test('gridlines that coincide with member or body edges are omitted', () => {
   assert.equal(fbdGridLineConflicts('y', 2, segments, 0.01), true);
   assert.equal(fbdGridLineConflicts('x', 1, segments, 0.01), false);
   assert.equal(fbdGridLineConflicts('y', 1, segments, 0.01), false);
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
   assert.match(panel, /fbdGridLineConflicts\('x', x, geometrySegments/);
   assert.match(replay, /fbdGridLineConflicts\('x', x, geometrySegments/);
 });
 
 test('grid coordinate readings use large high-contrast text', () => {
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   const replay = readFileSync(new URL('../FBDReplayCanvas.tsx', import.meta.url), 'utf8');
   assert.match(panel, /fbdGridReading\(x\), '#334155', 0\.4/);
   assert.match(panel, /strokeText\(text, 128, 48, 242\)/);
@@ -272,7 +300,9 @@ test('grid coordinate readings use large high-contrast text', () => {
 });
 
 test('FBD annotation tools remain available without an isolated problem target', () => {
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   for (const opener of ['openForceForm', 'openMomentForm', 'openDimensionForm', 'openAngleForm', 'openLabelForm']) {
     const start = panel.indexOf(`const ${opener} = () =>`);
     const end = panel.indexOf('\n  };', start);
@@ -285,7 +315,9 @@ test('FBD annotation tools remain available without an isolated problem target',
 });
 
 test('structure translation keeps applied loads and converts reaction forces into support symbols', () => {
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   assert.match(panel, /<option value="none">No joint<\/option>/);
   assert.match(panel, /body\.startJointKind && body\.startJointKind !== 'free'/);
   assert.match(panel, /!baseOnly \|\| \(item\.role \|\| 'applied'\) === 'applied'/);
@@ -327,13 +359,17 @@ test('a support reaction moment converts coincident reaction components into a f
 });
 
 test('the sole student body or member is selected automatically for editing', () => {
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   assert.match(panel, /const bases = \[\.\.\.fbdState\.bodies\.map/);
   assert.match(panel, /if \(bases\.length === 1\) setSelectedPrimitive\(bases\[0\]\)/);
 });
 
 test('scratch FBD interface has no stale isolated problem-object controls or badge', () => {
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(panel, /Isolated:/);
   assert.doesNotMatch(panel, /Optional problem object for FBD checking/);
   assert.doesNotMatch(panel, /id="fbd-target-select"/);
@@ -407,7 +443,9 @@ test('chat modifies primitives only after an explicit request and never invokes 
 });
 
 test('force arrows can be selected and dragged in one gesture without a second activation mode', () => {
-  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
+    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   assert.match(panel, /if \(!annotation && !applicationId && !bodyId && !memberId\) continue/);
   assert.doesNotMatch(panel, /applicationId !== selectedForceId/);
   assert.doesNotMatch(panel, /forceApplicationArmed/);
