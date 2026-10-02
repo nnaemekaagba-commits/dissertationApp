@@ -59,7 +59,7 @@ function addLine(group: THREE.Group, start: THREE.Vector3, end: THREE.Vector3, c
   group.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color })));
 }
 
-function fbdLabelPosition(kind: FBDElementKind, item: FBDElement, span: number): THREE.Vector3 {
+export function fbdLabelPosition(kind: FBDElementKind, item: FBDElement, span: number): THREE.Vector3 {
   if (kind === 'force') {
     const force = item as FBDForce;
     const radians = force.angle * Math.PI / 180;

@@ -22,7 +22,8 @@ import { fbdMemberEndFromAngle,
   type FBDElement, type FBDElementKind, type FBDLabelAssociation, type FBDState, type FBDTarget } from './fbdState';
 import { DEFAULT_GIVEN_VISIBILITY, GIVEN_TOGGLES, type GivenVisibility } from './fbdGiven';
 import { forceApplicationPointAfterDrag, pointAfterSceneDrag } from './fbdDrag';
-import { buildFBDModel, buildStructureModel, disposeGroup, hasStudentFBDBaseGeometry } from './fbdCanvasScene';
+import { buildFBDModel, buildStructureModel, disposeGroup, fbdLabelPosition,
+  hasStudentFBDBaseGeometry } from './fbdCanvasScene';
 import { StructurePreview } from './StructurePreview';
 
 type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
