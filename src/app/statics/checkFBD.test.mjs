@@ -103,7 +103,7 @@ test('rigid-body chat context groups reaction components into one physical suppo
   assert.match(summary, /reaction moment MD at \(4, 0\)/);
   assert.match(summary, /Endpoint labels alone are not supports/);
   const request = buildFBDGroundedChatRequest('Is this in equilibrium?', workspace, fbd);
-  assert.match(request, /Treat the summary's support count and classifications as authoritative/);
+  assert.match(request, /Treat the Rigid Body View support count, types, and locations as authoritative/);
 });
 
 test('chat inventory is limited to the active member and forbids invented distributed loads', () => {
@@ -111,14 +111,26 @@ test('chat inventory is limited to the active member and forbids invented distri
     members: [{ id: 'AB', label: 'AB', start: { x: 0, y: 0 }, end: { x: 4, y: 0 } }],
     forces: [{ id: 'P', canvasMemberId: 'AB', at: { x: 2, y: 0 }, angle: -90, magnitude: 5, label: 'P' }] };
   const summary = describeRigidBodyCanvas(active);
-  assert.match(summary, /exactly 1 member: AB/);
-  assert.match(summary, /Distributed loads: none/);
+  assert.match(summary, /FBD View contains exactly 1 member: AB/);
+  assert.match(summary, /FBD View distributed loads: none/);
   assert.doesNotMatch(summary, /\b(?:BD|AD)\b/);
   const request = buildFBDGroundedChatRequest('Review this FBD',
     { ...workspace, loads: [{ id: 'stale', kind: 'distributed', memberId: 'BD', startMagnitude: 1, endMagnitude: 1, angle: -90 }] }, active);
   assert.match(request, /Never mention a different member name/);
   assert.match(request, /do not mention or infer a distributed load/);
   assert.doesNotMatch(request, /"memberId":"BD"/);
+});
+
+test('chat reads endpoint supports from Rigid Body View even without reaction arrows', () => {
+  const active = { ...empty,
+    members: [{ id: 'AB', label: 'AB', start: { x: 0, y: 0 }, end: { x: 4, y: 0 },
+      startJointKind: 'pin', endJointKind: 'free' }], forces: [], moments: [] };
+  const summary = describeRigidBodyCanvas(active);
+  assert.match(summary, /FBD View contains exactly 1 member: AB/);
+  assert.match(summary, /Rigid Body View contains exactly 1 support: pin support at \(0, 0\) at the start of member AB/);
+  const request = buildFBDGroundedChatRequest('Do I have any supports?', workspace, active);
+  assert.match(request, /Read BOTH the FBD View inventory and the Rigid Body View inventory/);
+  assert.match(request, /A support shown in Rigid Body View is present/);
 });
 
 test('roller arrow on the wrong axis is identified as incorrect reaction representation', () => {
