@@ -11,6 +11,7 @@ import { API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } from '/utils/api';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { createStudentMessageInput, hasTransferredFiles, pastedImageFiles, IMAGE_PASTE_NOTICE, STUDENT_INPUT_NOTICE } from './studentInput';
+import { assistantResponseKey, dedupeConsecutiveAssistantMessages } from './assistantMessageDedup';
 import { AuthPage } from './components/AuthPage';
 import { StaticsWorkspaceProvider, type StaticsWorkspaceController } from './statics/StaticsWorkspaceProvider';
 import { executeEngineeringToolBatch, formatEngineeringToolBatch,
@@ -925,7 +926,7 @@ const mergeArchiveMessages = (primaryMessages: Message[], fallbackMessages: Mess
     });
   });
 
-  return sortMessagesByTime(Array.from(mergedMessages.values()));
+  return dedupeConsecutiveAssistantMessages(sortMessagesByTime(Array.from(mergedMessages.values())));
 };
 
 const findPreviousUserPrompt = (messages: Message[], messageIndex: number) => {
@@ -1292,6 +1293,7 @@ export default function App() {
   const [selectedProvider, setSelectedProvider] = useState<ChatProvider>('openai');
   const selectedProviderRef = useRef<ChatProvider>('openai');
   const requestInFlightRef = useRef(false);
+  const lastAssistantResponseRef = useRef<{ key: string; timestamp: number } | null>(null);
   const selectChatProvider = (provider: ChatProvider) => {
     selectedProviderRef.current = provider;
     setSelectedProvider(provider);
@@ -1944,17 +1946,23 @@ export default function App() {
     }
 
     const insertAssistantMessage = (message: Message) => {
+      const responseKey = assistantResponseKey(messageContent, message.content);
+      const now = Date.now();
+      if (lastAssistantResponseRef.current?.key === responseKey &&
+        now - lastAssistantResponseRef.current.timestamp < 60_000) return;
+      lastAssistantResponseRef.current = { key: responseKey, timestamp: now };
       setMessages((prev) => {
-        if (!options?.insertAfterMessageId) return [...prev, message];
+        if (!options?.insertAfterMessageId)
+          return dedupeConsecutiveAssistantMessages([...prev, message]);
 
         const sourceIndex = prev.findIndex((item) => item.id === options.insertAfterMessageId);
-        if (sourceIndex === -1) return [...prev, message];
+        if (sourceIndex === -1) return dedupeConsecutiveAssistantMessages([...prev, message]);
 
-        return [
+        return dedupeConsecutiveAssistantMessages([
           ...prev.slice(0, sourceIndex + 1),
           message,
           ...prev.slice(sourceIndex + 1),
-        ];
+        ]);
       });
       saveMessage(message);
       if (options?.insertAfterMessageId) {
