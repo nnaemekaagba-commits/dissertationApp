@@ -12,6 +12,8 @@ import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { createStudentMessageInput, hasTransferredFiles, pastedImageFiles, IMAGE_PASTE_NOTICE, STUDENT_INPUT_NOTICE } from './studentInput';
 import { assistantResponseKey, dedupeConsecutiveAssistantMessages } from './assistantMessageDedup';
+import { buildConceptMapRequest, parseConceptMap } from './conceptMap';
+import { ConceptMapView } from './components/ConceptMapView';
 import { AuthPage } from './components/AuthPage';
 import { StaticsWorkspaceProvider, type StaticsWorkspaceController } from './statics/StaticsWorkspaceProvider';
 import { executeEngineeringToolBatch, formatEngineeringToolBatch,
@@ -947,6 +949,7 @@ const MessageItem = memo(({
   onCopyLog,
   onEditResponse,
   onCompareWithAnotherAI,
+  onCreateConceptMap,
   onViewExternalSources,
   normalizeContent
 }: { 
@@ -956,6 +959,7 @@ const MessageItem = memo(({
   onCopyLog: (id: string, source: CopyEvent['source'], copiedText: string) => void;
   onEditResponse: (id: string, updatedText: string) => void;
   onCompareWithAnotherAI: (sourcePrompt: string, responseContent: string, sourceProvider: string | undefined, sourceMessageId: string) => void;
+  onCreateConceptMap: (sourcePrompt: string, responseContent: string, sourceMessageId: string) => void;
   onViewExternalSources: (sourcePrompt: string, responseContent: string, sourceMessageId: string) => void;
   normalizeContent: boolean;
 }) => {
@@ -964,6 +968,7 @@ const MessageItem = memo(({
   const [responseDraft, setResponseDraft] = useState(() => stripArchiveIncorrectMarkers(message.content));
   const [reflectionDrafts, setReflectionDrafts] = useState(() => parseReflectionAnswers(message.feedback || ''));
   const displayContent = stripArchiveIncorrectMarkers(message.content);
+  const conceptMap = message.role === 'assistant' ? parseConceptMap(displayContent) : null;
   const hasSourcePrompt = Boolean(sourcePrompt?.trim());
 
   useEffect(() => {
@@ -1082,6 +1087,8 @@ const MessageItem = memo(({
                 </button>
               </div>
             </div>
+          ) : conceptMap ? (
+            <ConceptMapView map={conceptMap} />
           ) : (
             <MarkdownRenderer
               content={displayContent}
@@ -1090,8 +1097,16 @@ const MessageItem = memo(({
               onLinkClick={message.role === 'assistant' ? logLinkClick : undefined}
             />
           )}
-          {message.role === 'assistant' && hasSourcePrompt && (
+          {message.role === 'assistant' && hasSourcePrompt && !conceptMap && (
             <div className="source-review-actions" aria-label="Review response sources">
+              <button
+                type="button"
+                className="source-review-link source-review-ai"
+                onClick={() => onCreateConceptMap(sourcePrompt || '', displayContent, message.id)}
+              >
+                <Brain className="size-4" />
+                <span>Concept map</span>
+              </button>
               <button
                 type="button"
                 className="source-review-link source-review-ai"
@@ -1871,6 +1886,7 @@ export default function App() {
     skipUserMessage?: boolean;
     insertAfterMessageId?: string;
     comparisonResponse?: boolean;
+    conceptMapRequest?: boolean;
     preserveDraft?: boolean;
   }) => {
     if (isRecordingAudio || isTranscribingAudio || requestInFlightRef.current) return;
@@ -2042,6 +2058,8 @@ export default function App() {
 
       let data = await response.json();
       if (data.toolCalls !== undefined) {
+        if (options?.conceptMapRequest)
+          throw new Error('Concept maps cannot invoke engineering or calculation tools.');
         const controller = staticsControllerRef.current;
         if (!controller) throw new Error('Engineering workspace is not available.');
         const calls = data.toolCalls as FBDChatToolCall[];
@@ -3211,6 +3229,24 @@ ${data.response}` : data.response,
     });
   };
 
+  const createConceptMap = (sourcePrompt: string, responseContent: string, sourceMessageId: string) => {
+    if (!sourcePrompt.trim()) return;
+    const controller = staticsControllerRef.current;
+    const completeFbdState = controller?.getFbdState();
+    const activeMemberId = controller?.getActiveFbdMemberId() ?? completeFbdState?.members[0]?.id ?? null;
+    const visibleFbdState = completeFbdState ? fbdStateForMemberCanvas(completeFbdState, activeMemberId) : null;
+    void handleSend({
+      displayInput: sourcePrompt,
+      requestInput: buildConceptMapRequest(sourcePrompt, responseContent,
+        controller?.getWorkspace() ?? null, visibleFbdState),
+      provider: selectedProviderRef.current,
+      skipUserMessage: true,
+      insertAfterMessageId: sourceMessageId,
+      conceptMapRequest: true,
+      preserveDraft: true,
+    });
+  };
+
   const insertLocalMessageAfter = (newMessage: Message, sourceMessageId: string) => {
     setMessages((prev) => {
       const sourceIndex = prev.findIndex((message) => message.id === sourceMessageId);
@@ -3360,6 +3396,7 @@ ${data.response}` : data.response,
                       onCopyLog={recordCopyEvent}
                       onEditResponse={handleResponseEdit}
                       onCompareWithAnotherAI={prepareAiComparisonPrompt}
+                      onCreateConceptMap={createConceptMap}
                       onViewExternalSources={handleViewExternalSources}
                       normalizeContent={normalizeRenderedContent}
                     />
