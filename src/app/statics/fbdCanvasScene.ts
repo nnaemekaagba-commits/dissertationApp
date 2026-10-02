@@ -268,6 +268,7 @@ export function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
   }
   for (const force of fbdState.forces.filter((item) => !baseOnly || (item.role || 'applied') === 'applied')) {
     const arrow = buildFBDForceArrow(force, span, force.id === selectedForceId);
+    arrow.userData.fbdForceId = force.id;
     arrow.userData.fbdDragApplication = force.id;
     group.add(arrow);
     const labelText = `${force.label || 'F'}${force.magnitude === undefined ? '' : ` = ${force.magnitude} ${workspace.units.force}`}`;

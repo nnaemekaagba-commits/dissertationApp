@@ -101,6 +101,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
   const [selectedPrimitive, setSelectedPrimitive] = useState<{ kind: FBDPrimitiveKind; id: string } | null>(null);
   const activeMemberId = activeFbdMemberId ?? fbdState.members[0]?.id ?? null;
+  const activeCanvasState = fbdStateForMemberCanvas(fbdState, activeMemberId);
   const [primitiveMode, setPrimitiveMode] = useState<FBDPrimitiveKind | null>(null);
   const [primitiveEditing, setPrimitiveEditing] = useState(false);
   const [primitiveDraft, setPrimitiveDraft] = useState({ id: '', label: '', x: '0', y: '0',
@@ -145,6 +146,13 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setLabelMoveMode(false);
     }
   }, [fbdState.labels, selectedLabelId]);
+  const selectForceForEditing = (forceId: string) => {
+    setSelectedPrimitive(null);
+    setSelectedForceId(forceId);
+    setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null); setSelectedLabelId(null);
+    setLabelMoveMode(false); setEditError('');
+    setDiagramActionNotice('Force selected. Edit its properties below and choose Save changes.');
+  };
   const canvasClickRef = useRef<(event: MouseEvent) => void>(() => {});
   canvasClickRef.current = (event) => {
     if (suppressClickRef.current) { suppressClickRef.current = false; return; }
@@ -197,12 +205,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         return;
       }
       if (object?.userData.fbdForceId) {
-        setSelectedPrimitive(null);
-        setSelectedForceId(object.userData.fbdForceId as string);
-        setSelectedMomentId(null);
-        setSelectedDimensionId(null);
-        setSelectedAngleId(null);
-        setSelectedLabelId(null);
+        selectForceForEditing(object.userData.fbdForceId as string);
         return;
       }
       if (object?.userData.fbdMomentId) {
@@ -308,7 +311,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     drag.object.position.copy(drag.original);
     if (event.type === 'pointercancel') return;
     if (!drag.moved) {
-      setSelectedForceId(drag.kind === 'force' ? drag.id : null);
+      if (drag.kind === 'force') selectForceForEditing(drag.id);
+      else setSelectedForceId(null);
       setSelectedMomentId(drag.kind === 'moment' ? drag.id : null);
       setSelectedDimensionId(drag.kind === 'dimension' ? drag.id : null);
       setSelectedAngleId(drag.kind === 'angle' ? drag.id : null);
@@ -1433,11 +1437,11 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             <button type="button" onClick={() => setAngleFormOpen(false)} className="rounded bg-slate-100 px-2 py-1">Cancel</button></div>
           {angleError && <p className="col-span-2 text-red-700" role="alert">{angleError}</p>}
         </form>}
-        {fbdState.forces.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD forces">
-          {fbdState.forces.map((force) => <button key={force.id} type="button" aria-pressed={selectedForceId === force.id}
-            onClick={() => { setSelectedForceId(force.id); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null); setSelectedLabelId(null); setLabelMoveMode(false); }}
+        {activeCanvasState.forces.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD forces">
+          {activeCanvasState.forces.map((force) => <button key={force.id} type="button" aria-pressed={selectedForceId === force.id}
+            aria-label={`Edit force ${force.label || force.id}`} onClick={() => selectForceForEditing(force.id)}
             className={`rounded px-2 py-1 text-xs ${selectedForceId === force.id ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
-            {force.label || 'F'} ({force.at.x}, {force.at.y})</button>)}
+            Edit {force.label || 'F'} ({force.at.x}, {force.at.y})</button>)}
         </div>}
         {fbdState.moments.length > 0 && <div className="mt-2 flex flex-wrap gap-1" aria-label="FBD moments">
           {fbdState.moments.map((moment) => <button key={moment.id} type="button" aria-pressed={selectedMomentId === moment.id}

@@ -742,6 +742,10 @@ test('selected FBD elements expose edit controls and canvas selection', () => {
   assert.match(panel, /Delete Selected/);
   assert.match(panel, /fbd_element_edit/);
   assert.match(panel, /fbd_element_delete/);
+  assert.match(panel, /selectForceForEditing/);
+  assert.match(panel, /aria-label=\{`Edit force \$\{force\.label \|\| force\.id\}`\}/);
+  assert.match(panel, /arrow\.userData\.fbdForceId = force\.id/);
+  assert.match(panel, /activeCanvasState\.forces\.map/);
 });
 
 test('dragging every FBD annotation label changes display coordinates without changing semantic geometry', () => {
