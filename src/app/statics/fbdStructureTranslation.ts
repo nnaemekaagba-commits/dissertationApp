@@ -3,6 +3,9 @@ import type { FBDForce, FBDJoint, FBDMoment, FBDPoint } from './fbdState';
 const SAME_POINT_TOLERANCE = 1e-6;
 const NON_PARALLEL_TOLERANCE = 1e-4;
 
+export const isExternalFBDLoad = (item: FBDForce | FBDMoment) =>
+  (item.role || 'applied') === 'applied';
+
 function samePoint(left: FBDPoint, right: FBDPoint): boolean {
   return Math.hypot(left.x - right.x, left.y - right.y) <= SAME_POINT_TOLERANCE;
 }

@@ -10,7 +10,7 @@ import { fbdBodyCorners, fbdBodyEndpointLabelPositions, fbdEndpointLabels,
 import { buildFBDForceArrow } from './fbdForceScene';
 import { buildFBDMomentArrow } from './fbdMomentScene';
 import { fbdJointSymbol } from './fbdJointSymbol';
-import { inferReactionSupports } from './fbdStructureTranslation';
+import { inferReactionSupports, isExternalFBDLoad } from './fbdStructureTranslation';
 import { fbdGridLineConflicts, fbdGridReading, fbdGridSpec } from './fbdGrid';
 import { buildFBDDimensionLines, dimensionLayout } from './fbdDimensionScene';
 import { angleArcLayout, buildFBDAngleArc } from './fbdAngleScene';
@@ -96,12 +96,15 @@ export function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     ...fbdState.bodies.flatMap((item) => fbdBodyCorners(item)),
     ...fbdState.joints.map((item) => item.at),
     ...fbdState.members.flatMap((item) => [item.start, item.end]),
-    ...(!baseOnly ? [
+    ...(baseOnly ? [
+      ...fbdState.forces.filter(isExternalFBDLoad).map((item) => item.at),
+      ...fbdState.moments.filter(isExternalFBDLoad).map((item) => item.at),
+    ] : [
       ...fbdState.forces.map((item) => item.at), ...fbdState.moments.map((item) => item.at),
       ...fbdState.dimensions.flatMap((item) => [item.start, item.end]),
       ...fbdState.angles.flatMap((item) => [item.vertex, item.from, item.to]),
       ...fbdState.labels.map((item) => item.at),
-    ] : []),
+    ]),
   ];
   const points = pointData.map((point) => new THREE.Vector3(point.x, point.y, 0));
   const bounds = new THREE.Box3().setFromPoints(points);
@@ -266,7 +269,7 @@ export function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
         label.userData.fbdPrimitive = { kind: 'joint', id: node.id }; group.add(label); }
     }
   }
-  for (const force of fbdState.forces.filter((item) => !baseOnly || (item.role || 'applied') === 'applied')) {
+  for (const force of fbdState.forces.filter((item) => !baseOnly || isExternalFBDLoad(item))) {
     const arrow = buildFBDForceArrow(force, span, force.id === selectedForceId);
     arrow.userData.fbdForceId = force.id;
     arrow.userData.fbdDragApplication = force.id;
@@ -280,8 +283,7 @@ export function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       group.add(label);
     }
   }
-  if (baseOnly) return { group, center, span };
-  for (const moment of fbdState.moments) {
+  for (const moment of fbdState.moments.filter((item) => !baseOnly || isExternalFBDLoad(item))) {
     group.add(buildFBDMomentArrow(moment, span, moment.id === selectedMomentId));
     const labelText = `${moment.label || 'M'}${moment.magnitude === undefined ? '' : ` = ${moment.magnitude} ${workspace.units.force}·${workspace.units.length}`}`;
     const label = textSprite(labelText, moment.id === selectedMomentId ? '#c2410c' : '#6d28d9', 0.42);
@@ -292,6 +294,7 @@ export function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       group.add(label);
     }
   }
+  if (baseOnly) return { group, center, span };
   for (const dimension of fbdState.dimensions) {
     group.add(buildFBDDimensionLines(dimension, span, dimension.id === selectedDimensionId));
     const label = textSprite(dimension.label || '',

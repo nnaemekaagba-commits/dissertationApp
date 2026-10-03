@@ -12,7 +12,7 @@ import { executeFBDChatToolBatch } from './fbdChatTools.ts';
 import { fbdActionForVisualization } from './researchLog.ts';
 import { fbdJointSymbol } from './fbdJointSymbol.ts';
 import { fbdGridLineConflicts, fbdGridReading, fbdGridSpec } from './fbdGrid.ts';
-import { inferReactionSupports } from './fbdStructureTranslation.ts';
+import { inferReactionSupports, isExternalFBDLoad } from './fbdStructureTranslation.ts';
 
 const workspace = createSimplySupportedBeamWorkspace();
 const body = { id: 'Body-1', origin: { x: 0, y: 0 }, width: 4, height: 0.6, label: 'My body' };
@@ -320,7 +320,8 @@ test('structure translation keeps applied loads and converts reaction forces int
     readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   assert.match(panel, /<option value="none">No joint<\/option>/);
   assert.match(panel, /body\.startJointKind && body\.startJointKind !== 'free'/);
-  assert.match(panel, /!baseOnly \|\| \(item\.role \|\| 'applied'\) === 'applied'/);
+  assert.match(panel, /fbdState\.forces\.filter\(\(item\) => !baseOnly \|\| isExternalFBDLoad\(item\)\)/);
+  assert.match(panel, /fbdState\.moments\.filter\(\(item\) => !baseOnly \|\| isExternalFBDLoad\(item\)\)/);
   assert.match(panel, /inferReactionSupports\(fbdState\.forces/);
   assert.match(panel, /<option value="applied">External applied force<\/option>/);
   const external = addFBDForce(createEmptyFBDState(workspace),
@@ -333,6 +334,10 @@ test('structure translation keeps applied loads and converts reaction forces int
   assert.deepEqual(inferReactionSupports(restored.forces), [
     { id: 'reaction-support:R', at: { x: 0, y: 0 }, kind: 'roller' },
   ]);
+  assert.equal(isExternalFBDLoad(restored.forces[0]), true);
+  assert.equal(isExternalFBDLoad(restored.forces[1]), false);
+  assert.equal(isExternalFBDLoad({ id: 'M', at: { x: 2, y: 0 }, clockwise: true, label: 'M', role: 'applied' }), true);
+  assert.equal(isExternalFBDLoad({ id: 'RM', at: { x: 0, y: 0 }, clockwise: true, label: 'RM', role: 'reaction' }), false);
 });
 
 test('two independent reaction components become one pin and explicit supports take precedence', () => {
