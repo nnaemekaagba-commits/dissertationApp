@@ -6,7 +6,7 @@ import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { createEmptyFBDState, hasStudentFBDElements, resetStudentFBDElements, isolatedFBDGeometry,
   engineeringStructureKey, fbdStorageKey, loadFBDState, fbdStateForMemberCanvas,
   saveFBDState, selectFBDTarget, addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle,
-  addFBDLabel, moveFBDLabel,
+  addFBDLabel, moveFBDLabel, addFBDMember, editFBDPrimitive,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
   deleteFBDElement, getFBDElement,
   repositionFBDLabel, moveFBDForceApplication,
@@ -37,6 +37,34 @@ test('each member has an independent persistent canvas', () => {
   assert.deepEqual(fbdStateForMemberCanvas(withBoth, 'CD').forces.map((item) => item.id), ['r']);
   const restored = loadFBDState({ getItem: () => JSON.stringify(withBoth), setItem() {} }, 'student', workspace);
   assert.equal(restored.forces[1].canvasMemberId, 'CD');
+});
+
+test('moving or editing a member preserves every element on its canvas', () => {
+  let state = addFBDMember(createEmptyFBDState(workspace),
+    { id: 'drawn-AB', start: { x: 0, y: 0 }, end: { x: 4, y: 0 }, label: 'AB' });
+  state = addFBDForce(state,
+    { at: { x: 1, y: 0 }, angle: -90, label: 'P', canvasMemberId: 'drawn-AB' }, workspace, 'P');
+  state = addFBDMoment(state,
+    { at: { x: 3, y: 0 }, clockwise: true, label: 'M', canvasMemberId: 'drawn-AB' }, workspace, 'M');
+  state = addFBDDimension(state,
+    { start: { x: 0, y: -1 }, end: { x: 4, y: -1 }, label: '4 m', canvasMemberId: 'drawn-AB' },
+    workspace, 'length');
+  state = addFBDAngle(state,
+    { vertex: { x: 0, y: 0 }, from: { x: 1, y: 0 }, to: { x: 1, y: 1 },
+      label: '45°', canvasMemberId: 'drawn-AB' }, workspace, 'inclination');
+  state = addFBDLabel(state,
+    { at: { x: 2, y: 1 }, text: 'member note', canvasMemberId: 'drawn-AB' }, workspace, 'note');
+
+  const moved = editFBDPrimitive(state, 'member', 'drawn-AB',
+    { ...state.members[0], start: { x: 2, y: 3 }, end: { x: 6, y: 3 } });
+
+  assert.deepEqual(moved.members[0].start, { x: 2, y: 3 });
+  assert.deepEqual(moved.members[0].end, { x: 6, y: 3 });
+  assert.deepEqual(moved.forces, state.forces);
+  assert.deepEqual(moved.moments, state.moments);
+  assert.deepEqual(moved.dimensions, state.dimensions);
+  assert.deepEqual(moved.angles, state.angles);
+  assert.deepEqual(moved.labels, state.labels);
 });
 
 test('an isolated target alone does not draw an FBD member; student work starts the drawing', () => {

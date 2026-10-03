@@ -177,15 +177,20 @@ export function editFBDPrimitive(state: FBDState, kind: FBDPrimitiveKind,
   id: string, replacement: FBDPrimitive): FBDState {
   if (!getFBDElement(state, kind, id) || replacement.id !== id)
     throw new Error('Unknown FBD base element.');
-  const without = deleteFBDElement(state, kind, id);
-  const validated = kind === 'body' ? addFBDBody(without, replacement as FBDBody) :
-    kind === 'joint' ? addFBDJoint(without, replacement as FBDJoint) :
-      addFBDMember(without, replacement as FBDMember);
-  return { ...validated,
-    bodies: kind === 'body' ? state.bodies.map((item) => item.id === id ? replacement as FBDBody : item) : state.bodies,
-    joints: kind === 'joint' ? state.joints.map((item) => item.id === id ? replacement as FBDJoint : item) : state.joints,
-    members: kind === 'member' ? state.members.map((item) => item.id === id ? replacement as FBDMember : item) : state.members,
-    labels: state.labels };
+  // Validate against a state where only the primitive itself is absent. Using
+  // deleteFBDElement here would also remove every annotation attached to a
+  // member, which made its forces and moments disappear after a drag/edit.
+  const withoutPrimitive = { ...state,
+    bodies: kind === 'body' ? state.bodies.filter((item) => item.id !== id) : state.bodies,
+    joints: kind === 'joint' ? state.joints.filter((item) => item.id !== id) : state.joints,
+    members: kind === 'member' ? state.members.filter((item) => item.id !== id) : state.members };
+  const validated = kind === 'body' ? addFBDBody(withoutPrimitive, replacement as FBDBody).bodies.at(-1)! :
+    kind === 'joint' ? addFBDJoint(withoutPrimitive, replacement as FBDJoint).joints.at(-1)! :
+      addFBDMember(withoutPrimitive, replacement as FBDMember).members.at(-1)!;
+  return { ...state,
+    bodies: kind === 'body' ? state.bodies.map((item) => item.id === id ? validated as FBDBody : item) : state.bodies,
+    joints: kind === 'joint' ? state.joints.map((item) => item.id === id ? validated as FBDJoint : item) : state.joints,
+    members: kind === 'member' ? state.members.map((item) => item.id === id ? validated as FBDMember : item) : state.members };
 }
 
 function validTarget(target: FBDTarget, workspace: StaticsWorkspace): boolean {
