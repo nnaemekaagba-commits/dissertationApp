@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Box, RotateCcw, X } from 'lucide-react';
+import { Box, CheckCircle2, RotateCcw, X } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useStaticsWorkspace } from './StaticsWorkspaceProvider';
@@ -110,6 +110,11 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     startJointKind: 'none', endJointKind: 'none' });
   const [primitiveError, setPrimitiveError] = useState('');
   const [diagramActionNotice, setDiagramActionNotice] = useState('');
+  useEffect(() => {
+    if (!diagramActionNotice) return;
+    const timeout = window.setTimeout(() => setDiagramActionNotice(''), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [diagramActionNotice]);
   const [moveDraft, setMoveDraft] = useState({ dx: '0', dy: '0' });
   useEffect(() => {
     if (selectedPrimitive) return;
@@ -613,6 +618,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setSelectedLabelId(null);
       setForceFormOpen(false);
       setForceError('');
+      setDiagramActionNotice(`Force ${force.label || force.id} added.`);
       onVisualizationInteraction('fbd_force_add', undefined, force, undefined, undefined, undefined,
         undefined, undefined, { before: fbdState, after: next });
     } catch (caught) {
@@ -648,6 +654,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setSelectedLabelId(null);
       setMomentFormOpen(false);
       setMomentError('');
+      setDiagramActionNotice(`Moment ${moment.label || moment.id} added.`);
       onVisualizationInteraction('fbd_moment_add', undefined, undefined, moment, undefined, undefined,
         undefined, undefined, { before: fbdState, after: next });
     } catch (caught) {
@@ -690,6 +697,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setSelectedLabelId(null);
       setDimensionFormOpen(false);
       setDimensionError('');
+      setDiagramActionNotice(`Dimension ${dimension.label || dimension.id} added.`);
       onVisualizationInteraction('fbd_dimension_add', undefined, undefined, undefined, dimension, undefined,
         undefined, undefined, { before: fbdState, after: next });
     } catch (caught) {
@@ -731,6 +739,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setSelectedLabelId(null);
       setAngleFormOpen(false);
       setAngleError('');
+      setDiagramActionNotice(`Angle ${angle.label || angle.id} added.`);
       onVisualizationInteraction('fbd_angle_add', undefined, undefined, undefined, undefined, angle,
         undefined, undefined, { before: fbdState, after: next });
     } catch (caught) {
@@ -764,6 +773,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null);
       setLabelFormOpen(false);
       setLabelError('');
+      setDiagramActionNotice(`Label “${label.text}” added.`);
       onVisualizationInteraction('fbd_label_add', undefined, undefined, undefined, undefined, undefined,
         label, undefined, { before: fbdState, after: next });
     } catch (caught) {
@@ -811,6 +821,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       const after = getFBDElement(next, selectedKind, selectedId)!;
       setFbdState(next);
       setEditError('');
+      setDiagramActionNotice(`${selectedKind[0].toUpperCase()}${selectedKind.slice(1)} ${selectedId} saved.`);
       onVisualizationInteraction('fbd_element_edit', undefined, undefined, undefined, undefined,
         undefined, undefined, { elementKind: selectedKind, elementId: selectedId, before: selectedElement, after },
         { before: fbdState, after: next });
@@ -827,6 +838,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         before: selectedElement, after: null }, { before: fbdState, after: next });
     setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null);
     setSelectedAngleId(null); setSelectedLabelId(null); setLabelMoveMode(false); setEditError('');
+    setDiagramActionNotice(`${selectedKind[0].toUpperCase()}${selectedKind.slice(1)} ${selectedId} deleted.`);
   };
   const selectedPrimitiveElement = selectedPrimitive
     ? getFBDElement(fbdState, selectedPrimitive.kind, selectedPrimitive.id) : undefined;
@@ -911,6 +923,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           primitiveMode === 'joint' ? addFBDJoint(fbdState, item as FBDJoint) :
             addFBDMember(fbdState, item as FBDMember);
       recordPrimitiveChange(primitiveMode, primitiveEditing ? 'edit' : 'add', id, next);
+      setDiagramActionNotice(`${primitiveMode[0].toUpperCase()}${primitiveMode.slice(1)} ${id} ${primitiveEditing ? 'saved' : 'added'}.`);
       setSelectedPrimitive({ kind: primitiveMode, id });
       if (primitiveMode === 'member') setActiveFbdMemberId(id);
       setPrimitiveMode(null); setPrimitiveError('');
@@ -934,11 +947,13 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     const next = editFBDPrimitive(fbdState, selectedPrimitive.kind, selectedPrimitive.id, item);
     recordPrimitiveChange(selectedPrimitive.kind, 'move', selectedPrimitive.id, next);
     setMoveDraft({ dx: '0', dy: '0' }); setPrimitiveError('');
+    setDiagramActionNotice(`${selectedPrimitive.kind[0].toUpperCase()}${selectedPrimitive.kind.slice(1)} ${selectedPrimitive.id} moved.`);
   };
   const deleteSelectedPrimitive = () => {
     if (!selectedPrimitive) return;
     const next = deleteFBDElement(fbdState, selectedPrimitive.kind, selectedPrimitive.id);
     recordPrimitiveChange(selectedPrimitive.kind, 'delete', selectedPrimitive.id, next);
+    setDiagramActionNotice(`${selectedPrimitive.kind[0].toUpperCase()}${selectedPrimitive.kind.slice(1)} ${selectedPrimitive.id} deleted.`);
     setSelectedPrimitive(null); setPrimitiveMode(null);
   };
   const submitLabelPosition = (event: FormEvent<HTMLFormElement>) => {
@@ -953,6 +968,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         { x: Number(x), y: Number(y) });
       setFbdState(next);
       setEditError('');
+      setDiagramActionNotice(`Label position for ${selectedKind} ${selectedId} saved.`);
       onVisualizationInteraction('fbd_element_reposition', undefined, undefined, undefined, undefined,
         undefined, undefined, { elementKind: selectedKind, elementId: selectedId,
           before: selectedElement, after: getFBDElement(next, selectedKind, selectedId)!, dragTarget: 'label' },
@@ -1023,9 +1039,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           Clear Diagram
         </button>}
       </div>
-      {showFbd && diagramActionNotice && <p role="status"
-        className="shrink-0 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-        {diagramActionNotice}
+      {showFbd && diagramActionNotice && <p role="status" aria-live="polite"
+        className="absolute bottom-3 right-3 z-50 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-900 shadow-lg">
+        <CheckCircle2 aria-hidden="true" className="size-4 shrink-0" />{diagramActionNotice}
       </p>}
       {showFbd && resetPending && hasStudentFBDElements(fbdState) && <div role="group" aria-label="Confirm Reset FBD"
         className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-300 bg-amber-50 px-3 py-2 text-xs">
@@ -1041,6 +1057,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           setForceFormOpen(false); setMomentFormOpen(false); setDimensionFormOpen(false);
           setAngleFormOpen(false); setLabelFormOpen(false); setLabelMoveMode(false);
           setResetPending(false);
+          setDiagramActionNotice('Diagram cleared. Undo is available.');
           onVisualizationInteraction('fbd_reset', undefined, undefined, undefined,
             undefined, undefined, undefined, undefined, { before, after });
         }}>Clear FBD</button>
@@ -1182,12 +1199,14 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           <button type="button" onClick={openLabelForm}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Add Label</button>
           <button type="button" disabled={!canUndoFbd} onClick={() => { const transition = undoFbd();
-            if (transition) onVisualizationInteraction('fbd_undo', undefined, undefined, undefined,
-              undefined, undefined, undefined, undefined, transition); }}
+            if (transition) { setDiagramActionNotice('Last diagram change undone.');
+              onVisualizationInteraction('fbd_undo', undefined, undefined, undefined,
+                undefined, undefined, undefined, undefined, transition); } }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Undo</button>
           <button type="button" disabled={!canRedoFbd} onClick={() => { const transition = redoFbd();
-            if (transition) onVisualizationInteraction('fbd_redo', undefined, undefined, undefined,
-              undefined, undefined, undefined, undefined, transition); }}
+            if (transition) { setDiagramActionNotice('Diagram change restored.');
+              onVisualizationInteraction('fbd_redo', undefined, undefined, undefined,
+                undefined, undefined, undefined, undefined, transition); } }}
             className="rounded bg-slate-100 px-2 py-1 text-xs disabled:text-slate-400">Redo</button>
           <button type="button" onClick={onCheckFBD}
             className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white">Check My FBD</button>
