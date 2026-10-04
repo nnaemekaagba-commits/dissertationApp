@@ -7,7 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from './components/u
 import { motion } from 'motion/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { publicAnonKey } from '/utils/supabase/info';
-import { API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } from '/utils/api';
+import { ADK_API_BASE_URL, API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } from '/utils/api';
+import { shouldUseADKFBDCoach } from './adkRouting';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { createStudentMessageInput, hasTransferredFiles, pastedImageFiles, IMAGE_PASTE_NOTICE, STUDENT_INPUT_NOTICE } from './studentInput';
@@ -2038,7 +2039,10 @@ export default function App() {
     let pendingFBDResearchEvents: EngineeringResearchEvent[] = [];
 
     try {
-      const response = await fetch(`${CHAT_API_BASE_URL}/chat`, {
+      const chatApiBaseUrl = shouldUseADKFBDCoach(requestContent,
+        hasVisibleFBD && activeImages.length === 0, ADK_API_BASE_URL)
+        ? ADK_API_BASE_URL : CHAT_API_BASE_URL;
+      const response = await fetch(`${chatApiBaseUrl}/chat`, {
         method: 'POST',
         headers: buildApiHeaders(true),
         body: JSON.stringify(chatPayload),

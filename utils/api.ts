@@ -12,6 +12,10 @@ export const CHAT_API_BASE_URL = trimTrailingSlash(
   import.meta.env.VITE_CHAT_API_BASE_URL || API_BASE_URL
 );
 
+export const ADK_API_BASE_URL = import.meta.env.VITE_ADK_API_BASE_URL
+  ? trimTrailingSlash(import.meta.env.VITE_ADK_API_BASE_URL)
+  : '';
+
 export const AUTH_API_BASE_URL = trimTrailingSlash(
   import.meta.env.VITE_AUTH_API_BASE_URL || defaultApiBaseUrl
 );
