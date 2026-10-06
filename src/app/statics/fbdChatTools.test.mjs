@@ -55,3 +55,40 @@ test('invalid and unknown edits fail without false confirmation or lost work', (
     assert.match(formatFBDChatToolBatch(batch), /not completed/);
   }
 });
+
+test('AI drawing tools preserve support types and load roles for the rigid-body translation', () => {
+  const empty = createEmptyFBDState(structure);
+  const calls = [
+    { id: 'member', name: 'fbd_add_member', arguments: {
+      startX: 0, startY: 0, endX: 4, endY: 0, label: 'AD',
+      startJointKind: 'pin', endJointKind: 'roller',
+    } },
+    { id: 'load', name: 'fbd_add_force', arguments: {
+      x: 2, y: 0, angle: -90, label: 'P', magnitude: 10, role: 'applied',
+    } },
+    { id: 'reaction', name: 'fbd_add_force', arguments: {
+      x: 0, y: 0, angle: 90, label: 'A_y', role: 'reaction',
+    } },
+  ];
+  let index = 0;
+  const batch = executeFBDChatToolBatch(structure, empty, calls,
+    'Draw a free-body diagram for member AD.', undefined, () => `generated-${++index}`);
+  assert.deepEqual(batch.results.map((result) => result.success), [true, true, true]);
+  assert.equal(batch.state.members[0].label, 'AD');
+  assert.equal(batch.state.members[0].startJointKind, 'pin');
+  assert.equal(batch.state.members[0].endJointKind, 'roller');
+  assert.equal(batch.state.forces[0].role, undefined);
+  assert.equal(batch.state.forces[1].role, 'reaction');
+});
+
+test('a complete AI-generated FBD may use more than eight validated calls', () => {
+  const calls = Array.from({ length: 9 }, (_, index) => ({
+    id: `force-${index}`, name: 'fbd_add_force',
+    arguments: { x: index, y: 0, angle: 90, label: `F${index}`, role: 'applied' },
+  }));
+  let index = 0;
+  const batch = executeFBDChatToolBatch(structure, createEmptyFBDState(structure), calls,
+    'Create an FBD with these forces.', undefined, () => `generated-${++index}`);
+  assert.equal(batch.results.every((result) => result.success), true);
+  assert.equal(batch.state.forces.length, 9);
+});

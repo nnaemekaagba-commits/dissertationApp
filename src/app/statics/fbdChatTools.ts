@@ -24,8 +24,8 @@ export type FBDChatBatch = { state: FBDState; results: FBDChatToolResult[]; inte
 export function explicitlyRequestsFBDModification(message: string): boolean {
   const text = message.trim();
   if (/^(what|why|how|explain|describe|teach|am i|should i|is there|do i|can i)\b/i.test(text)) return false;
-  return /\b(add|draw|place|insert|remove|delete|erase|edit|change|move|reposition|rename|replace|select|isolate|set)\b/i.test(text) &&
-    /\b(fbd|free[ -]?body|diagram|body|point|line|arrow|annotation|force label|moment label|my force|my moment|my label)\b/i.test(text);
+  return /\b(add|build|create|draw|make|place|insert|remove|delete|erase|edit|change|move|reposition|rename|replace|select|isolate|set)\b/i.test(text) &&
+    /\b(fbd|free[ -]?body|diagram|body|member|beam|point|line|arrow|annotation|force label|moment label|my force|my moment|my label)\b/i.test(text);
 }
 
 function args(value: unknown, allowed: string[], required: string[] = []): Record<string, unknown> {
@@ -68,8 +68,10 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
   if (/^fbd_(add|edit)_(body|joint|member)$/.test(name)) {
     const [, operation, kind] = /^fbd_(add|edit)_(body|joint|member)$/.exec(name)!;
     const editing = operation === 'edit';
-    const geometry = kind === 'body' ? ['x', 'y', 'width', 'height', 'angle'] :
+    const supports = ['startJointKind', 'endJointKind'];
+    const geometry = kind === 'body' ? ['x', 'y', 'width', 'height', 'angle', ...supports] :
       kind === 'joint' ? ['x', 'y', 'jointKind'] : ['startX', 'startY', 'endX', 'endY', 'angle', 'length'];
+    if (kind === 'member') geometry.push(...supports);
     const row = args(value, [...(editing ? ['id'] : []), ...geometry, 'label'],
       editing ? ['id'] : kind === 'joint' ? ['x', 'y'] : kind === 'body' ? ['x', 'y', 'width', 'height'] : ['startX', 'startY']);
     const id = editing ? str(row, 'id', 128) : newId();
@@ -79,12 +81,22 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
     const coordinate = (key: string, fallback: number) => row[key] === undefined ? fallback : num(row, key);
     const label = row.label === undefined ? old && 'label' in old ? old.label : undefined : str(row, 'label');
     const withLabel = label ? { label } : {};
+    const jointKind = (key: string, fallback?: FBDJoint['kind']) => {
+      if (row[key] === undefined) return fallback;
+      const value = str(row, key, 16) as FBDJoint['kind'];
+      if (!['free', 'pin', 'roller', 'fixed'].includes(value)) throw new Error(`Invalid ${key}.`);
+      return value;
+    };
     const item = kind === 'body' ? { id, origin: {
       x: coordinate('x', (old as FBDBody | undefined)?.origin.x ?? 0),
       y: coordinate('y', (old as FBDBody | undefined)?.origin.y ?? 0) },
       width: coordinate('width', (old as FBDBody | undefined)?.width ?? 0),
       height: coordinate('height', (old as FBDBody | undefined)?.height ?? 0),
-      angle: coordinate('angle', (old as FBDBody | undefined)?.angle ?? 0), ...withLabel } :
+      angle: coordinate('angle', (old as FBDBody | undefined)?.angle ?? 0),
+      ...(jointKind('startJointKind', (old as FBDBody | undefined)?.startJointKind) ?
+        { startJointKind: jointKind('startJointKind', (old as FBDBody | undefined)?.startJointKind) } : {}),
+      ...(jointKind('endJointKind', (old as FBDBody | undefined)?.endJointKind) ?
+        { endJointKind: jointKind('endJointKind', (old as FBDBody | undefined)?.endJointKind) } : {}), ...withLabel } :
       kind === 'joint' ? { id, at: {
         x: coordinate('x', (old as FBDJoint | undefined)?.at.x ?? 0),
         y: coordinate('y', (old as FBDJoint | undefined)?.at.y ?? 0) },
@@ -107,7 +119,11 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
             coordinate('length', oldLength), coordinate('angle', oldAngle)) : {
             x: coordinate('endX', previous?.end.x ?? 0),
             y: coordinate('endY', previous?.end.y ?? 0) };
-          return { id, start, end, ...withLabel };
+          return { id, start, end,
+            ...(jointKind('startJointKind', previous?.startJointKind) ?
+              { startJointKind: jointKind('startJointKind', previous?.startJointKind) } : {}),
+            ...(jointKind('endJointKind', previous?.endJointKind) ?
+              { endJointKind: jointKind('endJointKind', previous?.endJointKind) } : {}), ...withLabel };
         })();
     return editing ? editFBDPrimitive(state, kind as FBDPrimitiveKind, id, item) :
       kind === 'body' ? addFBDBody(state, item as FBDBody) :
@@ -130,7 +146,7 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
   }
   if (name === 'fbd_add_force' || name === 'fbd_edit_force') {
     const editing = name === 'fbd_edit_force';
-    const row = args(value, editing ? ['id', 'x', 'y', 'angle', 'label', 'magnitude'] : ['x', 'y', 'angle', 'label', 'magnitude'], editing ? ['id'] : ['x', 'y', 'angle', 'label']);
+    const row = args(value, editing ? ['id', 'x', 'y', 'angle', 'label', 'magnitude', 'role'] : ['x', 'y', 'angle', 'label', 'magnitude', 'role'], editing ? ['id'] : ['x', 'y', 'angle', 'label']);
     const id = editing ? str(row, 'id', 128) : newId();
     const old = editing ? state.forces.find((item) => item.id === id) : undefined;
     if (editing && !old) throw new Error('Unknown FBD force.');
@@ -139,6 +155,7 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
       y: row.y === undefined ? old!.at.y : num(row, 'y') },
       angle: row.angle === undefined ? old!.angle : num(row, 'angle'),
       label: row.label === undefined ? old!.label || '' : str(row, 'label', 80),
+      role: row.role === undefined ? old?.role || 'applied' : role(row, 'role'),
       ...(row.magnitude === undefined ? old?.magnitude === undefined ? {} : { magnitude: old.magnitude }
         : { magnitude: num(row, 'magnitude') }) };
     return editing ? editFBDForce(state, id, input, workspace) : addFBDForce(state, input, workspace, id);
@@ -227,7 +244,7 @@ function applyFBDChatTool(state: FBDState, workspace: StaticsWorkspace, call: FB
 export function executeFBDChatToolBatch(workspace: StaticsWorkspace, state: FBDState,
   calls: FBDChatToolCall[], message: string, onChange?: (next: FBDState) => void,
   newId = () => crypto.randomUUID()): FBDChatBatch {
-  if (!Array.isArray(calls) || !calls.length || calls.length > 8) throw new Error('Invalid FBD tool call count.');
+  if (!Array.isArray(calls) || !calls.length || calls.length > 64) throw new Error('Invalid FBD tool call count.');
   let current = state;
   const interactions: FBDChatInteraction[] = [];
   const seen = new Set<string>();

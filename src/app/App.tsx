@@ -23,6 +23,7 @@ import { executeFBDChatToolBatch, formatFBDChatToolBatch, FBD_CHAT_TOOL_NAMES,
   type FBDChatBatch, type FBDChatToolCall } from './statics/fbdChatTools';
 import { checkStudentFBD, explicitlyRequestsFBDCheck, formatFBDCheckFeedback } from './statics/checkFBD';
 import { buildFBDCoachingRequest, buildFBDGroundedChatRequest, FBD_CHECK_QUESTIONS } from './statics/fbdCheckConversation';
+import { buildFBDDrawingRequest, explicitlyRequestsFBDDrawing, isFBDDiagramPrompt } from './statics/fbdDrawingRequest';
 import { explicitlyRequestsVisualCalculation, visualCalculationForRequest,
   type RequestedVisualCalculation } from './statics/calculationPolicy';
 import type { BeamReactionResult } from './statics/calculations';
@@ -1842,7 +1843,7 @@ export default function App() {
   const getPromptImageAction = (prompt: string): 'generate' | 'search' | null => {
     const normalized = prompt.toLowerCase().replace(/\s+/g, ' ').trim();
 
-    if (!normalized) return null;
+    if (!normalized || isFBDDiagramPrompt(normalized)) return null;
 
     const internetImagePatterns = [
       /\b(pull|find|search|get|show|look up|fetch)\b.{0,50}\b(images?|pictures?|photos?)\b.{0,50}\b(internet|web|online|from the internet|from online)\b/,
@@ -1896,7 +1897,7 @@ export default function App() {
     const answeringFBDCoachingPrompt = awaitingFBDCoachingDetails && !options;
     const requestInput = answeringFBDCoachingPrompt
       ? buildFBDCoachingRequest(displayInput)
-      : options?.requestInput ?? displayInput;
+      : buildFBDDrawingRequest(options?.requestInput ?? displayInput);
     const requestProvider = normalizeChatProvider(options?.provider) ?? selectedProviderRef.current;
     if (!displayInput.trim()) return;
 
@@ -2074,7 +2075,8 @@ export default function App() {
             fbdCalls, currentInput, controller.setFbdState);
           if (fbdBatch.results.some((result) => result.success)) {
             setShowEngineeringPanel(true);
-            setDisplayMode((current) => current === 'structure' ? 'fbd' : current);
+            setDisplayMode(explicitlyRequestsFBDDrawing(displayInput) ? 'split' :
+              (current) => current === 'structure' ? 'fbd' : current);
           }
           data = { ...data, response: formatFBDChatToolBatch(fbdBatch) };
           if (userId) {
