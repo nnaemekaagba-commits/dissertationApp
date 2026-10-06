@@ -1358,10 +1358,10 @@ export default function App() {
   const researchActorId = userId || 'guest';
   const recordEngineeringEvent = useCallback((event: EngineeringResearchEvent) => {
     const send = async () => {
-      saveLocalResearchEvent(localStorage, researchActorId, event);
+      const recordedEvent = saveLocalResearchEvent(localStorage, researchActorId, event);
       if (!userId || !accessToken) return;
       const response = await fetch(`${API_BASE_URL}/engineering-events`, {
-        method: 'POST', headers: buildApiHeaders(true), body: JSON.stringify(event),
+        method: 'POST', headers: buildApiHeaders(true), body: JSON.stringify(recordedEvent),
       });
       if (!response.ok) throw new Error(`Research event was not saved (${response.status}).`);
     };

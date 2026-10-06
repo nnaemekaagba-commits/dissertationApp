@@ -124,22 +124,34 @@ export function getEngineeringSessionId(storage: Pick<Storage, 'getItem' | 'setI
 export const localResearchEventKey = (userId: string) =>
   `mydis-engineering-events:${encodeURIComponent(userId || 'guest')}`;
 
+const validTimestamp = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0 && Number.isFinite(Date.parse(value));
+
+/** Runtime guard for local and remote writes, including events received from untyped boundaries. */
+export function ensureResearchEventTimestamp(event: EngineeringResearchEvent,
+  now = () => new Date().toISOString()): EngineeringResearchEvent {
+  return validTimestamp(event.timestamp) ? event : { ...event, timestamp: now() };
+}
+
 export function loadLocalResearchEvents(storage: Pick<Storage, 'getItem'>,
   userId: string): EngineeringResearchEvent[] {
   try {
     const value = JSON.parse(storage.getItem(localResearchEventKey(userId)) || '[]');
     return Array.isArray(value) ? value.filter((event) => event && typeof event === 'object' &&
-      typeof event.eventId === 'string' && typeof event.timestamp === 'string') : [];
+      typeof event.eventId === 'string' && validTimestamp(event.timestamp)) : [];
   } catch { return []; }
 }
 
 export function saveLocalResearchEvent(storage: Pick<Storage, 'getItem' | 'setItem'>,
-  userId: string, event: EngineeringResearchEvent): void {
+  userId: string, event: EngineeringResearchEvent,
+  now = () => new Date().toISOString()): EngineeringResearchEvent {
+  const recordedEvent = ensureResearchEventTimestamp(event, now);
   const events = loadLocalResearchEvents(storage, userId);
-  const index = events.findIndex((item) => item.eventId === event.eventId);
-  if (index >= 0) events[index] = event; else events.push(event);
+  const index = events.findIndex((item) => item.eventId === recordedEvent.eventId);
+  if (index >= 0) events[index] = recordedEvent; else events.push(recordedEvent);
   events.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
   storage.setItem(localResearchEventKey(userId), JSON.stringify(events.slice(-5000)));
+  return recordedEvent;
 }
 
 export function createToolResearchEvents(sessionId: string, studentMessage: string,

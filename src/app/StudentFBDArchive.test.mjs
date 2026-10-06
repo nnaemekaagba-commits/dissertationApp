@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { loadLocalResearchEvents, saveLocalResearchEvent } from './statics/researchLog.ts';
+import { ensureResearchEventTimestamp, loadLocalResearchEvents, saveLocalResearchEvent } from './statics/researchLog.ts';
 
 test('student archive merges account events with durable local fallback and has no replay writes', () => {
   const source = readFileSync(new URL('./StudentFBDArchive.tsx', import.meta.url), 'utf8');
@@ -33,4 +33,19 @@ test('FBD research events persist chronologically per account and for guest sess
   saveLocalResearchEvent(storage, 'guest', { ...earlier, eventId: 'guest-event' });
   assert.deepEqual(loadLocalResearchEvents(storage, 'student-1').map((event) => event.eventId), ['earlier', 'later']);
   assert.deepEqual(loadLocalResearchEvents(storage, 'guest').map((event) => event.eventId), ['guest-event']);
+});
+
+test('every persisted research event receives a valid ISO timestamp', () => {
+  const values = new Map();
+  const storage = { getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value) };
+  const fallback = '2026-10-06T15:30:00.000Z';
+  const event = { kind: 'visualization', eventId: 'missing-time', sessionId: 's',
+    action: 'fbd_force_add' };
+  const normalized = ensureResearchEventTimestamp(event, () => fallback);
+  assert.equal(normalized.timestamp, fallback);
+  const recorded = saveLocalResearchEvent(storage, 'student-1', event, () => fallback);
+  assert.equal(recorded.timestamp, fallback);
+  assert.equal(loadLocalResearchEvents(storage, 'student-1')[0].timestamp, fallback);
+  assert.equal(Number.isFinite(Date.parse(recorded.timestamp)), true);
 });
