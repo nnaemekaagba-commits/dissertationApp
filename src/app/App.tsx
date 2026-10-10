@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback, lazy, Suspense } from 'react';
-import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Shuffle, Globe2, Search, Table, Pencil, Save } from 'lucide-react';
+import { Send, Brain, User, Sparkles, Archive, X, ArrowDown, File as FileIcon, LogOut, FileDown, Image as ImageIcon, Trash2, Eraser, Wand2, Mic, MicOff, AudioLines, Square, Copy, Check, Shuffle, Globe2, Search, Table, Pencil, Save, Paperclip } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Textarea } from './components/ui/textarea';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -11,7 +11,8 @@ import { ADK_API_BASE_URL, API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } 
 import { shouldUseADKFBDCoach } from './adkRouting';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
-import { createStudentMessageInput, hasTransferredFiles, pastedImageFiles, IMAGE_PASTE_NOTICE, STUDENT_INPUT_NOTICE } from './studentInput';
+import { ATTACHMENT_ACCEPT, createStudentMessageInput, hasTransferredFiles, transferredAttachmentFiles,
+  IMAGE_PASTE_NOTICE } from './studentInput';
 import { assistantResponseKey, dedupeConsecutiveAssistantMessages } from './assistantMessageDedup';
 import { buildConceptMapRequest, parseConceptMap } from './conceptMap';
 import { ConceptMapView } from './components/ConceptMapView';
@@ -288,6 +289,21 @@ const readImageFile = (file: File): Promise<UploadedFile> => new Promise((resolv
   reader.onerror = () => reject(reader.error || new Error('Could not read the pasted image.'));
   reader.readAsDataURL(file);
 });
+
+const readAttachmentFile = async (file: File): Promise<UploadedFile> => {
+  const maximumBytes = 6 * 1024 * 1024;
+  if (file.size > maximumBytes) throw new Error(`${file.name} is larger than 6 MB.`);
+  if (file.type.startsWith('image/')) return compressImageForAI(await readImageFile(file));
+  const content = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error || new Error(`Could not read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
+  const readableText = file.type.startsWith('text/') || file.type === 'application/json';
+  return { name: file.name, type: file.type || 'application/octet-stream', content,
+    ...(readableText ? { extractedText: await file.text() } : {}) };
+};
 
 const compressImageForAI = async (file: UploadedFile): Promise<UploadedFile> => {
   if (!file.type.startsWith('image/') || file.type === 'image/gif') {
@@ -1287,6 +1303,7 @@ export default function App() {
   const [archiveMessages, setArchiveMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [pastedImages, setPastedImages] = useState<UploadedFile[]>([]);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [archiveTab, setArchiveTab] = useState<'chat' | 'fbd'>('chat');
@@ -1893,7 +1910,7 @@ export default function App() {
   }) => {
     if (isRecordingAudio || isTranscribingAudio || requestInFlightRef.current) return;
     const activeImages = options ? [] : pastedImages;
-    const displayInput = options?.displayInput ?? (input || (activeImages.length ? 'Please analyze this image.' : ''));
+    const displayInput = options?.displayInput ?? (input || (activeImages.length ? 'Please analyze the attached file.' : ''));
     const answeringFBDCoachingPrompt = awaitingFBDCoachingDetails && !options;
     const requestInput = answeringFBDCoachingPrompt
       ? buildFBDCoachingRequest(displayInput)
@@ -3184,25 +3201,21 @@ ${data.response}` : data.response,
   const needsReflection = false;
   const canSendMessage = !isRecordingAudio && !isTranscribingAudio && Boolean(input.trim() || pastedImages.length);
 
-  const handleImagePaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const addAttachments = async (files: File[]) => {
+    if (!files.length) { setAudioRecordingError(IMAGE_PASTE_NOTICE); return; }
+    try {
+      const next = await Promise.all(files.map(readAttachmentFile));
+      setPastedImages((current) => [...current, ...next].slice(0, 6));
+      setAudioRecordingError('');
+    } catch (caught) {
+      setAudioRecordingError(caught instanceof Error ? caught.message : 'The attachment could not be read.');
+    }
+  };
+  const handleAttachmentPaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (!hasTransferredFiles(event.clipboardData)) return;
     event.preventDefault();
     event.stopPropagation();
-    const images = pastedImageFiles(event.clipboardData);
-    if (!images.length) {
-      setAudioRecordingError(IMAGE_PASTE_NOTICE);
-      return;
-    }
-    try {
-      const next = await Promise.all(images.map(async (file) => {
-        const compressed = await compressImageForAI(await readImageFile(file));
-        return { ...compressed, preview: compressed.content };
-      }));
-      setPastedImages((current) => [...current, ...next].slice(0, 4));
-      setAudioRecordingError('');
-    } catch {
-      setAudioRecordingError('The pasted image could not be read. Please copy it and try again.');
-    }
+    await addAttachments(transferredAttachmentFiles(event.clipboardData));
   };
   const archiveEntries = buildArchiveEntries(archiveMessages);
   const archiveQueryCount = archiveEntries.length;
@@ -3330,14 +3343,7 @@ ${data.response}` : data.response,
 
   return (
     <StaticsWorkspaceProvider key={userId} userId={userId} ref={staticsControllerRef}>
-    <div className="h-screen bg-slate-50 flex"
-      onDragOverCapture={(event) => { if (hasTransferredFiles(event.dataTransfer)) event.preventDefault(); }}
-      onDropCapture={(event) => {
-        if (hasTransferredFiles(event.dataTransfer)) {
-          event.preventDefault();
-          setAudioRecordingError(STUDENT_INPUT_NOTICE);
-        }
-      }}>
+    <div className="h-screen bg-slate-50 flex">
       <div className="w-full h-full bg-white flex flex-col">{/* Header */}
         <div className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white flex-shrink-0">
           <div className="flex items-center gap-3 justify-between">
@@ -3467,11 +3473,15 @@ ${data.response}` : data.response,
                       <Send className="size-4" />
                     </Button>
                     {pastedImages.length > 0 && (
-                      <div className="mb-1.5 flex flex-wrap gap-2" aria-label="Pasted images">
-                        {pastedImages.map((image, index) => (
-                          <div key={`${image.name}-${index}`} className="relative h-16 w-20 overflow-hidden rounded-md border bg-slate-50">
-                            <img src={image.preview || image.content} alt={image.name} className="h-full w-full object-cover" />
-                            <button type="button" aria-label={`Remove ${image.name}`}
+                      <div className="mb-1.5 flex flex-wrap gap-2" aria-label="Attached files">
+                        {pastedImages.map((attachment, index) => (
+                          <div key={`${attachment.name}-${index}`} className="relative flex h-16 w-28 items-center justify-center overflow-hidden rounded-md border bg-slate-50 p-1">
+                            {attachment.type.startsWith('image/')
+                              ? <img src={attachment.preview || attachment.content} alt={attachment.name} className="h-full w-full object-cover" />
+                              : <div className="flex min-w-0 flex-col items-center text-center text-[10px] text-slate-700">
+                                <FileIcon className="mb-0.5 size-5" /><span className="w-full truncate" title={attachment.name}>{attachment.name}</span>
+                              </div>}
+                            <button type="button" aria-label={`Remove ${attachment.name}`}
                               onClick={() => setPastedImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}
                               className="absolute right-0.5 top-0.5 rounded-full bg-black/70 p-0.5 text-white hover:bg-black">
                               <X className="size-3.5" />
@@ -3483,8 +3493,9 @@ ${data.response}` : data.response,
                     <Textarea
                       value={input}
                       onChange={(e) => { setInput(e.target.value); if (!e.target.value.trim()) { setPendingInputModality('text'); setTranscriptionSource(undefined); } }}
-                      onPaste={handleImagePaste}
-                      onDrop={(e) => { if (hasTransferredFiles(e.dataTransfer)) { e.preventDefault(); setAudioRecordingError(STUDENT_INPUT_NOTICE); } }}
+                      onPaste={handleAttachmentPaste}
+                      onDrop={(e) => { if (hasTransferredFiles(e.dataTransfer)) {
+                        e.preventDefault(); void addAttachments(transferredAttachmentFiles(e.dataTransfer)); } }}
                       onDragOver={(e) => { if (hasTransferredFiles(e.dataTransfer)) e.preventDefault(); }}
                       onKeyPress={handleKeyPress}
                       placeholder={needsReflection ? "Please complete the reflection above to continue..." : "Describe your problem or ask a question..."}
@@ -3505,6 +3516,15 @@ ${data.response}` : data.response,
                   )}
 
                   <div className="flex flex-wrap items-center gap-1.5">
+                  <input ref={attachmentInputRef} type="file" multiple accept={ATTACHMENT_ACCEPT}
+                    className="sr-only" aria-label="Upload documents or images" onChange={(event) => {
+                      void addAttachments(Array.from(event.target.files || [])); event.target.value = '';
+                    }} />
+                  <Button type="button" variant="outline" size="icon"
+                    onClick={() => attachmentInputRef.current?.click()} className="size-7 rounded-lg"
+                    disabled={needsReflection} title="Upload documents or images" aria-label="Upload documents or images">
+                    <Paperclip className="size-4" />
+                  </Button>
                   <Button
                     type="button"
                     variant={isRecordingAudio ? 'default' : 'outline'}

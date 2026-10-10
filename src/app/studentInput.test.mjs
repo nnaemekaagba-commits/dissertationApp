@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { createStudentMessageInput, hasTransferredFiles, pastedImageFiles, IMAGE_PASTE_NOTICE, STUDENT_INPUT_NOTICE } from './studentInput.ts';
+import { ATTACHMENT_ACCEPT, createStudentMessageInput, hasTransferredFiles, isSupportedAttachment,
+  pastedImageFiles, transferredAttachmentFiles, IMAGE_PASTE_NOTICE, STUDENT_INPUT_NOTICE } from './studentInput.ts';
 
 const transfer = (files = [], items = [], types = ['text/plain'], data = {}) =>
   ({ files, items, types, getData: (type) => data[type] || '' });
@@ -20,13 +21,13 @@ test('transcribed audio becomes text with modality metadata', () => {
   assert.throws(() => createStudentMessageInput('raw audio', 'audio'));
 });
 
-test('image and document file transfers are rejected', () => {
+test('image and document file transfers are detected', () => {
   for (const type of ['image/png', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv']) {
     assert.equal(hasTransferredFiles(transfer([{ type }], [], ['Files'])), true);
   }
 });
 
-test('drag and drop files are rejected', () => {
+test('drag and drop files are detected', () => {
   assert.equal(hasTransferredFiles(transfer([], [{ kind: 'file', type: 'application/pdf' }], ['Files'])), true);
 });
 
@@ -48,18 +49,31 @@ test('clipboard image extraction accepts images only', () => {
   assert.match(IMAGE_PASTE_NOTICE, /image/);
 });
 
-test('student composer has no file picker and handles image paste while guarding drop', () => {
+test('upload extraction accepts supported images and documents', () => {
+  const files = [
+    { name: 'diagram.png', type: 'image/png' },
+    { name: 'problem.pdf', type: 'application/pdf' },
+    { name: 'notes.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+    { name: 'loads.csv', type: 'text/csv' },
+    { name: 'program.exe', type: 'application/octet-stream' },
+  ];
+  assert.deepEqual(transferredAttachmentFiles(transfer(files)), files.slice(0, 4));
+  assert.equal(isSupportedAttachment({ name: 'problem.md', type: '' }), true);
+  assert.equal(isSupportedAttachment(files[4]), false);
+  assert.match(ATTACHMENT_ACCEPT, /\.pdf/);
+});
+
+test('student composer uploads documents and images through picker, paste, and drop', () => {
   const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
-  assert.doesNotMatch(app, /<input\s+[^>]*type=["']file["']/i);
-  assert.doesNotMatch(app, /<Paperclip\b|title=["']Attach files["']/i);
-  assert.match(app, /onPaste=\{handleImagePaste\}/);
-  assert.match(app, /aria-label="Pasted images"/);
+  assert.match(app, /type="file" multiple accept=\{ATTACHMENT_ACCEPT\}/);
+  assert.match(app, /<Paperclip\b/);
+  assert.match(app, /onPaste=\{handleAttachmentPaste\}/);
+  assert.match(app, /aria-label="Attached files"/);
+  assert.match(app, /transferredAttachmentFiles\(e\.dataTransfer\)/);
   assert.match(app, /<Shuffle className="size-4" \/>/);
   assert.match(app, /<span>Different explanation<\/span>/);
   assert.match(app, /requestInFlightRef\.current/);
   assert.doesNotMatch(app, /<span>Ask another AI<\/span>/);
-  assert.match(app, /onDropCapture=/);
-  assert.match(app, /onDragOverCapture=/);
-  assert.match(app, /STUDENT_INPUT_NOTICE/);
-  assert.equal(STUDENT_INPUT_NOTICE, 'For this activity, please communicate by typing or using voice input.');
+  assert.doesNotMatch(app, /onDropCapture=/);
+  assert.match(STUDENT_INPUT_NOTICE, /Upload an image/);
 });

@@ -1,7 +1,32 @@
 export type InputModality = 'text' | 'audio';
 export type TranscriptionSource = 'browser-speech' | 'recorded-audio';
-export const STUDENT_INPUT_NOTICE = 'For this activity, please communicate by typing or using voice input.';
-export const IMAGE_PASTE_NOTICE = 'Paste an image from your clipboard. Documents and other files are not supported.';
+export const STUDENT_INPUT_NOTICE = 'Upload an image, PDF, Word document, text, Markdown, CSV, or JSON file.';
+export const IMAGE_PASTE_NOTICE = 'This file type is not supported. Upload an image, PDF, Word document, text, Markdown, CSV, or JSON file.';
+export const ATTACHMENT_ACCEPT = '.png,.jpg,.jpeg,.webp,.gif,.pdf,.doc,.docx,.txt,.md,.csv,.json,text/plain,text/markdown,text/csv,application/json,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*';
+
+const supportedDocumentTypes = new Set([
+  'application/pdf', 'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/json', 'text/plain', 'text/markdown', 'text/csv',
+]);
+const supportedDocumentExtension = /\.(?:pdf|docx?|txt|md|csv|json)$/i;
+
+export function isSupportedAttachment(file: Pick<File, 'name' | 'type'>): boolean {
+  return file.type.startsWith('image/') || supportedDocumentTypes.has(file.type) ||
+    supportedDocumentExtension.test(file.name || '');
+}
+
+export function transferredAttachmentFiles(
+  transfer: Pick<DataTransfer, 'files' | 'items'> | null | undefined,
+): File[] {
+  if (!transfer) return [];
+  const direct = Array.from(transfer.files).filter(isSupportedAttachment);
+  if (direct.length) return direct;
+  return Array.from(transfer.items)
+    .filter((item) => item.kind === 'file')
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file && isSupportedAttachment(file)));
+}
 
 export function pastedImageFiles(
   transfer: Pick<DataTransfer, 'files' | 'items'> | null | undefined,
