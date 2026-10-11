@@ -9,6 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { publicAnonKey } from '/utils/supabase/info';
 import { ADK_API_BASE_URL, API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } from '/utils/api';
 import { shouldUseADKFBDCoach } from './adkRouting';
+import { buildWebGroundedRequest, shouldAutomaticallySearchWeb, type GroundingSource } from './webSearchPolicy';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { ATTACHMENT_ACCEPT, createStudentMessageInput, hasTransferredFiles, transferredAttachmentFiles,
@@ -1960,11 +1961,11 @@ export default function App() {
     const fbdState = completeFbdState ? fbdStateForMemberCanvas(completeFbdState, activeFbdMemberId) : undefined;
     const hasVisibleFBD = Boolean(fbdState && (fbdState.members.length || fbdState.forces.length ||
       fbdState.moments.length || fbdState.dimensions.length || fbdState.angles.length || fbdState.labels.length));
-    const currentInput = !options && hasVisibleFBD
+    let currentInput = !options && hasVisibleFBD
       ? buildFBDGroundedChatRequest(requestContent, engineeringState, fbdState)
       : requestContent;
     const conversationHistory = sanitizeConversationHistoryForChat(messages);
-    const chatPayload = {
+    let chatPayload = {
       message: currentInput,
       conversationHistory,
       provider: requestProvider,
@@ -2055,9 +2056,41 @@ export default function App() {
     let engineeringBatch: EngineeringToolBatch | null = null;
     let fbdBatch: FBDChatBatch | null = null;
     let pendingFBDResearchEvents: EngineeringResearchEvent[] = [];
+    let automaticWebSources: GroundingSource[] = [];
 
     try {
-      const chatApiBaseUrl = shouldUseADKFBDCoach(requestContent,
+      if (!options?.conceptMapRequest && shouldAutomaticallySearchWeb(messageContent, {
+        hasVisibleFBD,
+        hasAttachments: activeImages.length > 0,
+      })) {
+        try {
+          const searchResponse = await fetch(`${CHAT_API_BASE_URL}/web-search`, {
+            method: 'POST',
+            headers: buildApiHeaders(true),
+            body: JSON.stringify({ query: messageContent }),
+          });
+          const responseText = await searchResponse.text();
+          let searchData: WebSearchData = {};
+          try { searchData = JSON.parse(responseText); } catch { searchData = {}; }
+          if (searchResponse.ok) {
+            automaticWebSources = (searchData.results || [])
+              .filter((result) => Boolean(result.title) && /^https?:\/\//i.test(result.url || ''))
+              .slice(0, 5)
+              .map(({ title, url, snippet, source }) => ({ title, url, snippet, source }));
+            if (automaticWebSources.length) {
+              currentInput = buildWebGroundedRequest(currentInput, automaticWebSources);
+              chatPayload = { ...chatPayload, message: currentInput };
+            }
+          }
+        } catch (error) {
+          console.warn('Automatic web research failed; continuing without web sources.', error);
+        }
+      }
+
+      if (getApproxPayloadBytes(chatPayload) > maxGatewayPayloadBytes)
+        throw new Error('The web research context made this request too large. Please shorten the question.');
+
+      const chatApiBaseUrl = automaticWebSources.length === 0 && shouldUseADKFBDCoach(requestContent,
         hasVisibleFBD && activeImages.length === 0, ADK_API_BASE_URL)
         ? ADK_API_BASE_URL : CHAT_API_BASE_URL;
       const response = await fetch(`${chatApiBaseUrl}/chat`, {
@@ -2151,17 +2184,24 @@ export default function App() {
       console.log('SERVER RESPONSE - conflict flag:', isConflicting);
       const providerUsedId = normalizeChatProvider(data.providerUsed) ?? requestProvider;
       const providerUsed = CHAT_PROVIDER_LABELS[providerUsedId];
+      const responseWithoutCitations = String(data.response || '');
+      const hasWebCitation = automaticWebSources.some((source) => responseWithoutCitations.includes(source.url));
+      const responseWithSources = automaticWebSources.length && !hasWebCitation
+        ? `${responseWithoutCitations}\n\n### Sources\n${automaticWebSources.map((source) =>
+          `- [${source.title}](${source.url})`).join('\n')}`
+        : responseWithoutCitations;
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: options?.comparisonResponse ? `## ${providerUsed} response
 
-${data.response}` : data.response,
+${responseWithSources}` : responseWithSources,
         timestamp: new Date(),
         aiProvider: providerUsed,
         provider: providerUsedId,
         isIncorrect: data.isIncorrect,
         isConflicting,
+        ...(automaticWebSources.length ? { webSourcesUsedCount: automaticWebSources.length } : {}),
       };
 
       if (answeringFBDCoachingPrompt && userId) {
