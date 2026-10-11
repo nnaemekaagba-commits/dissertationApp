@@ -11,6 +11,8 @@ import { ADK_API_BASE_URL, API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } 
 import { shouldUseADKFBDCoach } from './adkRouting';
 import { buildWebGroundedRequest, shouldAutomaticallySearchWeb, type GroundingSource } from './webSearchPolicy';
 import { buildStudentThinkingRequest } from './studentThinkingPrompt';
+import { CALCULATION_PURPOSE_PROMPT, buildPurposeGroundedCalculationRequest,
+  shouldAskCalculationPurpose } from './statics/calculationConversation';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { ATTACHMENT_ACCEPT, createStudentMessageInput, hasTransferredFiles, transferredAttachmentFiles,
@@ -1315,6 +1317,7 @@ export default function App() {
   const [viewCommand, setViewCommand] = useState<{ view: EngineeringView; sequence: number }>();
   const [requestedVisualCalculation, setRequestedVisualCalculation] = useState<RequestedVisualCalculation | null>(null);
   const [awaitingFBDCoachingDetails, setAwaitingFBDCoachingDetails] = useState(false);
+  const [pendingCalculationRequest, setPendingCalculationRequest] = useState<string | null>(null);
   const staticsControllerRef = useRef<StaticsWorkspaceController | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [pendingInputModality, setPendingInputModality] = useState<'text' | 'audio'>('text');
@@ -1914,8 +1917,11 @@ export default function App() {
     const activeImages = options ? [] : pastedImages;
     const displayInput = options?.displayInput ?? (input || (activeImages.length ? 'Please analyze the attached file.' : ''));
     const answeringFBDCoachingPrompt = awaitingFBDCoachingDetails && !options;
+    const answeringCalculationPurpose = Boolean(pendingCalculationRequest) && !options;
     const requestInput = answeringFBDCoachingPrompt
       ? buildFBDCoachingRequest(displayInput)
+      : answeringCalculationPurpose
+        ? buildPurposeGroundedCalculationRequest(pendingCalculationRequest!, displayInput)
       : buildFBDDrawingRequest(options?.requestInput ?? displayInput);
     const requestProvider = normalizeChatProvider(options?.provider) ?? selectedProviderRef.current;
     if (!displayInput.trim()) return;
@@ -2017,6 +2023,21 @@ export default function App() {
       setTranscriptionSource(undefined);
     }
     if (answeringFBDCoachingPrompt) setAwaitingFBDCoachingDetails(false);
+    if (answeringCalculationPurpose) setPendingCalculationRequest(null);
+    if (!options && !answeringFBDCoachingPrompt && !answeringCalculationPurpose &&
+      shouldAskCalculationPurpose(requestContent)) {
+      setPendingCalculationRequest(displayInput);
+      insertAssistantMessage({
+        id: `calculation-purpose-${Date.now()}`,
+        role: 'assistant',
+        content: CALCULATION_PURPOSE_PROMPT,
+        timestamp: new Date(),
+        aiProvider: 'Statics Tutor',
+        provider: requestProvider,
+      });
+      requestInFlightRef.current = false;
+      return;
+    }
     if (!answeringFBDCoachingPrompt && explicitlyRequestsFBDCheck(currentInput)) {
       const controller = staticsControllerRef.current;
       const fbd = controller?.getFbdState();
