@@ -10,6 +10,7 @@ import { publicAnonKey } from '/utils/supabase/info';
 import { ADK_API_BASE_URL, API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } from '/utils/api';
 import { shouldUseADKFBDCoach } from './adkRouting';
 import { buildWebGroundedRequest, shouldAutomaticallySearchWeb, type GroundingSource } from './webSearchPolicy';
+import { buildStudentThinkingRequest } from './studentThinkingPrompt';
 import { supabaseClient } from '/utils/supabase/client';
 import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { ATTACHMENT_ACCEPT, createStudentMessageInput, hasTransferredFiles, transferredAttachmentFiles,
@@ -1961,9 +1962,10 @@ export default function App() {
     const fbdState = completeFbdState ? fbdStateForMemberCanvas(completeFbdState, activeFbdMemberId) : undefined;
     const hasVisibleFBD = Boolean(fbdState && (fbdState.members.length || fbdState.forces.length ||
       fbdState.moments.length || fbdState.dimensions.length || fbdState.angles.length || fbdState.labels.length));
+    const pedagogicalInput = !options ? buildStudentThinkingRequest(requestContent) : requestContent;
     let currentInput = !options && hasVisibleFBD
-      ? buildFBDGroundedChatRequest(requestContent, engineeringState, fbdState)
-      : requestContent;
+      ? buildFBDGroundedChatRequest(pedagogicalInput, engineeringState, fbdState)
+      : pedagogicalInput;
     const conversationHistory = sanitizeConversationHistoryForChat(messages);
     let chatPayload = {
       message: currentInput,
