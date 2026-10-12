@@ -11,7 +11,7 @@ import { ADK_API_BASE_URL, API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } 
 import { shouldUseADKFBDCoach } from './adkRouting';
 import { buildWebGroundedRequest, shouldAutomaticallySearchWeb, type GroundingSource } from './webSearchPolicy';
 import { buildPurposeGroundedQuestionRequest, buildStudentThinkingRequest, isStudentQuestion,
-  QUESTION_PURPOSE_PROMPT } from './studentThinkingPrompt';
+  QUESTION_PURPOSE_PROMPT, shouldUseEngineeringCanvasContext } from './studentThinkingPrompt';
 import { CALCULATION_PURPOSE_PROMPT, buildPurposeGroundedCalculationRequest,
   shouldAskCalculationPurpose } from './statics/calculationConversation';
 import { supabaseClient } from '/utils/supabase/client';
@@ -1982,7 +1982,8 @@ export default function App() {
     const pedagogicalInput = !options ? buildStudentThinkingRequest(requestContent) : requestContent;
     const singleResponseInput = options?.conceptMapRequest
       ? pedagogicalInput : buildSingleResponseInstruction(pedagogicalInput);
-    let currentInput = !options && hasVisibleFBD
+    const canvasContextRequest = answeringQuestionPurpose ? pendingStudentQuestion! : displayInput;
+    let currentInput = !options && hasVisibleFBD && shouldUseEngineeringCanvasContext(canvasContextRequest)
       ? buildFBDGroundedChatRequest(singleResponseInput, engineeringState, fbdState)
       : singleResponseInput;
     const conversationHistory = sanitizeConversationHistoryForChat(messages);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildPurposeGroundedQuestionRequest, buildStudentThinkingRequest, isStudentQuestion,
-  QUESTION_PURPOSE_PROMPT } from './studentThinkingPrompt.ts';
+  QUESTION_PURPOSE_PROMPT, shouldUseEngineeringCanvasContext } from './studentThinkingPrompt.ts';
 
 test('recognizes student questions with and without a question mark', () => {
   assert.equal(isStudentQuestion('Why is this reaction vertical?'), true);
@@ -28,4 +28,11 @@ test('preserves the original question and the student purpose in the answer requ
   assert.match(request, /Is this FBD in equilibrium/);
   assert.match(request, /decide whether my reactions are correct/);
   assert.match(request, /answer the original question/i);
+});
+
+test('uses engineering canvas context only when the question refers to it', () => {
+  assert.equal(shouldUseEngineeringCanvasContext('What is Newton\'s second law?'), false);
+  assert.equal(shouldUseEngineeringCanvasContext('How does this FBD reach equilibrium?'), true);
+  assert.equal(shouldUseEngineeringCanvasContext('Is the force on my diagram correct?'), true);
+  assert.equal(shouldUseEngineeringCanvasContext('Explain this reaction.'), true);
 });

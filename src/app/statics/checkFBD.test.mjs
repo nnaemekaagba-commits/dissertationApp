@@ -79,7 +79,8 @@ test('ordinary chat is grounded in the live FBD without changing the visible stu
   const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
   assert.match(app, /const hasVisibleFBD/);
   assert.match(app, /fbdStateForCanvasLayout\(completeFbdState, activeFbdMemberId, separateFbdCanvases\)/);
-  assert.match(app, /buildFBDGroundedChatRequest\(pedagogicalInput, engineeringState, fbdState\)/);
+  assert.match(app, /shouldUseEngineeringCanvasContext\(canvasContextRequest\)/);
+  assert.match(app, /buildFBDGroundedChatRequest\(singleResponseInput, engineeringState, fbdState\)/);
   assert.match(app, /content: studentInput\.content/);
 });
 

@@ -1,5 +1,7 @@
 const questionOpening = /^(what|why|how|when|where|which|who|can|could|would|should|is|are|am|do|does|did|will|may|help|explain|solve|calculate|find|determine)\b/i;
 const directCanvasAction = /^(add|create|draw|edit|move|delete|remove|clear|reset|show|open|close|save|upload|switch|change)\b/i;
+const explicitCanvasReference = /\b(fbd|free[ -]?body(?: diagram)?|rigid[ -]?body(?: view| diagram)?|canvas|diagram|shown here)\b/i;
+const referencedCanvasElement = /\b(?:this|that|my|the current)\s+(?:member|beam|body|force|load|moment|reaction|support)\b/i;
 
 export function isStudentQuestion(message: string): boolean {
   const text = message.trim();
@@ -7,12 +9,17 @@ export function isStudentQuestion(message: string): boolean {
   return text.includes('?') || questionOpening.test(text);
 }
 
+export function shouldUseEngineeringCanvasContext(message: string): boolean {
+  const text = message.trim();
+  return explicitCanvasReference.test(text) || referencedCanvasElement.test(text);
+}
+
 export function buildStudentThinkingRequest(message: string): string {
   if (!isStudentQuestion(message)) return message;
   return `${message}
 
 TUTORING INSTRUCTION:
-The student has already explained how this answer will help with the problem they are solving. Respond to the original question now. Use that purpose, the conversation, uploaded material, FBD, and rigid-body information already available. Give one useful, problem-specific answer.`;
+The student has already explained how this answer will help with the problem they are solving. Respond to the original question now. Use that purpose and only the conversation or uploaded material relevant to the question. Give one useful, problem-specific answer.`;
 }
 
 export const QUESTION_PURPOSE_PROMPT = `Before I answer, how will this answer help you solve the problem you are working on?`;
