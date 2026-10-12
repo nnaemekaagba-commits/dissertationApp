@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { collapseRepeatedAssistantContent, upsertAssistantReply } from './singleAssistantResponse.ts';
+import { buildSingleResponseInstruction, collapseRepeatedAssistantContent,
+  upsertAssistantReply } from './singleAssistantResponse.ts';
 
 test('collapses an identical answer repeated inside one provider payload', () => {
   assert.equal(collapseRepeatedAssistantContent('First point.\n\nSecond point.\n\nFirst point.\n\nSecond point.'),
@@ -11,6 +12,32 @@ test('collapses an identical answer repeated inside one provider payload', () =>
 test('keeps genuinely different sections in one answer', () => {
   const content = 'Explanation.\n\nWhat do you think?';
   assert.equal(collapseRepeatedAssistantContent(content), content);
+});
+
+test('keeps only the first model-generated numbered response', () => {
+  const content = `## Response 1
+
+The force points down.
+
+## Reflective Question
+
+What does that direction mean?
+
+---
+
+## Response 2
+
+There are two forces.`;
+  const result = collapseRepeatedAssistantContent(content);
+  assert.doesNotMatch(result, /Response 1|Response 2|There are two forces/);
+  assert.match(result, /The force points down/);
+  assert.match(result, /Reflective Question/);
+});
+
+test('the model request explicitly permits only one integrated answer', () => {
+  const request = buildSingleResponseInstruction('Explain my FBD.');
+  assert.match(request, /Return exactly one integrated answer/);
+  assert.match(request, /Never produce sections called Response 1, Response 2/);
 });
 
 test('a retry replaces the prior answer for the same student turn', () => {

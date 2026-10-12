@@ -18,7 +18,8 @@ import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { ATTACHMENT_ACCEPT, createStudentMessageInput, hasTransferredFiles, transferredAttachmentFiles,
   IMAGE_PASTE_NOTICE } from './studentInput';
 import { assistantResponseKey, dedupeConsecutiveAssistantMessages } from './assistantMessageDedup';
-import { collapseRepeatedAssistantContent, upsertAssistantReply } from './singleAssistantResponse';
+import { buildSingleResponseInstruction, collapseRepeatedAssistantContent,
+  upsertAssistantReply } from './singleAssistantResponse';
 import { buildConceptMapRequest, parseConceptMap } from './conceptMap';
 import { ConceptMapView } from './components/ConceptMapView';
 import { AuthPage } from './components/AuthPage';
@@ -1974,9 +1975,11 @@ export default function App() {
     const hasVisibleFBD = Boolean(fbdState && (fbdState.members.length || fbdState.forces.length ||
       fbdState.moments.length || fbdState.dimensions.length || fbdState.angles.length || fbdState.labels.length));
     const pedagogicalInput = !options ? buildStudentThinkingRequest(requestContent) : requestContent;
+    const singleResponseInput = options?.conceptMapRequest
+      ? pedagogicalInput : buildSingleResponseInstruction(pedagogicalInput);
     let currentInput = !options && hasVisibleFBD
-      ? buildFBDGroundedChatRequest(pedagogicalInput, engineeringState, fbdState)
-      : pedagogicalInput;
+      ? buildFBDGroundedChatRequest(singleResponseInput, engineeringState, fbdState)
+      : singleResponseInput;
     const conversationHistory = sanitizeConversationHistoryForChat(messages);
     let chatPayload = {
       message: currentInput,
