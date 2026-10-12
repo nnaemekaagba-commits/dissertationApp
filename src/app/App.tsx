@@ -18,6 +18,7 @@ import { MarkdownRenderer } from './components/MarkdownRenderer';
 import { ATTACHMENT_ACCEPT, createStudentMessageInput, hasTransferredFiles, transferredAttachmentFiles,
   IMAGE_PASTE_NOTICE } from './studentInput';
 import { assistantResponseKey, dedupeConsecutiveAssistantMessages } from './assistantMessageDedup';
+import { collapseRepeatedAssistantContent, upsertAssistantReply } from './singleAssistantResponse';
 import { buildConceptMapRequest, parseConceptMap } from './conceptMap';
 import { ConceptMapView } from './components/ConceptMapView';
 import { AuthPage } from './components/AuthPage';
@@ -110,6 +111,7 @@ interface Message {
   editedAt?: Date;
   responseEditEvents?: ResponseEditEvent[];
   webSourcesUsedCount?: number;
+  replyToMessageId?: string;
 }
 
 interface UploadedFile {
@@ -2000,7 +2002,7 @@ export default function App() {
       lastAssistantResponseRef.current = { key: responseKey, timestamp: now };
       setMessages((prev) => {
         if (!options?.insertAfterMessageId)
-          return dedupeConsecutiveAssistantMessages([...prev, message]);
+          return dedupeConsecutiveAssistantMessages(upsertAssistantReply(prev, message));
 
         const sourceIndex = prev.findIndex((item) => item.id === options.insertAfterMessageId);
         if (sourceIndex === -1) return dedupeConsecutiveAssistantMessages([...prev, message]);
@@ -2048,8 +2050,10 @@ export default function App() {
       const feedback = comparison ? formatFBDCheckFeedback(comparison) :
         'I could not check your FBD because the engineering workspace is unavailable. I did not change it.';
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(), role: 'assistant', content: feedback,
+        id: userMessage ? `assistant-${userMessage.id}` : (Date.now() + 1).toString(),
+        role: 'assistant', content: feedback,
         timestamp: new Date(), aiProvider: 'FBD Checker', provider: requestProvider,
+        ...(userMessage ? { replyToMessageId: userMessage.id } : {}),
       };
       if (comparison && fbd && userId) {
         try {
@@ -2210,14 +2214,14 @@ export default function App() {
       console.log('SERVER RESPONSE - conflict flag:', isConflicting);
       const providerUsedId = normalizeChatProvider(data.providerUsed) ?? requestProvider;
       const providerUsed = CHAT_PROVIDER_LABELS[providerUsedId];
-      const responseWithoutCitations = String(data.response || '');
+      const responseWithoutCitations = collapseRepeatedAssistantContent(String(data.response || ''));
       const hasWebCitation = automaticWebSources.some((source) => responseWithoutCitations.includes(source.url));
       const responseWithSources = automaticWebSources.length && !hasWebCitation
         ? `${responseWithoutCitations}\n\n### Sources\n${automaticWebSources.map((source) =>
           `- [${source.title}](${source.url})`).join('\n')}`
         : responseWithoutCitations;
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: userMessage ? `assistant-${userMessage.id}` : (Date.now() + 1).toString(),
         role: 'assistant',
         content: options?.comparisonResponse ? `## ${providerUsed} response
 
@@ -2228,6 +2232,7 @@ ${responseWithSources}` : responseWithSources,
         isIncorrect: data.isIncorrect,
         isConflicting,
         ...(automaticWebSources.length ? { webSourcesUsedCount: automaticWebSources.length } : {}),
+        ...(userMessage ? { replyToMessageId: userMessage.id } : {}),
       };
 
       if (answeringFBDCoachingPrompt && userId) {
@@ -2272,12 +2277,13 @@ ${responseWithSources}` : responseWithSources,
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: userMessage ? `assistant-${userMessage.id}` : (Date.now() + 1).toString(),
         role: 'assistant',
         content: `❌ **Error**: Sorry, there was an error processing your request.\n\n**Details**: ${errorMessage}`,
         timestamp: new Date(),
         aiProvider: CHAT_PROVIDER_LABELS[requestProvider],
-        provider: requestProvider
+        provider: requestProvider,
+        ...(userMessage ? { replyToMessageId: userMessage.id } : {}),
       };
       if (engineeringBatch && userId) {
         try {
