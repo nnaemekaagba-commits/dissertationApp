@@ -78,8 +78,8 @@ test('ordinary chat is grounded in the live FBD without changing the visible stu
   assert.match(request, /Do not ask the student to repeat information already present/);
   const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
   assert.match(app, /const hasVisibleFBD/);
-  assert.match(app, /fbdStateForMemberCanvas\(completeFbdState, activeFbdMemberId\)/);
-  assert.match(app, /buildFBDGroundedChatRequest\(requestContent, engineeringState, fbdState\)/);
+  assert.match(app, /fbdStateForCanvasLayout\(completeFbdState, activeFbdMemberId, separateFbdCanvases\)/);
+  assert.match(app, /buildFBDGroundedChatRequest\(pedagogicalInput, engineeringState, fbdState\)/);
   assert.match(app, /content: studentInput\.content/);
 });
 

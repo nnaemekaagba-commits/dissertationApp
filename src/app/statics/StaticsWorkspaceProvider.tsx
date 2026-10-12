@@ -18,6 +18,8 @@ interface StaticsWorkspaceContextValue {
   canRedoFbd: boolean;
   activeFbdMemberId: string | null;
   setActiveFbdMemberId: (id: string | null) => void;
+  separateFbdCanvases: boolean;
+  setSeparateFbdCanvases: (separate: boolean) => void;
 }
 
 const StaticsWorkspaceContext = createContext<StaticsWorkspaceContextValue | null>(null);
@@ -27,6 +29,7 @@ export interface StaticsWorkspaceController {
   setWorkspace: StaticsWorkspaceContextValue['setWorkspace'];
   getFbdState: () => FBDState;
   getActiveFbdMemberId: () => string | null;
+  getSeparateFbdCanvases: () => boolean;
   setFbdState: StaticsWorkspaceContextValue['setFbdState'];
 }
 
@@ -41,6 +44,12 @@ function StaticsWorkspaceProvider({ userId, children }, controllerRef) {
   const [activeFbdMemberId, setActiveFbdMemberIdState] = useState<string | null>(
     () => fbdHistory.present.members[0]?.id ?? null);
   const activeFbdMemberIdRef = useRef(activeFbdMemberId);
+  const [separateFbdCanvases, setSeparateFbdCanvasesState] = useState(false);
+  const separateFbdCanvasesRef = useRef(false);
+  const setSeparateFbdCanvases = (separate: boolean) => {
+    separateFbdCanvasesRef.current = separate;
+    setSeparateFbdCanvasesState(separate);
+  };
   const setActiveFbdMemberId = (id: string | null) => {
     const valid = id && fbdHistoryRef.current.present.members.some((member) => member.id === id) ? id : null;
     activeFbdMemberIdRef.current = valid;
@@ -84,7 +93,8 @@ function StaticsWorkspaceProvider({ userId, children }, controllerRef) {
   // Chat runs in the parent App; this controller points at the same provider state.
   useImperativeHandle(controllerRef, () => ({ getWorkspace: () => workspaceRef.current, setWorkspace,
     getFbdState: () => fbdHistoryRef.current.present,
-    getActiveFbdMemberId: () => activeFbdMemberIdRef.current, setFbdState }));
+    getActiveFbdMemberId: () => activeFbdMemberIdRef.current,
+    getSeparateFbdCanvases: () => separateFbdCanvasesRef.current, setFbdState }));
 
   useEffect(() => {
     if (activeFbdMemberId && fbdHistory.present.members.some((member) => member.id === activeFbdMemberId)) return;
@@ -109,9 +119,10 @@ function StaticsWorkspaceProvider({ userId, children }, controllerRef) {
   const value = useMemo<StaticsWorkspaceContextValue>(() => ({
     workspace, setWorkspace, fbdState: fbdHistory.present, setFbdState,
     activeFbdMemberId, setActiveFbdMemberId,
+    separateFbdCanvases, setSeparateFbdCanvases,
     undoFbd, redoFbd, canUndoFbd: fbdHistory.past.length > 0,
     canRedoFbd: fbdHistory.future.length > 0,
-  }), [workspace, fbdHistory, activeFbdMemberId]);
+  }), [workspace, fbdHistory, activeFbdMemberId, separateFbdCanvases]);
 
   return <StaticsWorkspaceContext.Provider value={value}>{children}</StaticsWorkspaceContext.Provider>;
 });

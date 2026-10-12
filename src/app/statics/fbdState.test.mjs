@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { createSimplySupportedBeamWorkspace } from './model.ts';
 import { createEmptyFBDState, hasStudentFBDElements, resetStudentFBDElements, isolatedFBDGeometry,
-  engineeringStructureKey, fbdStorageKey, loadFBDState, fbdStateForMemberCanvas,
+  engineeringStructureKey, fbdStorageKey, loadFBDState, fbdStateForMemberCanvas, fbdStateForCanvasLayout,
   saveFBDState, selectFBDTarget, addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle,
   addFBDLabel, moveFBDLabel, addFBDMember, editFBDPrimitive,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
@@ -37,6 +37,18 @@ test('each member has an independent persistent canvas', () => {
   assert.deepEqual(fbdStateForMemberCanvas(withBoth, 'CD').forces.map((item) => item.id), ['r']);
   const restored = loadFBDState({ getItem: () => JSON.stringify(withBoth), setItem() {} }, 'student', workspace);
   assert.equal(restored.forces[1].canvasMemberId, 'CD');
+});
+
+test('shared layout shows every member while separate layout switches one member canvas at a time', () => {
+  const base = { ...createEmptyFBDState(workspace), members: [
+    { id: 'AB', start: { x: 0, y: 0 }, end: { x: 4, y: 0 } },
+    { id: 'BC', start: { x: 4, y: 0 }, end: { x: 6, y: 2 } },
+  ] };
+  const state = addFBDForce(base,
+    { at: { x: 1, y: 0 }, angle: -90, label: 'P', canvasMemberId: 'AB' }, workspace, 'p');
+  assert.deepEqual(fbdStateForCanvasLayout(state, 'AB', false).members.map((item) => item.id), ['AB', 'BC']);
+  assert.deepEqual(fbdStateForCanvasLayout(state, 'BC', true).members.map((item) => item.id), ['BC']);
+  assert.deepEqual(fbdStateForCanvasLayout(state, 'AB', true).forces.map((item) => item.id), ['p']);
 });
 
 test('moving or editing a member preserves every element on its canvas', () => {

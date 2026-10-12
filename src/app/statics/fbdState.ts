@@ -135,6 +135,12 @@ export function fbdStateForMemberCanvas(state: FBDState, memberId: string | null
     labels: state.labels.filter(belongs) };
 }
 
+/** Shared mode renders the complete diagram; separate mode renders only the selected member canvas. */
+export function fbdStateForCanvasLayout(state: FBDState, memberId: string | null,
+  separate: boolean): FBDState {
+  return separate ? fbdStateForMemberCanvas(state, memberId) : state;
+}
+
 /** Clears only student annotations, retaining the selected body and structure association. */
 export function resetStudentFBDElements(state: FBDState): FBDState {
   if (!hasStudentFBDElements(state)) return state;

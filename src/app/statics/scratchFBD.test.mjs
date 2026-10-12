@@ -34,6 +34,16 @@ test('guest and signed-in students share the same engineering and FBD interface'
   assert.match(provider, /saveFBDState\(localStorage, userId, fbdHistory\.present, workspace\)/);
 });
 
+test('multiple members share one canvas by default and can switch to separate member canvases', () => {
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  const provider = readFileSync(new URL('./StaticsWorkspaceProvider.tsx', import.meta.url), 'utf8');
+  assert.match(provider, /separateFbdCanvases[^\n]+useState\(false\)/);
+  assert.match(panel, />\s*Shared canvas\s*</);
+  assert.match(panel, />\s*Separate canvases\s*</);
+  assert.match(panel, /fbdStateForCanvasLayout\(fbdState, activeMemberId, separateFbdCanvases\)/);
+  assert.match(panel, /primitive\.kind === 'member'\) setActiveFbdMemberId\(primitive\.id\)/);
+});
+
 test('adaptive gridlines include numeric coordinate readings and workspace units', () => {
   const grid = fbdGridSpec({ x: 2, y: 1 }, 4);
   assert.ok(grid.xValues.length >= 8 && grid.xValues.length <= 20);
@@ -183,7 +193,7 @@ test('structure panes render only student base geometry while FBD view retains a
   assert.match(panel, /FBD_MEMBER_HEIGHT = 0\.1/);
   assert.match(panel, /aria-label="Member canvas selector"/);
   assert.match(panel, /Canvas \{index \+ 1\}/);
-  assert.match(panel, /fbdStateForMemberCanvas\(fbdState, activeMemberId\)/);
+  assert.match(panel, /fbdStateForCanvasLayout\(fbdState, activeMemberId/);
   assert.doesNotMatch(panel, /Add Joint \/ Point/);
   assert.doesNotMatch(panel, /\(\['body', 'joint', 'member'\]/);
   assert.match(panel, /Start joint in Rigid Body View/);

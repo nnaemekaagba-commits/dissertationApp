@@ -36,7 +36,7 @@ import { createFBDCheckResearchEvent, createFBDToolResearchEvents, createToolRes
   createVisualizationResearchEvent, getEngineeringSessionId, nextFBDResearchSequence,
   createFBDResearchContext, fbdActionForVisualization, fbdToolElement, saveLocalResearchEvent,
   type EngineeringResearchEvent, type VisualizationAction } from './statics/researchLog';
-import { fbdStateForMemberCanvas, type FBDAngle, type FBDDimension, type FBDForce, type FBDMoment, type FBDLabel,
+import { fbdStateForCanvasLayout, type FBDAngle, type FBDDimension, type FBDForce, type FBDMoment, type FBDLabel,
   FBDElement, FBDElementKind, FBDPrimitiveKind, FBDState, FBDTarget } from './statics/fbdState';
 import { displayModeLayout, type EngineeringDisplayMode } from './statics/displayMode';
 
@@ -1965,7 +1965,10 @@ export default function App() {
     const engineeringState = staticsControllerRef.current?.getWorkspace();
     const completeFbdState = staticsControllerRef.current?.getFbdState();
     const activeFbdMemberId = staticsControllerRef.current?.getActiveFbdMemberId() ?? completeFbdState?.members[0]?.id ?? null;
-    const fbdState = completeFbdState ? fbdStateForMemberCanvas(completeFbdState, activeFbdMemberId) : undefined;
+    const separateFbdCanvases = staticsControllerRef.current?.getSeparateFbdCanvases() ?? false;
+    const fbdState = completeFbdState
+      ? fbdStateForCanvasLayout(completeFbdState, activeFbdMemberId, separateFbdCanvases)
+      : undefined;
     const hasVisibleFBD = Boolean(fbdState && (fbdState.members.length || fbdState.forces.length ||
       fbdState.moments.length || fbdState.dimensions.length || fbdState.angles.length || fbdState.labels.length));
     const pedagogicalInput = !options ? buildStudentThinkingRequest(requestContent) : requestContent;
@@ -3316,7 +3319,10 @@ ${responseWithSources}` : responseWithSources,
     const controller = staticsControllerRef.current;
     const completeFbdState = controller?.getFbdState();
     const activeMemberId = controller?.getActiveFbdMemberId() ?? completeFbdState?.members[0]?.id ?? null;
-    const visibleFbdState = completeFbdState ? fbdStateForMemberCanvas(completeFbdState, activeMemberId) : null;
+    const separateFbdCanvases = controller?.getSeparateFbdCanvases() ?? false;
+    const visibleFbdState = completeFbdState
+      ? fbdStateForCanvasLayout(completeFbdState, activeMemberId, separateFbdCanvases)
+      : null;
     void handleSend({
       displayInput: sourcePrompt,
       requestInput: buildConceptMapRequest(sourcePrompt, responseContent,
