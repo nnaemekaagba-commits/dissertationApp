@@ -12,5 +12,20 @@ export function buildStudentThinkingRequest(message: string): string {
   return `${message}
 
 TUTORING INSTRUCTION:
-Respond to the student's actual question with a useful explanation or requested calculation. Then ask exactly one concise, problem-specific question that invites the student to explain what they currently think about this problem and why. Refer to the given problem, uploaded material, FBD, or rigid-body information already available. Do not ask them to repeat information already shown. Do not withhold a directly requested result merely to ask the reflection question.`;
+The student has already explained how this answer will help with the problem they are solving. Respond to the original question now. Use that purpose, the conversation, uploaded material, FBD, and rigid-body information already available. Give one useful, problem-specific answer.`;
+}
+
+export const QUESTION_PURPOSE_PROMPT = `Before I answer, how will this answer help you solve the problem you are working on?`;
+
+export function buildPurposeGroundedQuestionRequest(originalQuestion: string, studentPurpose: string): string {
+  const question = originalQuestion.trim();
+  const purpose = studentPurpose.trim();
+  if (!question || !purpose) throw new Error('Both the student question and its purpose are required.');
+  return `The student previously asked:
+${question}
+
+Before answering, the student explained how the answer will help with their current problem:
+${purpose}
+
+Now answer the original question. Use the student's purpose to make the explanation relevant to the problem they are solving.`;
 }

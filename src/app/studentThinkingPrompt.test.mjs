@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildStudentThinkingRequest, isStudentQuestion } from './studentThinkingPrompt.ts';
+import { buildPurposeGroundedQuestionRequest, buildStudentThinkingRequest, isStudentQuestion,
+  QUESTION_PURPOSE_PROMPT } from './studentThinkingPrompt.ts';
 
 test('recognizes student questions with and without a question mark', () => {
   assert.equal(isStudentQuestion('Why is this reaction vertical?'), true);
@@ -14,9 +15,17 @@ test('does not interrupt direct canvas actions with a reflection prompt', () => 
   assert.equal(isStudentQuestion('Clear the diagram'), false);
 });
 
-test('asks for one problem-specific explanation after answering', () => {
+test('answers only after the student purpose has been collected', () => {
   const request = buildStudentThinkingRequest('Is this FBD in equilibrium?');
-  assert.match(request, /exactly one concise, problem-specific question/);
-  assert.match(request, /explain what they currently think/);
-  assert.match(request, /Do not withhold a directly requested result/);
+  assert.match(QUESTION_PURPOSE_PROMPT, /how will this answer help you solve/i);
+  assert.match(request, /already explained how this answer will help/i);
+  assert.doesNotMatch(request, /ask exactly one/i);
+});
+
+test('preserves the original question and the student purpose in the answer request', () => {
+  const request = buildPurposeGroundedQuestionRequest(
+    'Is this FBD in equilibrium?', 'I need to decide whether my reactions are correct.');
+  assert.match(request, /Is this FBD in equilibrium/);
+  assert.match(request, /decide whether my reactions are correct/);
+  assert.match(request, /answer the original question/i);
 });
