@@ -15,10 +15,13 @@ test('method questions and canvas edits do not start the calculation gate', () =
   assert.equal(shouldAskCalculationPurpose('Move the load to 3 m.'), false);
 });
 
-test('the follow-up preserves purpose and explicit calculator authorization', () => {
+test('the follow-up preserves purpose and prevents calculation of the current problem', () => {
   const request = buildPurposeGroundedCalculationRequest(
     'Calculate the support reactions.', 'I need them to check my FBD equilibrium.');
   assert.match(request, /check my FBD equilibrium/);
-  assert.match(request, /deterministic statics calculation tool/);
-  assert.equal(explicitlyRequestsCalculation(request), true);
+  assert.match(request, /closely analogous statics problem/i);
+  assert.match(request, /different scenario, geometry, labels, and numerical values/i);
+  assert.match(request, /without substituting its data/i);
+  assert.match(request, /Do not invoke a calculation tool against the current engineering or FBD state/i);
+  assert.equal(explicitlyRequestsCalculation(request), false);
 });

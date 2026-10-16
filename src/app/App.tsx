@@ -1322,7 +1322,7 @@ export default function App() {
   const [requestedVisualCalculation, setRequestedVisualCalculation] = useState<RequestedVisualCalculation | null>(null);
   const [awaitingFBDCoachingDetails, setAwaitingFBDCoachingDetails] = useState(false);
   const [pendingCalculationRequest, setPendingCalculationRequest] = useState<string | null>(null);
-  const [pendingStudentQuestion, setPendingStudentQuestion] = useState<string | null>(null);
+  const [pendingStudentQuestion, setPendingStudentQuestion] = useState<{ question: string; files: UploadedFile[] } | null>(null);
   const staticsControllerRef = useRef<StaticsWorkspaceController | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [pendingInputModality, setPendingInputModality] = useState<'text' | 'audio'>('text');
@@ -1919,22 +1919,23 @@ export default function App() {
     preserveDraft?: boolean;
   }) => {
     if (isRecordingAudio || isTranscribingAudio || requestInFlightRef.current) return;
-    const activeImages = options ? [] : pastedImages;
-    const displayInput = options?.displayInput ?? (input || (activeImages.length ? 'Please analyze the attached file.' : ''));
+    const composerFiles = options ? [] : pastedImages;
+    const displayInput = options?.displayInput ?? (input || (composerFiles.length ? 'Please analyze the attached file.' : ''));
     const answeringFBDCoachingPrompt = awaitingFBDCoachingDetails && !options;
     const answeringCalculationPurpose = Boolean(pendingCalculationRequest) && !options;
     const answeringQuestionPurpose = Boolean(pendingStudentQuestion) && !options;
+    const activeImages = answeringQuestionPurpose ? pendingStudentQuestion!.files : composerFiles;
     const requestInput = answeringFBDCoachingPrompt
       ? buildFBDCoachingRequest(displayInput)
       : answeringCalculationPurpose
         ? buildPurposeGroundedCalculationRequest(pendingCalculationRequest!, displayInput)
         : answeringQuestionPurpose
-          ? buildPurposeGroundedQuestionRequest(pendingStudentQuestion!, displayInput)
+          ? buildPurposeGroundedQuestionRequest(pendingStudentQuestion!.question, displayInput)
       : buildFBDDrawingRequest(options?.requestInput ?? displayInput);
     const requestProvider = normalizeChatProvider(options?.provider) ?? selectedProviderRef.current;
     if (!displayInput.trim()) return;
 
-    if (!options && !answeringFBDCoachingPrompt) {
+    if (!options && !answeringFBDCoachingPrompt && !answeringCalculationPurpose && !answeringQuestionPurpose) {
       const imageAction = getPromptImageAction(displayInput);
 
       if (imageAction === 'generate') {
@@ -1967,7 +1968,7 @@ export default function App() {
       transcriptionSource: studentInput.transcriptionSource,
       aiProvider: CHAT_PROVIDER_LABELS[requestProvider],
       provider: requestProvider,
-      attachments: activeImages,
+      attachments: composerFiles,
     };
 
     const engineeringState = staticsControllerRef.current?.getWorkspace();
@@ -1982,7 +1983,7 @@ export default function App() {
     const pedagogicalInput = !options ? buildStudentThinkingRequest(requestContent) : requestContent;
     const singleResponseInput = options?.conceptMapRequest
       ? pedagogicalInput : buildSingleResponseInstruction(pedagogicalInput);
-    const canvasContextRequest = answeringQuestionPurpose ? pendingStudentQuestion! : displayInput;
+    const canvasContextRequest = answeringQuestionPurpose ? pendingStudentQuestion!.question : displayInput;
     let currentInput = !options && hasVisibleFBD && shouldUseEngineeringCanvasContext(canvasContextRequest)
       ? buildFBDGroundedChatRequest(singleResponseInput, engineeringState, fbdState)
       : singleResponseInput;
@@ -2054,8 +2055,8 @@ export default function App() {
       return;
     }
     if (!options && !answeringFBDCoachingPrompt && !answeringCalculationPurpose &&
-      !answeringQuestionPurpose && isStudentQuestion(requestContent)) {
-      setPendingStudentQuestion(displayInput);
+      !answeringQuestionPurpose && (activeImages.length > 0 || isStudentQuestion(requestContent))) {
+      setPendingStudentQuestion({ question: displayInput, files: activeImages });
       insertAssistantMessage({
         id: `question-purpose-${Date.now()}`,
         role: 'assistant',

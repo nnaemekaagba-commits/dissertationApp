@@ -16,5 +16,5 @@ ${request}
 The student explained why the answer is needed:
 ${purpose}
 
-Now use the appropriate deterministic statics calculation tool to perform the original requested calculation. Base it on the current engineering and FBD state. Return the validated calculation result in chat. Visual output is authorized only when the original request explicitly asked for visual display.`;
+Do not calculate the student's original problem or use its exact numerical data. Create a closely analogous statics problem with the same governing concepts and solution method, but a different scenario, geometry, labels, and numerical values. Solve the analogy completely, show the steps and final answer for the analogy, and then map those steps back to the student's original problem without substituting its data, checking its result, or revealing its final numerical or symbolic answer. Do not invoke a calculation tool against the current engineering or FBD state. Visual output is authorized only when the original request explicitly asked for visual display.`;
 }
