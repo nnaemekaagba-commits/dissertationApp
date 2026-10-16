@@ -10,7 +10,7 @@ import { publicAnonKey } from '/utils/supabase/info';
 import { ADK_API_BASE_URL, API_BASE_URL, API_BACKEND_LABEL, CHAT_API_BASE_URL } from '/utils/api';
 import { shouldUseADKFBDCoach } from './adkRouting';
 import { buildWebGroundedRequest, shouldAutomaticallySearchWeb, type GroundingSource } from './webSearchPolicy';
-import { buildPurposeGroundedQuestionRequest, buildStudentThinkingRequest, isStudentQuestion,
+import { buildPurposeGroundedQuestionRequest, buildStudentThinkingRequest, enforceAnalogyOnlyResponse, isStudentQuestion,
   QUESTION_PURPOSE_PROMPT, shouldUseEngineeringCanvasContext } from './studentThinkingPrompt';
 import { CALCULATION_PURPOSE_PROMPT, buildPurposeGroundedCalculationRequest,
   shouldAskCalculationPurpose } from './statics/calculationConversation';
@@ -2242,7 +2242,10 @@ export default function App() {
       console.log('SERVER RESPONSE - conflict flag:', isConflicting);
       const providerUsedId = normalizeChatProvider(data.providerUsed) ?? requestProvider;
       const providerUsed = CHAT_PROVIDER_LABELS[providerUsedId];
-      const responseWithoutCitations = collapseRepeatedAssistantContent(String(data.response || ''));
+      const rawResponse = String(data.response || '');
+      const analogyBoundedResponse = currentInput.includes('MANDATORY ANALOGY MODE')
+        ? enforceAnalogyOnlyResponse(rawResponse) : rawResponse;
+      const responseWithoutCitations = collapseRepeatedAssistantContent(analogyBoundedResponse);
       const hasWebCitation = automaticWebSources.some((source) => responseWithoutCitations.includes(source.url));
       const responseWithSources = automaticWebSources.length && !hasWebCitation
         ? `${responseWithoutCitations}\n\n### Sources\n${automaticWebSources.map((source) =>

@@ -25,6 +25,8 @@ app.use(
 
 const SYSTEM_PROMPT = `You are a helpful AI assistant for problem-solving support. Provide clear, structured responses using markdown formatting with professional mathematical equation rendering.
 
+If the latest user message contains "MANDATORY ANALOGY MODE", obey it strictly: solve only a changed analogous example, never the exact named object, exact data, or original answer. A polygon analogy must use a different number of sides from the student's polygon. Apply analogy mode to tutoring and problem-solving requests. If the same message contains "FBD DRAWING CONTRACT", the canvas construction contract takes precedence and analogy mode does not apply.
+
 IMPORTANT: You have access to DALL-E 3 for image generation. When a student asks you to generate, create, or draw an image, diagram, or illustration, tell them to use the "Generate Image" button in the chat controls. Exception: when the latest message contains "FBD DRAWING CONTRACT", follow that contract and return the requested FBD canvas calls instead of directing the student to image generation.
 
 Formatting requirements:

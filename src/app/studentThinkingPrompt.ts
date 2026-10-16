@@ -3,11 +3,12 @@ const directCanvasAction = /^(add|create|draw|edit|move|delete|remove|clear|rese
 const explicitCanvasReference = /\b(fbd|free[ -]?body(?: diagram)?|rigid[ -]?body(?: view| diagram)?|canvas|diagram|shown here)\b/i;
 const referencedCanvasElement = /\b(?:this|that|my|the current)\s+(?:member|beam|body|force|load|moment|reaction|support)\b/i;
 const problemStatement = /\b(solve|calculate|find|determine|compute|evaluate|derive|prove|given|unknown|equilibrium|reaction|resultant)\b|(?:\d|[a-z])\s*[=+*/^]\s*(?:\d|[a-z])/i;
+const answerSeekingStatement = /^(?:please\s+)?(?:the\s+)?(?:value|answer|solution|result|measure)\b|\b(?:value|measure|sum)\s+of\b|\b(?:interior|exterior)\s+angles?\s+(?:of|in|for)\b/i;
 
 export function isStudentQuestion(message: string): boolean {
   const text = message.trim();
   if (!text || directCanvasAction.test(text)) return false;
-  return text.includes('?') || questionOpening.test(text) || problemStatement.test(text);
+  return text.includes('?') || questionOpening.test(text) || problemStatement.test(text) || answerSeekingStatement.test(text);
 }
 
 export function shouldUseEngineeringCanvasContext(message: string): boolean {
@@ -19,8 +20,8 @@ export function buildStudentThinkingRequest(message: string): string {
   if (!isStudentQuestion(message)) return message;
   return `${message}
 
-TUTORING INSTRUCTION:
-The student has already explained how this answer will help with the problem they are solving. Teach the method through a closely analogous problem instead of solving the student's exact problem. Change the scenario, names, geometry, and all numerical values while preserving the same underlying concepts and solution method. Solve the analogous problem completely, with step-by-step reasoning, assumptions, calculations, and a clearly identified final answer for the analogy. Then explain how the student can transfer each step to the original problem without substituting, calculating, checking, or revealing the original problem's final numerical or symbolic answer. Do not provide only hints or guiding questions unless the student explicitly requested hints only.`;
+MANDATORY ANALOGY MODE:
+The student has already explained how this answer will help with the problem they are solving. Do not solve, calculate, or state the answer to the exact object or problem the student named. Teach the method through one closely analogous problem. Change the defining object as well as the scenario, names, geometry, and all numerical values while preserving the same concept and solution method. For example, if the student asks about a hexagon, work a different polygon such as a pentagon or octagon; never calculate a hexagon in the analogy. Solve only the analogous problem completely, with step-by-step reasoning, assumptions, calculations, and a clearly identified final answer for the analogy. End with exactly this sentence: "The same method can be applied to your question." Do not write anything after it. Do not map the steps back, substitute the original data, calculate, check, or reveal the original problem's answer. Do not provide only hints unless the student explicitly requested hints only.`;
 }
 
 export const QUESTION_PURPOSE_PROMPT = `Before I answer, how will this answer help you solve the problem you are working on?`;
@@ -35,5 +36,17 @@ ${question}
 Before answering, the student explained how the answer will help with their current problem:
 ${purpose}
 
-Use the student's purpose to make the explanation relevant. Create a closely analogous problem that uses the same concepts and solution method, but change the scenario, names, geometry, and every numerical value. Solve that analogous problem completely with step-by-step reasoning, necessary assumptions, calculations, and a clearly identified final answer for the analogy. Then map the method back to the student's original problem so the student knows which steps to perform. Do not substitute the original data, calculate or verify the original result, reproduce an answer found in the upload, or reveal the original problem's final numerical or symbolic answer. Do not provide only hints, prompts, or partial guidance unless the student explicitly asked for hints only.`;
+MANDATORY ANALOGY MODE:
+Use the student's purpose to make the explanation relevant. Do not solve, calculate, or state the answer to the exact object or problem the student named. Create one closely analogous problem with the same concepts and method, but change the defining object as well as the scenario, names, geometry, and every numerical value. For polygon questions, use a polygon with a different number of sides: a hexagon request must be demonstrated with a pentagon, octagon, or another non-hexagon. Solve only the analogy completely with step-by-step reasoning, assumptions, calculations, and a clearly identified final answer for the analogy. End with exactly this sentence: "The same method can be applied to your question." Do not write anything after it. Do not map the steps back, substitute the original data, calculate or verify the original result, reproduce an answer found in an upload, or reveal the original problem's final numerical or symbolic answer. Do not provide only hints unless the student explicitly asked for hints only.`;
+}
+
+export const ANALOGY_CLOSING_SENTENCE = 'The same method can be applied to your question.';
+
+export function enforceAnalogyOnlyResponse(response: string): string {
+  const text = response.trim();
+  const closing = /the same method can be applied to (?:your|the student(?:'s|’s)) question\.?/i.exec(text);
+  if (closing) return `${text.slice(0, closing.index).trimEnd()}\n\n${ANALOGY_CLOSING_SENTENCE}`.trim();
+  const transition = /\n\s*(?:#{1,6}\s*)?(?:applying (?:it|this|the method)|apply (?:it|this|the method)|your (?:original )?(?:problem|question)|solution (?:to|for) your|now (?:solve|calculate|substitute)|for your (?:original )?(?:problem|question))\b/i.exec(text);
+  const analogy = transition ? text.slice(0, transition.index).trimEnd() : text;
+  return `${analogy}\n\n${ANALOGY_CLOSING_SENTENCE}`.trim();
 }
