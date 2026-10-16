@@ -8,8 +8,16 @@ test('recognizes explicit FBD drawing requests without treating advice as author
   assert.equal(explicitlyRequestsFBDDrawing('Create an FBD for a cantilever beam.'), true);
   assert.equal(explicitlyRequestsFBDDrawing('Recreate this FBD screenshot on the canvas.'), true);
   assert.equal(explicitlyRequestsFBDDrawing('Copy this sketch of a free body diagram.'), true);
+  assert.equal(explicitlyRequestsFBDDrawing('Generate this on the canvas.', true), true);
+  assert.equal(explicitlyRequestsFBDDrawing('Put the pasted image in the workspace.', true), true);
+  assert.equal(explicitlyRequestsFBDDrawing('Generate this on the canvas.', false), false);
+  assert.equal(explicitlyRequestsFBDDrawing('How should I draw this on the canvas?', true), false);
   assert.equal(explicitlyRequestsFBDDrawing('What should I consider in this FBD?'), false);
   assert.equal(isFBDDiagramPrompt('Draw a free body diagram'), true);
+});
+
+test('an attachment-aware request receives the drawing contract', () => {
+  assert.match(buildFBDDrawingRequest('Recreate it on the canvas.', true), /FBD DRAWING CONTRACT/);
 });
 
 test('drawing request requires cross-view supports and load roles', () => {

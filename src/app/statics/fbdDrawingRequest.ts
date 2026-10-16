@@ -1,13 +1,18 @@
 const FBD_REFERENCE = /\b(fbd|free[ -]?body(?: diagram)?|rigid body diagram|fbd (?:sketch|screen ?shot)|(?:sketch|screen ?shot) of (?:an? )?(?:fbd|free[ -]?body diagram))\b/i;
-const DRAWING_ACTION = /\b(build|create|draw|generate|make|construct|recreate|copy|trace|transfer)\b/i;
+const DRAWING_ACTION = /\b(build|create|draw|generate|make|construct|recreate|copy|trace|transfer|put|place|convert|turn)\b/i;
+const ATTACHED_DRAWING_REFERENCE = /\b(this|it|that|attached|attachment|uploaded|pasted|image|picture|photo|sketch|screen ?shot)\b/i;
+const CANVAS_REFERENCE = /\b(canvas|workspace|diagram|fbd|free[ -]?body)\b/i;
+const ASKS_FOR_INSTRUCTIONS = /\bhow\s+(?:do|can|should|would)\s+i\b/i;
 
-export function explicitlyRequestsFBDDrawing(message: string): boolean {
-  return FBD_REFERENCE.test(message) && DRAWING_ACTION.test(message);
+export function explicitlyRequestsFBDDrawing(message: string, hasAttachment = false): boolean {
+  if (ASKS_FOR_INSTRUCTIONS.test(message) || !DRAWING_ACTION.test(message)) return false;
+  if (FBD_REFERENCE.test(message)) return true;
+  return hasAttachment && ATTACHED_DRAWING_REFERENCE.test(message) && CANVAS_REFERENCE.test(message);
 }
 
 /** Give the model the exact cross-view contract for an explicitly requested diagram. */
-export function buildFBDDrawingRequest(message: string): string {
-  if (!explicitlyRequestsFBDDrawing(message)) return message;
+export function buildFBDDrawingRequest(message: string, hasAttachment = false): string {
+  if (!explicitlyRequestsFBDDrawing(message, hasAttachment)) return message;
   return `${message}
 
 FBD DRAWING CONTRACT:

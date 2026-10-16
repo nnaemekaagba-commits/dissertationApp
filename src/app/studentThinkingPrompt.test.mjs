@@ -20,7 +20,7 @@ test('does not interrupt direct canvas actions with a reflection prompt', () => 
 
 test('FBD drawing actions bypass analogy tutoring before the model request', () => {
   const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
-  assert.match(app, /!explicitlyRequestsFBDDrawing\(displayInput\)\s*\? buildStudentThinkingRequest\(requestContent\) : requestContent/);
+  assert.match(app, /!explicitlyRequestsFBDDrawing\(displayInput, activeImages\.length > 0\)\s*\? buildStudentThinkingRequest\(requestContent\) : requestContent/);
 });
 
 test('answers only after the student purpose has been collected', () => {

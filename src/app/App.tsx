@@ -1931,12 +1931,12 @@ export default function App() {
         ? buildPurposeGroundedCalculationRequest(pendingCalculationRequest!, displayInput)
         : answeringQuestionPurpose
           ? buildPurposeGroundedQuestionRequest(pendingStudentQuestion!.question, displayInput)
-      : buildFBDDrawingRequest(options?.requestInput ?? displayInput);
+      : buildFBDDrawingRequest(options?.requestInput ?? displayInput, activeImages.length > 0);
     const requestProvider = normalizeChatProvider(options?.provider) ?? selectedProviderRef.current;
     if (!displayInput.trim()) return;
 
     if (!options && !answeringFBDCoachingPrompt && !answeringCalculationPurpose && !answeringQuestionPurpose &&
-      !explicitlyRequestsFBDDrawing(displayInput)) {
+      !explicitlyRequestsFBDDrawing(displayInput, activeImages.length > 0)) {
       const imageAction = getPromptImageAction(displayInput);
 
       if (imageAction === 'generate') {
@@ -1981,7 +1981,7 @@ export default function App() {
       : undefined;
     const hasVisibleFBD = Boolean(fbdState && (fbdState.members.length || fbdState.forces.length ||
       fbdState.moments.length || fbdState.dimensions.length || fbdState.angles.length || fbdState.labels.length));
-    const pedagogicalInput = !options && !explicitlyRequestsFBDDrawing(displayInput)
+    const pedagogicalInput = !options && !explicitlyRequestsFBDDrawing(displayInput, activeImages.length > 0)
       ? buildStudentThinkingRequest(requestContent) : requestContent;
     const singleResponseInput = options?.conceptMapRequest
       ? pedagogicalInput : buildSingleResponseInstruction(pedagogicalInput);
@@ -2057,7 +2057,7 @@ export default function App() {
       return;
     }
     if (!options && !answeringFBDCoachingPrompt && !answeringCalculationPurpose &&
-      !answeringQuestionPurpose && !explicitlyRequestsFBDDrawing(displayInput) &&
+      !answeringQuestionPurpose && !explicitlyRequestsFBDDrawing(displayInput, activeImages.length > 0) &&
       (activeImages.length > 0 || isStudentQuestion(requestContent))) {
       setPendingStudentQuestion({ question: displayInput, files: activeImages });
       insertAssistantMessage({
@@ -2183,7 +2183,7 @@ export default function App() {
             fbdCalls, currentInput, controller.setFbdState);
           if (fbdBatch.results.some((result) => result.success)) {
             setShowEngineeringPanel(true);
-            setDisplayMode(explicitlyRequestsFBDDrawing(displayInput) ? 'split' :
+            setDisplayMode(explicitlyRequestsFBDDrawing(displayInput, activeImages.length > 0) ? 'split' :
               (current) => current === 'structure' ? 'fbd' : current);
           }
           data = { ...data, response: formatFBDChatToolBatch(fbdBatch) };
