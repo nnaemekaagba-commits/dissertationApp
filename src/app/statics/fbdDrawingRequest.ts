@@ -14,7 +14,7 @@ FBD DRAWING CONTRACT:
 - The student explicitly requested diagram construction. Use only explicit fbd_* tools; do not merely describe a diagram.
 - Read the complete problem description and every attached image before making tool calls.
 - Return tool calls for the visible geometry rather than a generated image. When an uploaded sketch or screenshot is the source, recreate it on the interactive FBD canvas.
-- Emit the calls as a JSON array between <fbd_tool_calls> and </fbd_tool_calls>. Each item must be {"id":"unique-id","name":"fbd_add_*","arguments":{...}}.
+- Return exactly one JSON object shaped as {"response":"brief confirmation","toolCalls":[...]}. Each toolCalls item must be {"id":"unique-id","name":"fbd_add_*","arguments":{...}}. Do not return a prose-only explanation.
 - Available creation calls are: fbd_add_body {x,y,width,height,angle?,label?,startJointKind?,endJointKind?}; fbd_add_joint {x,y,jointKind?,label?}; fbd_add_member {startX,startY,endX?,endY?,angle?,length?,label?,startJointKind?,endJointKind?}; fbd_add_force {x,y,angle,label,magnitude?,role?}; fbd_add_moment {x,y,clockwise,label,magnitude?,role?}; fbd_add_dimension {startX,startY,endX,endY,label}; fbd_add_angle {vertexX,vertexY,fromX,fromY,toX,toY,label}; fbd_add_label {x,y,text}.
 - Draw the isolated member or body first, then all visible applied forces, reaction forces, applied or reaction moments, dimensions, angles, and labels.
 - Preserve the problem's endpoint labels. For example, member AD must be labelled AD so its endpoints display A and D.

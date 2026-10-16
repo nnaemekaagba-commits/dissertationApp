@@ -18,6 +18,11 @@ test('does not interrupt direct canvas actions with a reflection prompt', () => 
   assert.equal(isStudentQuestion('Clear the diagram'), false);
 });
 
+test('FBD drawing actions bypass analogy tutoring before the model request', () => {
+  const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /!explicitlyRequestsFBDDrawing\(displayInput\)\s*\? buildStudentThinkingRequest\(requestContent\) : requestContent/);
+});
+
 test('answers only after the student purpose has been collected', () => {
   const request = buildStudentThinkingRequest('Is this FBD in equilibrium?');
   assert.match(QUESTION_PURPOSE_PROMPT, /how will this answer help you solve/i);

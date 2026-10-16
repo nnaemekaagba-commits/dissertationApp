@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { buildFBDDrawingRequest, explicitlyRequestsFBDDrawing, isFBDDiagramPrompt } from './fbdDrawingRequest.ts';
 
 test('recognizes explicit FBD drawing requests without treating advice as authorization', () => {
@@ -17,5 +18,14 @@ test('drawing request requires cross-view supports and load roles', () => {
   assert.match(request, /role to applied or reaction/);
   assert.match(request, /attached image/);
   assert.match(request, /interactive FBD canvas/);
+  assert.match(request, /exactly one JSON object/);
+  assert.match(request, /Do not return a prose-only explanation/);
   assert.match(request, /do not calculate unknown reaction magnitudes/i);
+});
+
+test('deployed OpenAI route requires an executable FBD canvas function call', () => {
+  const server = readFileSync(new URL('../../../supabase/functions/make-server-09672449/index.ts', import.meta.url), 'utf8');
+  assert.match(server, /name: "render_fbd_canvas"/);
+  assert.match(server, /tool_choice: \{ type: "function", function: \{ name: "render_fbd_canvas" \} \}/);
+  assert.match(server, /did not return the required FBD canvas action/);
 });

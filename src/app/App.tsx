@@ -1981,7 +1981,8 @@ export default function App() {
       : undefined;
     const hasVisibleFBD = Boolean(fbdState && (fbdState.members.length || fbdState.forces.length ||
       fbdState.moments.length || fbdState.dimensions.length || fbdState.angles.length || fbdState.labels.length));
-    const pedagogicalInput = !options ? buildStudentThinkingRequest(requestContent) : requestContent;
+    const pedagogicalInput = !options && !explicitlyRequestsFBDDrawing(displayInput)
+      ? buildStudentThinkingRequest(requestContent) : requestContent;
     const singleResponseInput = options?.conceptMapRequest
       ? pedagogicalInput : buildSingleResponseInstruction(pedagogicalInput);
     const canvasContextRequest = answeringQuestionPurpose ? pendingStudentQuestion!.question : displayInput;

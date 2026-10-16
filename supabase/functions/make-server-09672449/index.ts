@@ -198,6 +198,39 @@ function buildOpenAIMessages(message: string, conversationHistory: any[] = [], f
   return messages;
 }
 
+const OPENAI_FBD_CANVAS_TOOL = {
+  type: "function",
+  function: {
+    name: "render_fbd_canvas",
+    description: "Create the requested free-body diagram on the interactive FBD canvas.",
+    parameters: {
+      type: "object",
+      properties: {
+        calls: {
+          type: "array",
+          minItems: 1,
+          maxItems: 64,
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              name: { type: "string", enum: [
+                "fbd_add_body", "fbd_add_joint", "fbd_add_member", "fbd_add_force",
+                "fbd_add_moment", "fbd_add_dimension", "fbd_add_angle", "fbd_add_label",
+              ] },
+              arguments: { type: "object", additionalProperties: true },
+            },
+            required: ["id", "name", "arguments"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["calls"],
+      additionalProperties: false,
+    },
+  },
+};
+
 async function runOpenAIChat(message: string, conversationHistory: any[] = [], files: any[] = []) {
   const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
   if (!openaiApiKey) {
@@ -264,7 +297,11 @@ async function runOpenAIChat(message: string, conversationHistory: any[] = [], f
     body: JSON.stringify({
       model: hasOpenAIAudioInput(files) ? "gpt-audio" : "gpt-4o",
       messages: buildOpenAIMessages(message, conversationHistory, files),
-      temperature: 0.7,
+      temperature: message.includes("FBD DRAWING CONTRACT") ? 0.2 : 0.7,
+      ...(message.includes("FBD DRAWING CONTRACT") ? {
+        tools: [OPENAI_FBD_CANVAS_TOOL],
+        tool_choice: { type: "function", function: { name: "render_fbd_canvas" } },
+      } : {}),
     }),
   });
 
@@ -274,7 +311,17 @@ async function runOpenAIChat(message: string, conversationHistory: any[] = [], f
   }
 
   const data = await response.json();
-  return data.choices?.[0]?.message?.content || "No response generated.";
+  const assistant = data.choices?.[0]?.message;
+  if (message.includes("FBD DRAWING CONTRACT")) {
+    const canvasCall = assistant?.tool_calls?.find((call: any) => call?.function?.name === "render_fbd_canvas");
+    if (!canvasCall?.function?.arguments) throw new Error("The AI did not return the required FBD canvas action.");
+    let canvasArguments: any;
+    try { canvasArguments = JSON.parse(canvasCall.function.arguments); }
+    catch { throw new Error("The AI returned an invalid FBD canvas action."); }
+    const confirmation = assistant?.content || "I recreated the uploaded diagram on the FBD canvas.";
+    return `${confirmation}\n<fbd_tool_calls>${JSON.stringify(canvasArguments?.calls)}</fbd_tool_calls>`;
+  }
+  return assistant?.content || "No response generated.";
 }
 
 type FBDToolCall = { id: string; name: string; arguments: Record<string, unknown> };
