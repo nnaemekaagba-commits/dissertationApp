@@ -6,7 +6,7 @@ import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDMoment, addFB
   fbdBodyCorners, fbdBodyEndpointLabelPositions, fbdMemberEndFromAngle, fbdEndpointLabels,
   fbdMemberEndpointLabelPositions,
   editFBDPrimitive, deleteFBDElement, createEmptyFBDState, hasStudentFBDElements,
-  repositionFBDLabel,
+  repositionFBDLabel, repositionFBDMemberEndpointLabel,
   resetStudentFBDElements, parseFBDState, saveFBDState, loadFBDState,
   createFBDHistory, applyFBDChange, undoFBDChange, redoFBDChange } from './fbdState.ts';
 import { executeFBDChatToolBatch } from './fbdChatTools.ts';
@@ -233,6 +233,16 @@ test('a member label moves and deletes independently of its member geometry', ()
   assert.equal(deleted.members[0].label, undefined);
   assert.deepEqual(deleted.members[0].start, member.start);
   assert.deepEqual(deleted.members[0].end, member.end);
+});
+
+test('moving one two-letter member endpoint label preserves the other endpoint label', () => {
+  const labeled = addFBDMember(createEmptyFBDState(workspace), { ...member, label: 'AB' });
+  const moved = repositionFBDMemberEndpointLabel(labeled, member.id, 'start', { x: -1, y: 1 });
+  assert.equal(moved.members[0].label, 'AB');
+  assert.deepEqual(moved.members[0].startLabelPosition, { x: -1, y: 1 });
+  assert.equal(moved.members[0].endLabelPosition, undefined);
+  assert.deepEqual(fbdEndpointLabels(moved.members[0].label), ['A', 'B']);
+  assert.deepEqual(parseFBDState(JSON.parse(JSON.stringify(moved)), workspace), moved);
 });
 
 test('body endpoint joints persist as structure metadata and reject unknown support kinds', () => {

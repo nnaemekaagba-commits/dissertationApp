@@ -7,7 +7,8 @@ export type FBDBody = { id: string; origin: FBDPoint; width: number; height: num
   startJointKind?: FBDJointKind; endJointKind?: FBDJointKind };
 export type FBDJoint = { id: string; at: FBDPoint; kind?: FBDJointKind; label?: string };
 export type FBDMember = { id: string; start: FBDPoint; end: FBDPoint; label?: string;
-  labelPosition?: FBDPoint; startJointKind?: FBDJointKind; endJointKind?: FBDJointKind };
+  labelPosition?: FBDPoint; startLabelPosition?: FBDPoint; endLabelPosition?: FBDPoint;
+  startJointKind?: FBDJointKind; endJointKind?: FBDJointKind };
 export type FBDPrimitiveKind = 'body' | 'joint' | 'member';
 export type FBDPrimitive = FBDBody | FBDJoint | FBDMember;
 export type FBDForceRole = 'applied' | 'reaction';
@@ -175,7 +176,8 @@ export function addFBDJoint(state: FBDState, joint: FBDJoint): FBDState {
 export function addFBDMember(state: FBDState, member: FBDMember): FBDState {
   if (!uniquePrimitiveId(state, member.id) || !validPoint(member.start) || !validPoint(member.end) ||
     Math.hypot(member.end.x - member.start.x, member.end.y - member.start.y) < 1e-9 ||
-    !validText(member.label) || (member.labelPosition !== undefined && !validPoint(member.labelPosition)) ||
+    !validText(member.label) || [member.labelPosition, member.startLabelPosition, member.endLabelPosition]
+      .some((position) => position !== undefined && !validPoint(position)) ||
     !validJointKind(member.startJointKind) || !validJointKind(member.endJointKind))
     throw new Error('Enter a unique member ID, distinct finite endpoints, and optional label.');
   return { ...state, members: [...state.members, { ...member,
@@ -359,6 +361,19 @@ export function repositionFBDLabel(state: FBDState, kind: FBDElementKind, id: st
     angles: kind === 'angle' ? withPosition(state.angles) : state.angles };
 }
 
+export function repositionFBDMemberEndpointLabel(state: FBDState, id: string,
+  endpoint: 'start' | 'end', position: FBDPoint): FBDState {
+  if (!Number.isFinite(position.x) || !Number.isFinite(position.y))
+    throw new Error('Enter a finite member label position.');
+  if (!state.members.some((member) => member.id === id)) throw new Error('Unknown FBD member.');
+  const key = endpoint === 'start' ? 'startLabelPosition' : 'endLabelPosition';
+  return { ...state, members: state.members.map((member) => {
+    if (member.id !== id) return member;
+    const { labelPosition: _legacyPosition, ...withoutLegacyPosition } = member;
+    return { ...withoutLegacyPosition, [key]: { ...position } };
+  }) };
+}
+
 /** An explicit physical operation, never the consequence of dragging annotation text. */
 export function moveFBDForceApplication(state: FBDState, id: string, at: FBDPoint,
   workspace: StaticsWorkspace): FBDState {
@@ -508,6 +523,8 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),
     members: rows(root.members ?? [], (row) => ({ id: id(row.id), start: point(row.start), end: point(row.end),
       ...(row.labelPosition === undefined ? {} : { labelPosition: point(row.labelPosition) }),
+      ...(row.startLabelPosition === undefined ? {} : { startLabelPosition: point(row.startLabelPosition) }),
+      ...(row.endLabelPosition === undefined ? {} : { endLabelPosition: point(row.endLabelPosition) }),
       ...(row.startJointKind === undefined ? {} : { startJointKind: ['free', 'pin', 'roller', 'fixed'].includes(String(row.startJointKind)) ? row.startJointKind as FBDJointKind : fail() }),
       ...(row.endJointKind === undefined ? {} : { endJointKind: ['free', 'pin', 'roller', 'fixed'].includes(String(row.endJointKind)) ? row.endJointKind as FBDJointKind : fail() }),
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),

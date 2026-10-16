@@ -85,11 +85,12 @@ export function ReplayCanvas({ state, workspace }: { state: FBDState; workspace?
       </> : body.label && text(body.label, { x: (fbdBodyCorners(body)[0].x + fbdBodyCorners(body)[2].x) / 2,
         y: (fbdBodyCorners(body)[0].y + fbdBodyCorners(body)[2].y) / 2 }, '#047857')}</g>)}
     {(state.members || []).map((member) => <g key={member.id}>{line(member.start, member.end, '#059669', 7)}
-      {!member.labelPosition && fbdEndpointLabels(member.label || member.id) ? <>
+      {fbdEndpointLabels(member.label || member.id) ? <>
         {text(fbdEndpointLabels(member.label || member.id)![0],
-          fbdMemberEndpointLabelPositions(member, Math.max(0.28, span * 0.075))[0], '#047857', 0)}
+          member.startLabelPosition || member.labelPosition ||
+            fbdMemberEndpointLabelPositions(member, Math.max(0.28, span * 0.075))[0], '#047857', 0)}
         {text(fbdEndpointLabels(member.label || member.id)![1],
-          fbdMemberEndpointLabelPositions(member, Math.max(0.28, span * 0.075))[1], '#047857', 0)}
+          member.endLabelPosition || fbdMemberEndpointLabelPositions(member, Math.max(0.28, span * 0.075))[1], '#047857', 0)}
       </> : member.label && text(member.label, member.labelPosition || { x: (member.start.x + member.end.x) / 2,
         y: (member.start.y + member.end.y) / 2 }, '#047857')}</g>)}
     {(state.joints || []).map((node) => <g key={node.id}>

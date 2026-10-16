@@ -17,6 +17,7 @@ import { fbdMemberEndFromAngle,
   addFBDForce, addFBDMoment, addFBDDimension, addFBDAngle, addFBDLabel, moveFBDLabel,
   editFBDForce, editFBDMoment, editFBDDimension, editFBDAngle, editFBDLabel,
   deleteFBDElement, getFBDElement, repositionFBDLabel, moveFBDForceApplication,
+  repositionFBDMemberEndpointLabel,
   type FBDForce, type FBDMoment, type FBDDimension, type FBDAngle, type FBDLabel,
   type FBDBody, type FBDJoint, type FBDMember, type FBDPrimitiveKind,
   type FBDElement, type FBDElementKind, type FBDLabelAssociation, type FBDState, type FBDTarget } from './fbdState';
@@ -29,6 +30,7 @@ import { StructurePreview } from './StructurePreview';
 type ViewMode = 'front' | 'top' | 'right' | 'isometric' | 'free';
 type FBDDrag = { pointerId: number; kind: FBDElementKind; id: string;
   target: 'label' | 'application' | 'body' | 'member'; object: THREE.Object3D;
+  labelEndpoint?: 'start' | 'end';
   start: THREE.Vector3; original: THREE.Vector3; current: THREE.Vector3;
   originalApplication?: { x: number; y: number };
   clientX: number; clientY: number; moved: boolean; controlsEnabled: boolean };
@@ -287,6 +289,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       const applicationId = object.userData.fbdDragApplication as string | undefined;
       const bodyId = object.userData.fbdDragBody as string | undefined;
       const memberId = object.userData.fbdDragMember as string | undefined;
+      const labelEndpoint = object.userData.fbdMemberLabelEndpoint as 'start' | 'end' | undefined;
       if (!annotation && !applicationId && !bodyId && !memberId) continue;
       const controls = controlsRef.current;
       const originalApplication = applicationId
@@ -297,6 +300,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
         kind: annotation?.kind || (bodyId ? 'body' : memberId ? 'member' : 'force'),
         id: annotation?.id || applicationId || bodyId || memberId!,
         target: annotation ? 'label' : bodyId ? 'body' : memberId ? 'member' : 'application', object,
+        labelEndpoint,
         start: start.clone(), original: object.position.clone(), current: object.position.clone(),
         originalApplication: originalApplication ? { ...originalApplication } : undefined,
         clientX: event.clientX, clientY: event.clientY, moved: false,
@@ -355,7 +359,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           start: pointAfterSceneDrag((before as FBDMember).start, drag.original, drag.current),
           end: pointAfterSceneDrag((before as FBDMember).end, drag.original, drag.current),
         })
-      : repositionFBDLabel(fbdState, drag.kind, drag.id, at);
+      : drag.kind === 'member' && drag.labelEndpoint
+        ? repositionFBDMemberEndpointLabel(fbdState, drag.id, drag.labelEndpoint, at)
+        : repositionFBDLabel(fbdState, drag.kind, drag.id, at);
     const after = getFBDElement(next, drag.kind, drag.id)!;
     setFbdState(next);
     setSelectedForceId(drag.kind === 'force' ? drag.id : null);
@@ -935,6 +941,10 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
             ...(primitiveDraft.endJointKind === 'none' ? {} : { endJointKind: primitiveDraft.endJointKind as FBDJoint['kind'] }),
             ...(primitiveEditing && selectedPrimitiveElement && 'labelPosition' in selectedPrimitiveElement &&
               selectedPrimitiveElement.labelPosition ? { labelPosition: selectedPrimitiveElement.labelPosition } : {}),
+            ...(primitiveEditing && selectedPrimitiveElement && 'startLabelPosition' in selectedPrimitiveElement &&
+              selectedPrimitiveElement.startLabelPosition ? { startLabelPosition: selectedPrimitiveElement.startLabelPosition } : {}),
+            ...(primitiveEditing && selectedPrimitiveElement && 'endLabelPosition' in selectedPrimitiveElement &&
+              selectedPrimitiveElement.endLabelPosition ? { endLabelPosition: selectedPrimitiveElement.endLabelPosition } : {}),
             ...(label ? { label } : {}) } as FBDMember;
       const next = primitiveEditing ? editFBDPrimitive(fbdState, primitiveMode, id, item) :
         primitiveMode === 'body' ? addFBDBody(fbdState, item as FBDBody) :
@@ -978,7 +988,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     const id = selectedLabelId?.startsWith('member-label:') ? selectedLabelId.slice('member-label:'.length) : null;
     const member = id ? fbdState.members.find((item) => item.id === id) : undefined;
     if (!id || !member?.label) return;
-    const { label: _label, labelPosition: _labelPosition, ...withoutLabel } = member;
+    const { label: _label, labelPosition: _labelPosition, startLabelPosition: _startLabelPosition,
+      endLabelPosition: _endLabelPosition, ...withoutLabel } = member;
     const next = editFBDPrimitive(fbdState, 'member', id, withoutLabel);
     recordPrimitiveChange('member', 'edit', id, next);
     setSelectedLabelId(null);

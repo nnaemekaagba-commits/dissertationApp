@@ -201,15 +201,22 @@ export function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     for (let index = 0; index < corners.length; index++)
       addLine(memberGroup, corners[index], corners[(index + 1) % corners.length], color);
     group.add(memberGroup);
-    const memberEnds = member.labelPosition ? null : fbdEndpointLabels(member.label || member.id);
+    const memberEnds = fbdEndpointLabels(member.label || member.id);
     if (memberEnds) {
       const labelPoints = fbdMemberEndpointLabelPositions(member, Math.max(0.28, span * 0.075));
-      for (const [text, point] of [[memberEnds[0], labelPoints[0]],
-        [memberEnds[1], labelPoints[1]]] as const) {
+      if (member.labelPosition && !member.startLabelPosition && !member.endLabelPosition) {
+        const dx = member.labelPosition.x - labelPoints[0].x;
+        const dy = member.labelPosition.y - labelPoints[0].y;
+        labelPoints[0] = { ...member.labelPosition };
+        labelPoints[1] = { x: labelPoints[1].x + dx, y: labelPoints[1].y + dy };
+      }
+      for (const [text, point, endpoint] of [[memberEnds[0], member.startLabelPosition || labelPoints[0], 'start'],
+        [memberEnds[1], member.endLabelPosition || labelPoints[1], 'end']] as const) {
         const label = textSprite(text,
           selectedLabelId === `member-label:${member.id}` ? '#c2410c' : '#047857', 0.54);
         if (label) { label.position.set(point.x, point.y, 0.24);
           label.userData.fbdMemberLabelId = member.id;
+          label.userData.fbdMemberLabelEndpoint = endpoint;
           label.userData.fbdDragLabel = { kind: 'member', id: member.id }; group.add(label); }
       }
     } else if (member.label) {
