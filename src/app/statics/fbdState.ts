@@ -138,7 +138,8 @@ export function fbdStateForMemberCanvas(state: FBDState, memberId: string | null
 /** Shared mode renders the complete diagram; separate mode renders only the selected member canvas. */
 export function fbdStateForCanvasLayout(state: FBDState, memberId: string | null,
   separate: boolean): FBDState {
-  return separate ? fbdStateForMemberCanvas(state, memberId) : state;
+  const hasMemberCanvas = Boolean(memberId && state.members.some((member) => member.id === memberId));
+  return separate && hasMemberCanvas ? fbdStateForMemberCanvas(state, memberId) : state;
 }
 
 /** Clears only student annotations, retaining the selected body and structure association. */

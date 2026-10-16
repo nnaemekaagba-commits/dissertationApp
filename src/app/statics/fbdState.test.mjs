@@ -686,6 +686,14 @@ test('student label persists its position, text, and optional association withou
   assert.deepEqual(loadFBDState(storage, 'label-student', workspace), moved);
 });
 
+test('separate layout falls back to the shared canvas when no valid member exists', () => {
+  const empty = createEmptyFBDState(workspace);
+  const labeled = addFBDLabel(empty, { at: { x: 1, y: 1 }, text: 'Visible note' }, workspace, 'label-1');
+  const withoutActiveMember = fbdStateForCanvasLayout(labeled, null, true);
+  const withStaleMember = fbdStateForCanvasLayout(labeled, 'deleted-member', true);
+  assert.equal(withoutActiveMember.labels.length, 1);
+  assert.equal(withStaleMember.labels.length, 1);
+});
 test('labels validate text, position, association, and movement', () => {
   const selected = selectFBDTarget(createEmptyFBDState(workspace), { kind: 'joint', id: 'A' }, workspace);
   const input = { at: { x: 0, y: 0 }, text: 'R_A' };
