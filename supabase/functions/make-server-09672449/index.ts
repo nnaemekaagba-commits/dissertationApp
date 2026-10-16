@@ -25,7 +25,7 @@ app.use(
 
 const SYSTEM_PROMPT = `You are a helpful AI assistant for problem-solving support. Provide clear, structured responses using markdown formatting with professional mathematical equation rendering.
 
-IMPORTANT: You have access to DALL-E 3 for image generation. When a student asks you to generate, create, or draw an image, diagram, or illustration, tell them to use the "Generate Image" button in the chat controls.
+IMPORTANT: You have access to DALL-E 3 for image generation. When a student asks you to generate, create, or draw an image, diagram, or illustration, tell them to use the "Generate Image" button in the chat controls. Exception: when the latest message contains "FBD DRAWING CONTRACT", follow that contract and return the requested FBD canvas calls instead of directing the student to image generation.
 
 Formatting requirements:
 - Use headings, bullets, and numbered lists when they improve clarity.
@@ -275,6 +275,34 @@ async function runOpenAIChat(message: string, conversationHistory: any[] = [], f
 
   const data = await response.json();
   return data.choices?.[0]?.message?.content || "No response generated.";
+}
+
+type FBDToolCall = { id: string; name: string; arguments: Record<string, unknown> };
+
+function extractFBDToolCalls(response: string): { response: string; toolCalls?: FBDToolCall[] } {
+  const match = response.match(/<fbd_tool_calls>\s*([\s\S]*?)\s*<\/fbd_tool_calls>/i);
+  if (!match) return { response };
+  try {
+    const parsed = JSON.parse(match[1]);
+    if (!Array.isArray(parsed) || !parsed.length || parsed.length > 64) return { response };
+    const allowed = new Set([
+      "fbd_add_body", "fbd_add_joint", "fbd_add_member", "fbd_add_force", "fbd_add_moment",
+      "fbd_add_dimension", "fbd_add_angle", "fbd_add_label",
+    ]);
+    const toolCalls = parsed.map((call: any, index: number) => ({
+      id: typeof call?.id === "string" && call.id ? call.id : `fbd-upload-${index + 1}`,
+      name: call?.name,
+      arguments: call?.arguments,
+    }));
+    if (toolCalls.some((call) => !allowed.has(call.name) || !call.arguments ||
+      typeof call.arguments !== "object" || Array.isArray(call.arguments))) return { response };
+    return {
+      response: response.replace(match[0], "").trim() || "I recreated the uploaded diagram on the FBD canvas.",
+      toolCalls,
+    };
+  } catch {
+    return { response };
+  }
 }
 
 async function runGoogleChat(message: string, conversationHistory: any[] = [], files: any[] = []) {
@@ -587,7 +615,8 @@ app.post("/make-server-09672449/chat", async (c) => {
       assistantMessage = await runOpenAIChat(message, conversationHistory, files);
     }
 
-    return c.json({ response: assistantMessage, provider: selectedProvider, providerUsed: selectedProvider });
+    const parsedAssistant = extractFBDToolCalls(assistantMessage);
+    return c.json({ ...parsedAssistant, provider: selectedProvider, providerUsed: selectedProvider });
     /*
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiApiKey) {

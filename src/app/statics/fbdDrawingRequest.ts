@@ -1,5 +1,5 @@
-const FBD_REFERENCE = /\b(fbd|free[ -]?body(?: diagram)?|rigid body diagram)\b/i;
-const DRAWING_ACTION = /\b(build|create|draw|generate|make|construct)\b/i;
+const FBD_REFERENCE = /\b(fbd|free[ -]?body(?: diagram)?|rigid body diagram|fbd (?:sketch|screen ?shot)|(?:sketch|screen ?shot) of (?:an? )?(?:fbd|free[ -]?body diagram))\b/i;
+const DRAWING_ACTION = /\b(build|create|draw|generate|make|construct|recreate|copy|trace|transfer)\b/i;
 
 export function explicitlyRequestsFBDDrawing(message: string): boolean {
   return FBD_REFERENCE.test(message) && DRAWING_ACTION.test(message);
@@ -13,6 +13,9 @@ export function buildFBDDrawingRequest(message: string): string {
 FBD DRAWING CONTRACT:
 - The student explicitly requested diagram construction. Use only explicit fbd_* tools; do not merely describe a diagram.
 - Read the complete problem description and every attached image before making tool calls.
+- Return tool calls for the visible geometry rather than a generated image. When an uploaded sketch or screenshot is the source, recreate it on the interactive FBD canvas.
+- Emit the calls as a JSON array between <fbd_tool_calls> and </fbd_tool_calls>. Each item must be {"id":"unique-id","name":"fbd_add_*","arguments":{...}}.
+- Available creation calls are: fbd_add_body {x,y,width,height,angle?,label?,startJointKind?,endJointKind?}; fbd_add_joint {x,y,jointKind?,label?}; fbd_add_member {startX,startY,endX?,endY?,angle?,length?,label?,startJointKind?,endJointKind?}; fbd_add_force {x,y,angle,label,magnitude?,role?}; fbd_add_moment {x,y,clockwise,label,magnitude?,role?}; fbd_add_dimension {startX,startY,endX,endY,label}; fbd_add_angle {vertexX,vertexY,fromX,fromY,toX,toY,label}; fbd_add_label {x,y,text}.
 - Draw the isolated member or body first, then all visible applied forces, reaction forces, applied or reaction moments, dimensions, angles, and labels.
 - Preserve the problem's endpoint labels. For example, member AD must be labelled AD so its endpoints display A and D.
 - On fbd_add_body or fbd_add_member, set startJointKind and endJointKind to pin, roller, fixed, or free when the problem identifies supports. These support fields create the Rigid Body View.

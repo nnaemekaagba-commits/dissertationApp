@@ -9,6 +9,12 @@ const structure = createSimplySupportedBeamWorkspace();
 const initial = selectFBDTarget(createEmptyFBDState(structure), { kind: 'body', id: 'structure' }, structure);
 const add = { id: 'call-1', name: 'fbd_add_force', arguments: JSON.stringify({ x: 2, y: 0, angle: -90, label: 'P', magnitude: 10 }) };
 
+test('uploaded sketch recreation explicitly authorizes validated FBD tools', () => {
+  assert.equal(explicitlyRequestsFBDModification('Generate this FBD screenshot on the FBD canvas.'), true);
+  assert.equal(explicitlyRequestsFBDModification('Recreate the attached image as an FBD.'), true);
+  assert.equal(explicitlyRequestsFBDModification('Trace this free-body sketch.'), true);
+});
+
 test('advice, including missing-element questions, cannot change FBD or its history', () => {
   const originalStructure = JSON.stringify(structure);
   const history = createFBDHistory(initial);

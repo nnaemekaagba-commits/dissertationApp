@@ -1935,7 +1935,8 @@ export default function App() {
     const requestProvider = normalizeChatProvider(options?.provider) ?? selectedProviderRef.current;
     if (!displayInput.trim()) return;
 
-    if (!options && !answeringFBDCoachingPrompt && !answeringCalculationPurpose && !answeringQuestionPurpose) {
+    if (!options && !answeringFBDCoachingPrompt && !answeringCalculationPurpose && !answeringQuestionPurpose &&
+      !explicitlyRequestsFBDDrawing(displayInput)) {
       const imageAction = getPromptImageAction(displayInput);
 
       if (imageAction === 'generate') {
@@ -2055,7 +2056,8 @@ export default function App() {
       return;
     }
     if (!options && !answeringFBDCoachingPrompt && !answeringCalculationPurpose &&
-      !answeringQuestionPurpose && (activeImages.length > 0 || isStudentQuestion(requestContent))) {
+      !answeringQuestionPurpose && !explicitlyRequestsFBDDrawing(displayInput) &&
+      (activeImages.length > 0 || isStudentQuestion(requestContent))) {
       setPendingStudentQuestion({ question: displayInput, files: activeImages });
       insertAssistantMessage({
         id: `question-purpose-${Date.now()}`,

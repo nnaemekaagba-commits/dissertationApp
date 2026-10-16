@@ -24,8 +24,8 @@ export type FBDChatBatch = { state: FBDState; results: FBDChatToolResult[]; inte
 export function explicitlyRequestsFBDModification(message: string): boolean {
   const text = message.trim();
   if (/^(what|why|how|explain|describe|teach|am i|should i|is there|do i|can i)\b/i.test(text)) return false;
-  return /\b(add|build|create|draw|make|place|insert|remove|delete|erase|edit|change|move|reposition|rename|replace|select|isolate|set)\b/i.test(text) &&
-    /\b(fbd|free[ -]?body|diagram|body|member|beam|point|line|arrow|annotation|force label|moment label|my force|my moment|my label)\b/i.test(text);
+  return /\b(add|build|create|draw|generate|make|construct|recreate|copy|trace|transfer|place|insert|remove|delete|erase|edit|change|move|reposition|rename|replace|select|isolate|set)\b/i.test(text) &&
+    /\b(fbd|free[ -]?body|diagram|sketch|screen ?shot|attached image|body|member|beam|point|line|arrow|annotation|force label|moment label|my force|my moment|my label)\b/i.test(text);
 }
 
 function args(value: unknown, allowed: string[], required: string[] = []): Record<string, unknown> {
