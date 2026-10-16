@@ -3,8 +3,16 @@ const DRAWING_ACTION = /\b(build|create|draw|generate|make|construct|recreate|co
 const ATTACHED_DRAWING_REFERENCE = /\b(this|it|that|attached|attachment|uploaded|pasted|image|picture|photo|sketch|screen ?shot)\b/i;
 const CANVAS_REFERENCE = /\b(canvas|workspace|diagram|fbd|free[ -]?body)\b/i;
 const ASKS_FOR_INSTRUCTIONS = /\bhow\s+(?:do|can|should|would)\s+i\b/i;
+const IMAGE_OUTPUT = /\b(display|show|render|rendering)\b|\b(?:generate|create|make|produce)\b.{0,40}\b(?:an?\s+)?(?:image|picture|illustration|visual)\b/i;
+
+export function explicitlyRequestsFBDImage(message: string, hasAttachment = false): boolean {
+  if (ASKS_FOR_INSTRUCTIONS.test(message) || /\b(canvas|workspace)\b/i.test(message)) return false;
+  return DRAWING_ACTION.test(message) && IMAGE_OUTPUT.test(message) &&
+    (FBD_REFERENCE.test(message) || hasAttachment && /\b(this|it|attached|uploaded|pasted)\b/i.test(message));
+}
 
 export function explicitlyRequestsFBDDrawing(message: string, hasAttachment = false): boolean {
+  if (explicitlyRequestsFBDImage(message, hasAttachment)) return false;
   if (ASKS_FOR_INSTRUCTIONS.test(message) || !DRAWING_ACTION.test(message)) return false;
   if (FBD_REFERENCE.test(message)) return true;
   return hasAttachment && ATTACHED_DRAWING_REFERENCE.test(message) && CANVAS_REFERENCE.test(message);

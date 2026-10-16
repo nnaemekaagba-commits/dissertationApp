@@ -31,7 +31,8 @@ import { executeFBDChatToolBatch, formatFBDChatToolBatch, FBD_CHAT_TOOL_NAMES,
   type FBDChatBatch, type FBDChatToolCall } from './statics/fbdChatTools';
 import { checkStudentFBD, explicitlyRequestsFBDCheck, formatFBDCheckFeedback } from './statics/checkFBD';
 import { buildFBDCoachingRequest, buildFBDGroundedChatRequest, FBD_CHECK_QUESTIONS } from './statics/fbdCheckConversation';
-import { buildFBDDrawingRequest, explicitlyRequestsFBDDrawing, isFBDDiagramPrompt } from './statics/fbdDrawingRequest';
+import { buildFBDDrawingRequest, explicitlyRequestsFBDDrawing, explicitlyRequestsFBDImage,
+  isFBDDiagramPrompt } from './statics/fbdDrawingRequest';
 import { explicitlyRequestsVisualCalculation, visualCalculationForRequest,
   type RequestedVisualCalculation } from './statics/calculationPolicy';
 import type { BeamReactionResult } from './statics/calculations';
@@ -1936,6 +1937,12 @@ export default function App() {
     if (!displayInput.trim()) return;
 
     if (!options && !answeringFBDCoachingPrompt && !answeringCalculationPurpose && !answeringQuestionPurpose &&
+      explicitlyRequestsFBDImage(displayInput, activeImages.length > 0)) {
+      await runImageGeneration(displayInput, undefined, activeImages);
+      return;
+    }
+
+    if (!options && !answeringFBDCoachingPrompt && !answeringCalculationPurpose && !answeringQuestionPurpose &&
       !explicitlyRequestsFBDDrawing(displayInput, activeImages.length > 0)) {
       const imageAction = getPromptImageAction(displayInput);
 
@@ -3108,7 +3115,7 @@ ${responseWithSources}` : responseWithSources,
     console.log('✅ Workspace cleared (archive preserved)');
   };
 
-  const runImageGeneration = async (promptText: string, displayContent?: string) => {
+  const runImageGeneration = async (promptText: string, displayContent?: string, referenceFiles: UploadedFile[] = []) => {
     const prompt = promptText.trim();
 
     if (!prompt) {
@@ -3124,6 +3131,7 @@ ${responseWithSources}` : responseWithSources,
       content: displayContent || prompt,
       timestamp: new Date(),
       aiProvider: IMAGE_PROVIDER_LABEL,
+      attachments: referenceFiles,
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -3133,13 +3141,14 @@ ${responseWithSources}` : responseWithSources,
     setTranscriptionSource(undefined);
     setImagePrompt('');
     setShowImageDialog(false);
+    if (referenceFiles.length) setPastedImages([]);
 
     try {
       console.log('Sending image generation request:', { prompt });
       const response = await fetch(`${API_BASE_URL}/generate-image`, {
         method: 'POST',
         headers: buildApiHeaders(true),
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, files: referenceFiles.map(({ name, type, content }) => ({ name, type, content })) }),
       });
 
       console.log('Image generation response status:', response.status);

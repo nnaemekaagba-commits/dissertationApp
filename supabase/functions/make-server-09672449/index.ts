@@ -846,7 +846,10 @@ Remember: This is a professional educational environment. Mathematical notation 
 // DALL-E Image Generation endpoint
 app.post("/make-server-09672449/generate-image", async (c) => {
   try {
-    const { prompt, size = "1024x1024", quality = "standard" } = await c.req.json();
+    const body = await c.req.json();
+    const { prompt, size = "1024x1024", quality = "standard", files = [] } = body;
+    const inputError = studentAttachmentError(body, false);
+    if (inputError) return c.json({ error: inputError }, 400);
 
     if (!prompt) {
       return c.json({ error: "Image prompt is required" }, 400);
@@ -857,7 +860,32 @@ app.post("/make-server-09672449/generate-image", async (c) => {
       return c.json({ error: "OpenAI API key not configured" }, 500);
     }
 
-    console.log(`🎨 Generating image with DALL-E 3: "${prompt}"`);
+    let generationPrompt = prompt;
+    const referenceImages = files.filter((file: any) => file.type?.startsWith("image/"));
+    if (referenceImages.length) {
+      const visionResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiApiKey}` },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          temperature: 0.1,
+          messages: [{ role: "user", content: [
+            { type: "text", text: `Analyze the attached engineering statics sketch for image recreation. Describe only what is visibly present: frame or rigid-body geometry, member connections, supports, force and moment arrows, dimensions, angles, and every readable label. Preserve spatial relationships and do not solve the problem. Student request: ${prompt}` },
+            ...referenceImages.map((file: any) => ({ type: "image_url", image_url: { url: file.content } })),
+          ] }],
+        }),
+      });
+      if (!visionResponse.ok) {
+        const errorData = await visionResponse.json();
+        return c.json({ error: `Reference image analysis failed: ${errorData.error?.message || "Unknown error"}` }, visionResponse.status);
+      }
+      const visionData = await visionResponse.json();
+      const visualDescription = visionData.choices?.[0]?.message?.content;
+      if (!visualDescription) return c.json({ error: "The reference FBD could not be read." }, 422);
+      generationPrompt = `Create a clean, high-contrast engineering free-body diagram based on this reference analysis. Use a white background, crisp black member lines, conventional support symbols, clear force and moment arrows, and legible labels. Preserve the described layout and labels exactly. Do not add calculations, explanations, decorative elements, or information absent from the reference.\n\n${visualDescription}`;
+    }
+
+    console.log(`🎨 Generating image with DALL-E 3: "${generationPrompt}"`);
 
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
@@ -867,7 +895,7 @@ app.post("/make-server-09672449/generate-image", async (c) => {
       },
       body: JSON.stringify({
         model: "dall-e-3",
-        prompt: prompt,
+        prompt: generationPrompt,
         n: 1,
         size: size,
         quality: quality,
@@ -891,7 +919,7 @@ app.post("/make-server-09672449/generate-image", async (c) => {
     console.log(`✅ Image generated successfully`);
     return c.json({ 
       imageUrl,
-      revisedPrompt: revisedPrompt || prompt
+      revisedPrompt: revisedPrompt || generationPrompt
     });
   } catch (error) {
     console.error("Error in image generation endpoint:", error);

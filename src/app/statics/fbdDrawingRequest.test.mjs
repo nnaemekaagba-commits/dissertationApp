@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { buildFBDDrawingRequest, explicitlyRequestsFBDDrawing, isFBDDiagramPrompt } from './fbdDrawingRequest.ts';
+import { buildFBDDrawingRequest, explicitlyRequestsFBDDrawing, explicitlyRequestsFBDImage,
+  isFBDDiagramPrompt } from './fbdDrawingRequest.ts';
 
 test('recognizes explicit FBD drawing requests without treating advice as authorization', () => {
   assert.equal(explicitlyRequestsFBDDrawing('Draw the free-body diagram from this image.'), true);
@@ -14,6 +15,13 @@ test('recognizes explicit FBD drawing requests without treating advice as author
   assert.equal(explicitlyRequestsFBDDrawing('How should I draw this on the canvas?', true), false);
   assert.equal(explicitlyRequestsFBDDrawing('What should I consider in this FBD?'), false);
   assert.equal(isFBDDiagramPrompt('Draw a free body diagram'), true);
+});
+
+test('distinguishes displayed FBD images from interactive canvas construction', () => {
+  assert.equal(explicitlyRequestsFBDImage('Generate an image of this free-body diagram and display it.', true), true);
+  assert.equal(explicitlyRequestsFBDDrawing('Generate an image of this free-body diagram and display it.', true), false);
+  assert.equal(explicitlyRequestsFBDImage('Generate this FBD on the canvas.', true), false);
+  assert.equal(explicitlyRequestsFBDDrawing('Generate this FBD on the canvas.', true), true);
 });
 
 test('an attachment-aware request receives the drawing contract', () => {
