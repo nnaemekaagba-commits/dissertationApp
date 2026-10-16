@@ -180,8 +180,9 @@ test('workspace starts blank and renders no engineering geometry or givens', () 
 });
 
 test('structure panes render only student base geometry while FBD view retains annotations', () => {
+  const scene = readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8');
   const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8') +
-    readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
+    scene +
     readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   assert.match(panel, /DEFAULT_GIVEN_VISIBILITY, true\);/);
   assert.match(panel, /givenVisibility,\s*!showFbd, selectedPrimitive\);/);
@@ -198,6 +199,9 @@ test('structure panes render only student base geometry while FBD view retains a
   assert.doesNotMatch(panel, /\(\['body', 'joint', 'member'\]/);
   assert.match(panel, /Start joint in Rigid Body View/);
   assert.match(panel, /const derivedJoints: FBDJoint\[\] = baseOnly/);
+  assert.match(scene, /baseOnly \? \[[\s\S]*?fbdState\.labels\.map\(\(item\) => item\.at\)/);
+  assert.ok(scene.indexOf('for (const item of fbdState.labels)') <
+    scene.indexOf('if (baseOnly) return { group, center, span };'));
   for (const kind of ['free', 'pin', 'roller', 'fixed']) {
     const state = addFBDJoint(createEmptyFBDState(workspace), { ...joint, kind });
     assert.equal(parseFBDState(JSON.parse(JSON.stringify(state)), workspace).joints[0].kind, kind);

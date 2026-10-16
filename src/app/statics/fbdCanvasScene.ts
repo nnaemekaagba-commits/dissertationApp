@@ -99,6 +99,7 @@ export function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     ...(baseOnly ? [
       ...fbdState.forces.filter(isExternalFBDLoad).map((item) => item.at),
       ...fbdState.moments.filter(isExternalFBDLoad).map((item) => item.at),
+      ...fbdState.labels.map((item) => item.at),
     ] : [
       ...fbdState.forces.map((item) => item.at), ...fbdState.moments.map((item) => item.at),
       ...fbdState.dimensions.flatMap((item) => [item.start, item.end]),
@@ -294,6 +295,15 @@ export function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       group.add(label);
     }
   }
+  for (const item of fbdState.labels) {
+    const sprite = textSprite(item.text, item.id === selectedLabelId ? '#c2410c' : '#1e293b', 0.55);
+    if (sprite) {
+      sprite.position.copy(fbdLabelPosition('label', item, span));
+      sprite.userData.fbdLabelId = item.id;
+      sprite.userData.fbdDragLabel = { kind: 'label', id: item.id };
+      group.add(sprite);
+    }
+  }
   if (baseOnly) return { group, center, span };
   for (const dimension of fbdState.dimensions) {
     group.add(buildFBDDimensionLines(dimension, span, dimension.id === selectedDimensionId));
@@ -314,15 +324,6 @@ export function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
       label.userData.fbdDragLabel = { kind: 'angle', id: angle.id };
       label.userData.fbdAngleId = angle.id;
       group.add(label);
-    }
-  }
-  for (const item of fbdState.labels) {
-    const sprite = textSprite(item.text, item.id === selectedLabelId ? '#c2410c' : '#1e293b', 0.55);
-    if (sprite) {
-      sprite.position.copy(fbdLabelPosition('label', item, span));
-      sprite.userData.fbdLabelId = item.id;
-      sprite.userData.fbdDragLabel = { kind: 'label', id: item.id };
-      group.add(sprite);
     }
   }
   return { group, center, span };
