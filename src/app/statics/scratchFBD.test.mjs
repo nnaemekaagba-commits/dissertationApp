@@ -6,6 +6,7 @@ import { addFBDBody, addFBDJoint, addFBDMember, addFBDForce, addFBDMoment, addFB
   fbdBodyCorners, fbdBodyEndpointLabelPositions, fbdMemberEndFromAngle, fbdEndpointLabels,
   fbdMemberEndpointLabelPositions,
   editFBDPrimitive, deleteFBDElement, createEmptyFBDState, hasStudentFBDElements,
+  repositionFBDLabel,
   resetStudentFBDElements, parseFBDState, saveFBDState, loadFBDState,
   createFBDHistory, applyFBDChange, undoFBDChange, redoFBDChange } from './fbdState.ts';
 import { executeFBDChatToolBatch } from './fbdChatTools.ts';
@@ -202,11 +203,36 @@ test('structure panes render only student base geometry while FBD view retains a
   assert.match(scene, /baseOnly \? \[[\s\S]*?fbdState\.labels\.map\(\(item\) => item\.at\)/);
   assert.ok(scene.indexOf('for (const item of fbdState.labels)') <
     scene.indexOf('if (baseOnly) return { group, center, span };'));
+  assert.match(panel, /showFbd \|\| selectedLabelId/);
+  assert.match(panel, /<StructurePreview[\s\S]*?selectedLabelId=\{selectedLabelId\}[\s\S]*?onSelectLabel=/);
   for (const kind of ['free', 'pin', 'roller', 'fixed']) {
     const state = addFBDJoint(createEmptyFBDState(workspace), { ...joint, kind });
     assert.equal(parseFBDState(JSON.parse(JSON.stringify(state)), workspace).joints[0].kind, kind);
   }
   assert.throws(() => addFBDJoint(createEmptyFBDState(workspace), { ...joint, kind: 'hinged-ish' }));
+});
+
+test('labels can be selected from rigid body previews and deleted with the shared control', () => {
+  const preview = readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./EngineeringVisualizationPanel.tsx', import.meta.url), 'utf8');
+  assert.match(preview, /ray\.intersectObjects\(model\.group\.children, true\)/);
+  assert.match(preview, /onSelectLabelRef\.current\(id \|\| `member-label:\$\{memberId\}`\)/);
+  assert.match(panel, /if \(!showFbd && !object\?\.userData\.fbdLabelId && !object\?\.userData\.fbdMemberLabelId\) continue/);
+  assert.match(panel, /if \(selectedElement\) deleteSelected\(\)/);
+});
+
+test('a member label moves and deletes independently of its member geometry', () => {
+  const labeled = addFBDMember(createEmptyFBDState(workspace), { ...member, label: 'Beam' });
+  const moved = repositionFBDLabel(labeled, 'member', member.id, { x: 1.25, y: 1.75 });
+  assert.deepEqual(moved.members[0].labelPosition, { x: 1.25, y: 1.75 });
+  assert.deepEqual(moved.members[0].start, member.start);
+  assert.deepEqual(moved.members[0].end, member.end);
+  const { label: _label, labelPosition: _position, ...withoutLabel } = moved.members[0];
+  const deleted = editFBDPrimitive(moved, 'member', member.id, withoutLabel);
+  assert.equal(deleted.members.length, 1);
+  assert.equal(deleted.members[0].label, undefined);
+  assert.deepEqual(deleted.members[0].start, member.start);
+  assert.deepEqual(deleted.members[0].end, member.end);
 });
 
 test('body endpoint joints persist as structure metadata and reject unknown support kinds', () => {

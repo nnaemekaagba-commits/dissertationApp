@@ -7,7 +7,7 @@ export type FBDBody = { id: string; origin: FBDPoint; width: number; height: num
   startJointKind?: FBDJointKind; endJointKind?: FBDJointKind };
 export type FBDJoint = { id: string; at: FBDPoint; kind?: FBDJointKind; label?: string };
 export type FBDMember = { id: string; start: FBDPoint; end: FBDPoint; label?: string;
-  startJointKind?: FBDJointKind; endJointKind?: FBDJointKind };
+  labelPosition?: FBDPoint; startJointKind?: FBDJointKind; endJointKind?: FBDJointKind };
 export type FBDPrimitiveKind = 'body' | 'joint' | 'member';
 export type FBDPrimitive = FBDBody | FBDJoint | FBDMember;
 export type FBDForceRole = 'applied' | 'reaction';
@@ -175,7 +175,8 @@ export function addFBDJoint(state: FBDState, joint: FBDJoint): FBDState {
 export function addFBDMember(state: FBDState, member: FBDMember): FBDState {
   if (!uniquePrimitiveId(state, member.id) || !validPoint(member.start) || !validPoint(member.end) ||
     Math.hypot(member.end.x - member.start.x, member.end.y - member.start.y) < 1e-9 ||
-    !validText(member.label) || !validJointKind(member.startJointKind) || !validJointKind(member.endJointKind))
+    !validText(member.label) || (member.labelPosition !== undefined && !validPoint(member.labelPosition)) ||
+    !validJointKind(member.startJointKind) || !validJointKind(member.endJointKind))
     throw new Error('Enter a unique member ID, distinct finite endpoints, and optional label.');
   return { ...state, members: [...state.members, { ...member,
     start: { ...member.start }, end: { ...member.end } }] };
@@ -351,6 +352,7 @@ export function repositionFBDLabel(state: FBDState, kind: FBDElementKind, id: st
   const withPosition = <T extends { id: string; labelPosition?: FBDPoint }>(items: T[]) =>
     items.map((item) => item.id === id ? { ...item, labelPosition: { ...position } } : item);
   return { ...state,
+    members: kind === 'member' ? withPosition(state.members) : state.members,
     forces: kind === 'force' ? withPosition(state.forces) : state.forces,
     moments: kind === 'moment' ? withPosition(state.moments) : state.moments,
     dimensions: kind === 'dimension' ? withPosition(state.dimensions) : state.dimensions,
@@ -505,6 +507,7 @@ export function parseFBDState(input: unknown, workspace: StaticsWorkspace): FBDS
         ? row.kind as FBDJointKind : fail() }),
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),
     members: rows(root.members ?? [], (row) => ({ id: id(row.id), start: point(row.start), end: point(row.end),
+      ...(row.labelPosition === undefined ? {} : { labelPosition: point(row.labelPosition) }),
       ...(row.startJointKind === undefined ? {} : { startJointKind: ['free', 'pin', 'roller', 'fixed'].includes(String(row.startJointKind)) ? row.startJointKind as FBDJointKind : fail() }),
       ...(row.endJointKind === undefined ? {} : { endJointKind: ['free', 'pin', 'roller', 'fixed'].includes(String(row.endJointKind)) ? row.endJointKind as FBDJointKind : fail() }),
       ...(row.label === undefined ? {} : { label: label(row.label) }) })),

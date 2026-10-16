@@ -153,7 +153,7 @@ test('given toggles change only the scene projection; given elements are non-dra
   assert.doesNotMatch(panel, /aria-label="Given problem display"/);
   assert.match(panel, /Nothing is copied from the engineering problem into this canvas/);
   assert.doesNotMatch(panel, /calculatePlanarBeamReactions/);
-  assert.match(panel, /<StructurePreview workspace=\{workspace\} fbdState=\{fbdState\} \/>/);
+  assert.match(panel, /<StructurePreview workspace=\{workspace\} fbdState=\{fbdState\} selectedLabelId=\{selectedLabelId\}/);
 });
 
 test('given load layer includes stated point, distributed, and moment loads only', () => {
@@ -426,7 +426,7 @@ test('Structure, FBD, and Split View preserve both states without solving on vie
     readFileSync(new URL('./fbdCanvasScene.ts', import.meta.url), 'utf8') +
     readFileSync(new URL('./StructurePreview.tsx', import.meta.url), 'utf8');
   assert.match(panel, /displayMode === 'split' && <div/);
-  assert.match(panel, /<StructurePreview workspace=\{workspace\} fbdState=\{fbdState\} \/>/);
+  assert.match(panel, /<StructurePreview workspace=\{workspace\} fbdState=\{fbdState\} selectedLabelId=\{selectedLabelId\}/);
   assert.match(panel, /const model = buildFBDModel\(workspace, fbdState/);
   assert.doesNotMatch(panel, /: buildStructureModel\(workspace, reactionResult\)/);
   assert.doesNotMatch(panel, /calculatePlanarBeamReactions/);

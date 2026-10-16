@@ -148,6 +148,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setSelectedAngleId(null);
   }, [fbdState.angles, selectedAngleId]);
   useEffect(() => {
+    const selectedMemberLabelId = selectedLabelId?.startsWith('member-label:')
+      ? selectedLabelId.slice('member-label:'.length) : null;
+    if (selectedMemberLabelId && fbdState.members.some((member) => member.id === selectedMemberLabelId && member.label)) return;
     if (selectedLabelId && !fbdState.labels.some((label) => label.id === selectedLabelId)) {
       setSelectedLabelId(null);
       setLabelMoveMode(false);
@@ -163,7 +166,7 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
   const canvasClickRef = useRef<(event: MouseEvent) => void>(() => {});
   canvasClickRef.current = (event) => {
     if (suppressClickRef.current) { suppressClickRef.current = false; return; }
-    if (!showFbd || !rendererRef.current || !cameraRef.current) return;
+    if (!rendererRef.current || !cameraRef.current) return;
     const rect = rendererRef.current.domElement.getBoundingClientRect();
     const pointer = new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1,
       -((event.clientY - rect.top) / rect.height * 2 - 1));
@@ -198,7 +201,14 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       let object: THREE.Object3D | null = hit.object;
       while (object && !object.userData.fbdForceId && !object.userData.fbdMomentId &&
         !object.userData.fbdDimensionId && !object.userData.fbdAngleId && !object.userData.fbdLabelId &&
-        !object.userData.fbdPrimitive) object = object.parent;
+        !object.userData.fbdMemberLabelId && !object.userData.fbdPrimitive) object = object.parent;
+      if (!showFbd && !object?.userData.fbdLabelId && !object?.userData.fbdMemberLabelId) continue;
+      if (object?.userData.fbdMemberLabelId) {
+        setSelectedPrimitive(null);
+        setSelectedLabelId(`member-label:${object.userData.fbdMemberLabelId as string}`);
+        setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null);
+        return;
+      }
       if (object?.userData.fbdPrimitive) {
         const primitive = object.userData.fbdPrimitive as { kind: FBDPrimitiveKind; id: string };
         setSelectedPrimitive(primitive);
@@ -325,7 +335,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       setSelectedMomentId(drag.kind === 'moment' ? drag.id : null);
       setSelectedDimensionId(drag.kind === 'dimension' ? drag.id : null);
       setSelectedAngleId(drag.kind === 'angle' ? drag.id : null);
-      setSelectedLabelId(drag.kind === 'label' ? drag.id : null);
+      setSelectedLabelId(drag.kind === 'label' ? drag.id :
+        drag.kind === 'member' && drag.target === 'label' ? `member-label:${drag.id}` : null);
       return;
     }
     const before = getFBDElement(fbdState, drag.kind, drag.id);
@@ -351,7 +362,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     setSelectedMomentId(drag.kind === 'moment' ? drag.id : null);
     setSelectedDimensionId(drag.kind === 'dimension' ? drag.id : null);
     setSelectedAngleId(drag.kind === 'angle' ? drag.id : null);
-    setSelectedLabelId(drag.kind === 'label' ? drag.id : null);
+    setSelectedLabelId(drag.kind === 'label' ? drag.id :
+      drag.kind === 'member' && drag.target === 'label' ? `member-label:${drag.id}` : null);
     if (drag.target === 'body' || drag.target === 'member') setSelectedPrimitive({ kind: drag.target, id: drag.id });
     suppressClickRef.current = true;
     setTimeout(() => { suppressClickRef.current = false; }, 0);
@@ -921,6 +933,8 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           : { id, start: at, end: { x: Number(primitiveDraft.endX), y: Number(primitiveDraft.endY) },
             ...(primitiveDraft.startJointKind === 'none' ? {} : { startJointKind: primitiveDraft.startJointKind as FBDJoint['kind'] }),
             ...(primitiveDraft.endJointKind === 'none' ? {} : { endJointKind: primitiveDraft.endJointKind as FBDJoint['kind'] }),
+            ...(primitiveEditing && selectedPrimitiveElement && 'labelPosition' in selectedPrimitiveElement &&
+              selectedPrimitiveElement.labelPosition ? { labelPosition: selectedPrimitiveElement.labelPosition } : {}),
             ...(label ? { label } : {}) } as FBDMember;
       const next = primitiveEditing ? editFBDPrimitive(fbdState, primitiveMode, id, item) :
         primitiveMode === 'body' ? addFBDBody(fbdState, item as FBDBody) :
@@ -959,6 +973,16 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
     recordPrimitiveChange(selectedPrimitive.kind, 'delete', selectedPrimitive.id, next);
     setDiagramActionNotice(`${selectedPrimitive.kind[0].toUpperCase()}${selectedPrimitive.kind.slice(1)} ${selectedPrimitive.id} deleted.`);
     setSelectedPrimitive(null); setPrimitiveMode(null);
+  };
+  const deleteSelectedMemberLabel = () => {
+    const id = selectedLabelId?.startsWith('member-label:') ? selectedLabelId.slice('member-label:'.length) : null;
+    const member = id ? fbdState.members.find((item) => item.id === id) : undefined;
+    if (!id || !member?.label) return;
+    const { label: _label, labelPosition: _labelPosition, ...withoutLabel } = member;
+    const next = editFBDPrimitive(fbdState, 'member', id, withoutLabel);
+    recordPrimitiveChange('member', 'edit', id, next);
+    setSelectedLabelId(null);
+    setDiagramActionNotice(`Member label ${member.label} deleted.`);
   };
   const submitLabelPosition = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1025,9 +1049,10 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
           Free Orbit
         </button>}
         {showFbd && <span className="self-center px-2 text-xs font-medium text-emerald-800">Build FBD Mode</span>}
-        {showFbd && <button type="button" onClick={() => {
+        {(showFbd || selectedLabelId) && <button type="button" onClick={() => {
           setDiagramActionNotice('');
-          if (selectedElement) deleteSelected();
+          if (selectedLabelId?.startsWith('member-label:')) deleteSelectedMemberLabel();
+          else if (selectedElement) deleteSelected();
           else if (selectedPrimitiveElement) deleteSelectedPrimitive();
           else setDiagramActionNotice('Select an element in the diagram or from the list below to delete it.');
         }} className="shrink-0 rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-800">
@@ -1072,7 +1097,9 @@ export function EngineeringVisualizationPanel({ onClose, viewCommand, displayMod
       <div className={`min-h-0 basis-0 flex-1 ${displayMode === 'split' ? 'flex flex-col' : ''}`}>
         {displayMode === 'split' && <div className="relative flex min-h-0 flex-1 flex-col border-b border-slate-300">
           <span className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-700">Structure</span>
-          <StructurePreview workspace={workspace} fbdState={fbdState} />
+          <StructurePreview workspace={workspace} fbdState={fbdState} selectedLabelId={selectedLabelId}
+            onSelectLabel={(id) => { setSelectedPrimitive(null); setSelectedLabelId(id);
+              setSelectedForceId(null); setSelectedMomentId(null); setSelectedDimensionId(null); setSelectedAngleId(null); }} />
           {!hasStudentFBDBaseGeometry(fbdState) &&
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center text-sm text-slate-500">
               No member has been added yet.

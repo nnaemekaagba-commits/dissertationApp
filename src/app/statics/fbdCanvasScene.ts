@@ -201,19 +201,24 @@ export function buildFBDModel(workspace: StaticsWorkspace, fbdState: FBDState,
     for (let index = 0; index < corners.length; index++)
       addLine(memberGroup, corners[index], corners[(index + 1) % corners.length], color);
     group.add(memberGroup);
-    const memberEnds = fbdEndpointLabels(member.label || member.id);
+    const memberEnds = member.labelPosition ? null : fbdEndpointLabels(member.label || member.id);
     if (memberEnds) {
       const labelPoints = fbdMemberEndpointLabelPositions(member, Math.max(0.28, span * 0.075));
       for (const [text, point] of [[memberEnds[0], labelPoints[0]],
         [memberEnds[1], labelPoints[1]]] as const) {
-        const label = textSprite(text, '#047857', 0.54);
+        const label = textSprite(text,
+          selectedLabelId === `member-label:${member.id}` ? '#c2410c' : '#047857', 0.54);
         if (label) { label.position.set(point.x, point.y, 0.24);
-          label.userData.fbdPrimitive = { kind: 'member', id: member.id }; group.add(label); }
+          label.userData.fbdMemberLabelId = member.id;
+          label.userData.fbdDragLabel = { kind: 'member', id: member.id }; group.add(label); }
       }
     } else if (member.label) {
-      const label = textSprite(member.label, '#047857', 0.42);
-      if (label) { label.position.copy(from).add(to).multiplyScalar(0.5).add(new THREE.Vector3(0, 0.24, 0.2));
-        label.userData.fbdPrimitive = { kind: 'member', id: member.id }; group.add(label); }
+      const label = textSprite(member.label,
+        selectedLabelId === `member-label:${member.id}` ? '#c2410c' : '#047857', 0.42);
+      if (label) { label.position.set(member.labelPosition?.x ?? (from.x + to.x) / 2,
+        member.labelPosition?.y ?? (from.y + to.y) / 2 + 0.24, 0.2);
+        label.userData.fbdMemberLabelId = member.id;
+        label.userData.fbdDragLabel = { kind: 'member', id: member.id }; group.add(label); }
     }
   }
   const explicitStructureJoints: FBDJoint[] = baseOnly ? [

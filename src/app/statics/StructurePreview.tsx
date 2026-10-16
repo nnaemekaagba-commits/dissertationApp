@@ -6,11 +6,14 @@ import type { FBDState } from './fbdState';
 import { DEFAULT_GIVEN_VISIBILITY } from './fbdGiven';
 import { buildFBDModel, disposeGroup } from './fbdCanvasScene';
 
-export function StructurePreview({ workspace, fbdState }: {
-  workspace: StaticsWorkspace; fbdState: FBDState;
+export function StructurePreview({ workspace, fbdState, selectedLabelId, onSelectLabel }: {
+  workspace: StaticsWorkspace; fbdState: FBDState; selectedLabelId: string | null;
+  onSelectLabel: (id: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const onSelectLabelRef = useRef(onSelectLabel);
   const [error, setError] = useState('');
+  onSelectLabelRef.current = onSelectLabel;
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -31,9 +34,25 @@ export function StructurePreview({ workspace, fbdState }: {
     controls.screenSpacePanning = true;
     controls.minDistance = 0.4;
     controls.maxDistance = 500;
-    const model = buildFBDModel(workspace, fbdState, null, null, null, null, null,
+    const model = buildFBDModel(workspace, fbdState, null, null, null, null, selectedLabelId,
       DEFAULT_GIVEN_VISIBILITY, true);
     scene.add(model.group);
+    const selectLabel = (event: MouseEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1,
+        -((event.clientY - rect.top) / rect.height * 2 - 1)), camera);
+      for (const hit of ray.intersectObjects(model.group.children, true)) {
+        let object: THREE.Object3D | null = hit.object;
+        while (object && !object.userData.fbdLabelId && !object.userData.fbdMemberLabelId) object = object.parent;
+        const id = object?.userData.fbdLabelId as string | undefined;
+        const memberId = object?.userData.fbdMemberLabelId as string | undefined;
+        if (!id && !memberId) continue;
+        onSelectLabelRef.current(id || `member-label:${memberId}`);
+        return;
+      }
+    };
+    renderer.domElement.addEventListener('click', selectLabel);
     controls.target.copy(model.center);
     camera.position.copy(model.center).add(new THREE.Vector3(0, 0, Math.max(4.5, model.span * 1.7)));
     controls.enableRotate = false;
@@ -59,12 +78,13 @@ export function StructurePreview({ workspace, fbdState }: {
       cancelAnimationFrame(frame);
       observer.disconnect();
       controls.dispose();
+      renderer.domElement.removeEventListener('click', selectLabel);
       scene.remove(model.group);
       disposeGroup(model.group);
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [workspace, fbdState]);
+  }, [workspace, fbdState, selectedLabelId]);
   return <div ref={containerRef} className="relative min-h-0 flex-1 bg-slate-50 touch-none" aria-label="Structure preview">
     {error && <div className="absolute inset-0 z-10 flex items-center justify-center p-4 text-sm text-slate-600">{error}</div>}
   </div>;
